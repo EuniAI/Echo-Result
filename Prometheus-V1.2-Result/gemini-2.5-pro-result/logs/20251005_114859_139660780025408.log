@@ -1,0 +1,2827 @@
+2025-10-05 11:49:00,044 - thread-139660780025408.app.docker.base_container - INFO - Created temporary project directory: /tmp/tmpq_w9funz/sympy
+2025-10-05 11:49:00,044 - thread-139660780025408.app.docker.base_container - DEBUG - Using workdir: /testbed
+2025-10-05 11:49:00,044 - thread-139660780025408.app.docker.base_container - INFO - Pulling docker image: swebench/sweb.eval.x86_64.sympy_1776_sympy-14976:v1
+2025-10-05 11:49:18,378 - thread-139660780025408.app.docker.base_container - INFO - Tagging pulled image as: prometheus_user_defined_container_24ce86de12
+2025-10-05 11:49:18,383 - thread-139660780025408.app.docker.base_container - INFO - Starting container from image prometheus_user_defined_container_24ce86de12
+2025-10-05 11:49:20,149 - thread-139660780025408.app.docker.base_container - INFO - Starting persistent shell for interactive mode...
+2025-10-05 11:49:20,292 - thread-139660780025408.app.docker.base_container - INFO - Persistent shell is ready
+2025-10-05 11:49:20,293 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: . /opt/miniconda3/bin/activate
+2025-10-05 11:49:20,417 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 0
+2025-10-05 11:49:20,417 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+
+
+2025-10-05 11:49:20,417 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: conda activate testbed
+2025-10-05 11:49:20,538 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 0
+2025-10-05 11:49:20,539 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+
+
+2025-10-05 11:49:20,539 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: python -m pip install -e .
+2025-10-05 11:49:21,236 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 0
+2025-10-05 11:49:21,236 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+
+Obtaining file:///testbed
+  Preparing metadata (setup.py) ... [?25l- done
+[?25hRequirement already satisfied: mpmath>=0.19 in /opt/miniconda3/envs/testbed/lib/python3.9/site-packages (from sympy==1.2.1.dev0) (1.3.0)
+Installing collected packages: sympy
+  Attempting uninstall: sympy
+    Found existing installation: sympy 1.2.1.dev0
+    Uninstalling sympy-1.2.1.dev0:
+      Successfully uninstalled sympy-1.2.1.dev0
+[33m  DEPRECATION: Legacy editable install of sympy==1.2.1.dev0 from file:///testbed (setup.py develop) is deprecated. pip 25.0 will enforce this behaviour change. A possible replacement is to add a pyproject.toml or enable --use-pep517, and use setuptools >= 64. If the resulting installation is not behaving as expected, try using --config-settings editable_mode=compat. Please consult the setuptools documentation for more information. Discussion can be found at https://github.com/pypa/pip/issues/11457[0m[33m
+[0m  Running setup.py develop for sympy
+Successfully installed sympy
+[33mWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable.It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.[0m[33m
+
+2025-10-05 11:49:21,280 - thread-139660780025408.app.lang_graph.nodes.issue_bug_reproduction_context_message_node - DEBUG - Sending query to context provider subgraph:
+Issue title:
+lambdify(modules='mpmath') doesn't wrap rationals
+
+Issue description: 
+```py
+>>> eqn = Eq(rf(18,x), 77 + S(1)/3)
+>>> f = lambdify(x, eqn.lhs - eqn.rhs, 'mpmath')
+>>> print(inspect.getsource(f))
+def _lambdifygenerated(x):
+    return (  # Not supported in Python:
+  # RisingFactorial
+RisingFactorial(18, x) - 232/3)
+```
+
+This results in reduced precision results from `nsolve`, because the 232/3 isn't evaluated at full precision. 
+
+```py
+>>> eqn = Eq(rf(18,x), 77 + S(1)/3)
+>>> x0 = nsolve(eqn, Float('1.5', 64), prec=64)
+>>> rf(18, x0).evalf(64)
+77.33333333333332859638176159933209419250488281250000000000000000
+```
+
+Originally reported at https://github.com/sympy/sympy/pull/14971
+
+Issue comments:
+
+
+OBJECTIVE: Find 5 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 5 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 5 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-10-05 11:49:21,280 - thread-139660780025408.app.lang_graph.nodes.context_retrieval_subgraph_node - INFO - Enter context retrieval subgraph
+2025-10-05 11:49:21,281 - thread-139660780025408.app.lang_graph.nodes.context_query_message_node - DEBUG - Sending query to ContextProviderNode:
+content='Issue title:\nlambdify(modules=\'mpmath\') doesn\'t wrap rationals\n\nIssue description: \n```py\n>>> eqn = Eq(rf(18,x), 77 + S(1)/3)\n>>> f = lambdify(x, eqn.lhs - eqn.rhs, \'mpmath\')\n>>> print(inspect.getsource(f))\ndef _lambdifygenerated(x):\n    return (  # Not supported in Python:\n  # RisingFactorial\nRisingFactorial(18, x) - 232/3)\n```\n\nThis results in reduced precision results from `nsolve`, because the 232/3 isn\'t evaluated at full precision. \n\n```py\n>>> eqn = Eq(rf(18,x), 77 + S(1)/3)\n>>> x0 = nsolve(eqn, Float(\'1.5\', 64), prec=64)\n>>> rf(18, x0).evalf(64)\n77.33333333333332859638176159933209419250488281250000000000000000\n```\n\nOriginally reported at https://github.com/sympy/sympy/pull/14971\n\nIssue comments:\n\n\nOBJECTIVE: Find 5 relevant existing test cases that demonstrates similar functionality to the reported bug,\nincluding ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.\n\n<reasoning>\n1. Analyze bug characteristics:\n   - Core functionality being tested\n   - Input parameters and configurations\n   - Expected error conditions\n   - Environmental dependencies\n\n2. Search requirements:\n   - Required imports and dependencies\n   - Test files exercising similar functionality\n   - Mock/fixture setup patterns\n   - Assertion styles\n   - Error handling tests\n\n3. Focus areas:\n   - All necessary imports (standard library, testing frameworks, mocking utilities)\n   - Dependencies and third-party packages\n   - Test setup and teardown\n   - Mock object configuration\n   - Network/external service simulation\n   - Error condition verification\n</reasoning>\n\nREQUIREMENTS:\n- Return 5 complete, self-contained test cases most similar to bug scenario\n- Must include ALL necessary imports at the start of each test file\n- Must include full test method implementation\n- Must include ALL mock/fixture setup\n- Must include helper functions used by test\n- Must preserve exact file paths and line numbers\n\n<examples>\n<example id="database-timeout">\n<bug>\ndb.execute("SELECT * FROM users").fetchall() \nraises ConnectionTimeout when load is high\n</bug>\n\n<ideal_test_match>\n# File: tests/test_database.py\nimport pytest\nfrom unittest.mock import Mock, patch\nfrom database.exceptions import ConnectionTimeout\nfrom database.models import QueryResult\nfrom database.client import DatabaseClient\n\nclass TestDatabaseTimeout:\n    @pytest.fixture\n    def mock_db_connection(self):\n        conn = Mock()\n        conn.execute.side_effect = [\n            ConnectionTimeout("Connection timed out"),\n            QueryResult(["user1", "user2"])  # Second try succeeds\n        ]\n        return conn\n        \n    def test_handle_timeout_during_query(self, mock_db_connection):\n        # Complete test showing timeout scenario\n        # Including retry logic verification\n        # With all necessary assertions\n</ideal_test_match>\n</example>\n\n<example id="file-permission">\n<bug>\nFileProcessor(\'/root/data.txt\').process() \nfails with PermissionError\n</bug>\n\n<ideal_test_match>\n# File: tests/test_file_processor.py\nimport os\nimport pytest\nfrom unittest.mock import patch, mock_open\nfrom file_processor import FileProcessor\nfrom file_processor.exceptions import ProcessingError\n\nclass TestFilePermissions:\n    @patch(\'os.access\')\n    @patch(\'builtins.open\')\n    def test_file_permission_denied(self, mock_open, mock_access):\n        # Full test setup with mocked file system\n        # Permission denial simulation\n        # Error handling verification\n</ideal_test_match>\n</example>\n\nSearch priority:\n1. Tests of exact same functionality (including import patterns)\n2. Tests with similar error conditions\n3. Tests with comparable mocking patterns\n4. Tests demonstrating similar assertions\n\nFind the 5 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.\n' additional_kwargs={} response_metadata={}
+2025-10-05 11:49:26,869 - thread-139660780025408.app.lang_graph.nodes.context_provider_node - DEBUG - content='I have identified `sympy/utilities/tests/test_lambdify.py` as the primary test file for `lambdify`. I will now search within this file for tests related to the `mpmath` module, rationals, and precision to find test cases that are relevant to the reported bug, which will help in understanding how `lambdify` handles numerical types.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"text": "mpmath", "relative_path": "sympy/utilities/tests/test_lambdify.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 19506, 'candidates_token_count': 115, 'total_token_count': 19943, 'prompt_tokens_details': [{'modality': 1, 'token_count': 19506}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 115}], 'thoughts_token_count': 322, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.5107486890709918, 'model_name': 'gemini-2.5-pro'} id='run--004fe718-ddff-4048-bd75-3271346d0e18-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'text': 'mpmath', 'relative_path': 'sympy/utilities/tests/test_lambdify.py'}, 'id': '160953e7-8400-44b5-9b9c-82767ea766b3', 'type': 'tool_call'}] usage_metadata={'input_tokens': 19506, 'output_tokens': 115, 'total_tokens': 19943, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 322}}
+2025-10-05 11:49:31,373 - thread-139660780025408.app.lang_graph.nodes.context_provider_node - DEBUG - content='I have identified `sympy/utilities/tests/test_lambdify.py` as the primary test file for `lambdify` and have found several test cases that use the `mpmath` module. To broaden the search for relevant tests, I am now looking for test cases within the same file that involve rationals, numerical features, and different printers, as these are closely related to the issue of precision and proper numerical evaluation. This will help identify tests that, while not directly using `mpmath`, cover similar functionality and might reveal how different numerical types are handled by `lambdify`.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"text": "printers", "relative_path": "sympy/utilities/tests/test_lambdify.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 20338, 'candidates_token_count': 159, 'total_token_count': 20666, 'cached_content_token_count': 17546, 'prompt_tokens_details': [{'modality': 1, 'token_count': 20338}], 'cache_tokens_details': [{'modality': 1, 'token_count': 17546}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 159}], 'thoughts_token_count': 169}, 'finish_reason': 'STOP', 'avg_logprobs': -0.2449479972791372, 'model_name': 'gemini-2.5-pro'} id='run--d7bd11a5-dfa9-49fb-86d1-0b71fdd0d6c6-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'text': 'printers', 'relative_path': 'sympy/utilities/tests/test_lambdify.py'}, 'id': '7f23869e-4cb8-4557-96e3-2ae316ecfa38', 'type': 'tool_call'}] usage_metadata={'input_tokens': 20338, 'output_tokens': 159, 'total_tokens': 20666, 'input_token_details': {'cache_read': 17546}, 'output_token_details': {'reasoning': 169}}
+2025-10-05 11:49:36,482 - thread-139660780025408.app.lang_graph.nodes.context_provider_node - DEBUG - content="I've pinpointed `sympy/utilities/tests/test_lambdify.py` as the main test file and found relevant tests inside, especially `test_special_printers`, which is key because it deals with custom printing of numerical types like `Integer` and `Rational`. Tests such as `test_sinc_mpmath`, `test_mpmath_precision`, and `test_mpmath_transl` also confirm `mpmath` is used for numerical evaluation, where precision is a major focus. To get the full picture, I'm now reading the entire `test_lambdify.py` file to understand the complete context, including all imports and helper functions, which will help me grasp how `lambdify` should behave with different numerical backends." additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "sympy/utilities/tests/test_lambdify.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 21009, 'candidates_token_count': 189, 'total_token_count': 21413, 'cached_content_token_count': 19445, 'prompt_tokens_details': [{'modality': 1, 'token_count': 21009}], 'cache_tokens_details': [{'modality': 1, 'token_count': 19445}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 189}], 'thoughts_token_count': 215}, 'finish_reason': 'STOP', 'avg_logprobs': -0.24463213562334657, 'model_name': 'gemini-2.5-pro'} id='run--43681025-81bd-4957-a179-b30a59c3e5fc-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'sympy/utilities/tests/test_lambdify.py'}, 'id': 'c79ad869-c109-4aef-83fc-4a08776010ea', 'type': 'tool_call'}] usage_metadata={'input_tokens': 21009, 'output_tokens': 189, 'total_tokens': 21413, 'input_token_details': {'cache_read': 19445}, 'output_token_details': {'reasoning': 215}}
+2025-10-05 11:50:24,820 - thread-139660780025408.app.lang_graph.nodes.context_provider_node - DEBUG - content='I have identified `sympy/utilities/tests/test_lambdify.py` as the primary test file for `lambdify` and have found several test cases that use the `mpmath` module. To broaden the search for relevant tests, I looked for test cases within the same file that involve rationals, numerical features, and different printers, as these are closely related to the issue of precision and proper numerical evaluation. I then read the entire `test_lambdify.py` file to understand the complete context, including all imports and helper functions, which helped me select the 5 most relevant test cases that demonstrate how `lambdify` handles numerical types with different backends.\n<test_case>\n# File: sympy/utilities/tests/test_lambdify.py\nfrom distutils.version import LooseVersion as V\nfrom itertools import product\nimport math\nimport inspect\n\nimport mpmath\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma,lowergamma\n\nimport sympy\n\n\nMutableDenseMatrix = Matrix\n\nnumpy = import_module(\'numpy\')\nnumexpr = import_module(\'numexpr\')\ntensorflow = import_module(\'tensorflow\')\n\nif tensorflow:\n    # Hide Tensorflow warnings\n    import os\n    os.environ[\'TF_CPP_MIN_LOG_LEVEL\'] = \'2\'\n\nw, x, y, z = symbols(\'w,x,y,z\')\ndef test_special_printers():\n    class IntervalPrinter(LambdaPrinter):\n        """Use ``lambda`` printer but print numbers as ``mpi`` intervals. """\n\n        def _print_Integer(self, expr):\n            return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Integer(expr)\n\n        def _print_Rational(self, expr):\n            return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Rational(expr)\n\n    def intervalrepr(expr):\n        return IntervalPrinter().doprint(expr)\n\n    expr = sympy.sqrt(sympy.sqrt(2) + sympy.sqrt(3)) + sympy.S(1)/2\n\n    func0 = lambdify((), expr, modules="mpmath", printer=intervalrepr)\n    func1 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter)\n    func2 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter())\n\n    mpi = type(mpmath.mpi(1, 2))\n\n    assert isinstance(func0(), mpi)\n    assert isinstance(func1(), mpi)\n    assert isinstance(func2(), mpi)\n</test_case>\n<test_case>\n# File: sympy/utilities/tests/test_lambdify.py\nfrom distutils.version import LooseVersion as V\nfrom itertools import product\nimport math\nimport inspect\n\nimport mpmath\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma,lowergamma\n\nimport sympy\n\n\nMutableDenseMatrix = Matrix\n\nnumpy = import_module(\'numpy\')\nnumexpr = import_module(\'numexpr\')\ntensorflow = import_module(\'tensorflow\')\n\nif tensorflow:\n    # Hide Tensorflow warnings\n    import os\n    os.environ[\'TF_CPP_MIN_LOG_LEVEL\'] = \'2\'\n\nw, x, y, z = symbols(\'w,x,y,z\')\n@conserve_mpmath_dps\ndef test_mpmath_precision():\n    mpmath.mp.dps = 100\n    assert str(lambdify((), pi.evalf(100), \'mpmath\')()) == str(pi.evalf(100))\n</test_case>\n<test_case>\n# File: sympy/utilities/tests/test_lambdify.py\nfrom distutils.version import LooseVersion as V\nfrom itertools import product\nimport math\nimport inspect\n\nimport mpmath\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma,lowergamma\n\nimport sympy\n\n\nMutableDenseMatrix = Matrix\n\nnumpy = import_module(\'numpy\')\nnumexpr = import_module(\'numexpr\')\ntensorflow = import_module(\'tensorflow\')\n\nif tensorflow:\n    # Hide Tensorflow warnings\n    import os\n    os.environ[\'TF_CPP_MIN_LOG_LEVEL\'] = \'2\'\n\nw, x, y, z = symbols(\'w,x,y,z\')\ndef test_issue9474():\n    mods = [None, \'math\']\n    if numpy:\n        mods.append(\'numpy\')\n    if mpmath:\n        mods.append(\'mpmath\')\n    for mod in mods:\n        f = lambdify(x, sympy.S(1)/x, modules=mod)\n        assert f(2) == 0.5\n        f = lambdify(x, floor(sympy.S(1)/x), modules=mod)\n        assert f(2) == 0\n\n    for absfunc, modules in product([Abs, abs], mods):\n        f = lambdify(x, absfunc(x), modules=modules)\n        assert f(-1) == 1\n        assert f(1) == 1\n        assert f(3+4j) == 5\n</test_case>\n<test_case>\n# File: sympy/utilities/tests/test_lambdify.py\nfrom distutils.version import LooseVersion as V\nfrom itertools import product\nimport math\nimport inspect\n\nimport mpmath\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma,lowergamma\n\nimport sympy\n\n\nMutableDenseMatrix = Matrix\n\nnumpy = import_module(\'numpy\')\nnumexpr = import_module(\'numexpr\')\ntensorflow = import_module(\'tensorflow\')\n\nif tensorflow:\n    # Hide Tensorflow warnings\n    import os\n    os.environ[\'TF_CPP_MIN_LOG_LEVEL\'] = \'2\'\n\nw, x, y, z = symbols(\'w,x,y,z\')\n@conserve_mpmath_dps\ndef test_number_precision():\n    mpmath.mp.dps = 50\n    sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n    f = lambdify(x, sin02, "mpmath")\n    prec = 1e-49  # mpmath precision is around 50 decimal places\n    assert -prec < f(0) - sin02 < prec\n</test_case>\n<test_case>\n# File: sympy/utilities/tests/test_lambdify.py\nfrom distutils.version import LooseVersion as V\nfrom itertools import product\nimport math\nimport inspect\n\nimport mpmath\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma,lowergamma\n\nimport sympy\n\n\nMutableDenseMatrix = Matrix\n\nnumpy = import_module(\'numpy\')\nnumexpr = import_module(\'numexpr\')\ntensorflow = import_module(\'tensorflow\')\n\nif tensorflow:\n    # Hide Tensorflow warnings\n    import os\n    os.environ[\'TF_CPP_MIN_LOG_LEVEL\'] = \'2\'\n\nw, x, y, z = symbols(\'w,x,y,z\')\n@conserve_mpmath_dps\ndef test_mpmath_lambda():\n    mpmath.mp.dps = 50\n    sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n    f = lambdify(x, sin(x), "mpmath")\n    prec = 1e-49  # mpmath precision is around 50 decimal places\n    assert -prec < f(mpmath.mpf("0.2")) - sin02 < prec\n    raises(TypeError, lambda: f(x))\n           # if this succeeds, it can\'t be a mpmath function\n</test_case>' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'citation_metadata': {'citations': [{'start_index': 4852, 'end_index': 5131, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 5364, 'end_index': 5642, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 6432, 'end_index': 6788, 'uri': 'https://www.lidavidm.me/sympy/_modules/sympy/polys/numberfields.html', 'title': '', 'license_': ''}, {'start_index': 6645, 'end_index': 7087, 'uri': 'https://github.com/securesystemslab/zippy', 'title': '', 'license_': ''}, {'start_index': 6948, 'end_index': 7303, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 7660, 'end_index': 8099, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 8285, 'end_index': 8525, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 8685, 'end_index': 9086, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 10716, 'end_index': 10995, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 11228, 'end_index': 11506, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 11765, 'end_index': 12121, 'uri': 'https://www.lidavidm.me/sympy/_modules/sympy/polys/numberfields.html', 'title': '', 'license_': ''}, {'start_index': 11978, 'end_index': 12420, 'uri': 'https://github.com/securesystemslab/zippy', 'title': '', 'license_': ''}, {'start_index': 12281, 'end_index': 12636, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 12756, 'end_index': 13035, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 13268, 'end_index': 13546, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 14039, 'end_index': 14318, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 14551, 'end_index': 14829, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 15059, 'end_index': 15498, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 15676, 'end_index': 15955, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 16188, 'end_index': 16466, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 16693, 'end_index': 16933, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 17100, 'end_index': 17379, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 17612, 'end_index': 17890, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 18117, 'end_index': 18518, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}]}, 'usage_metadata': {'prompt_token_count': 29828, 'candidates_token_count': 2609, 'total_token_count': 35643, 'cached_content_token_count': 19598, 'prompt_tokens_details': [{'modality': 1, 'token_count': 29828}], 'cache_tokens_details': [{'modality': 1, 'token_count': 19598}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 2609}], 'thoughts_token_count': 3206}, 'finish_reason': 'STOP', 'avg_logprobs': -0.0899914192851817, 'model_name': 'gemini-2.5-pro'} id='run--da5332ca-a04f-4953-afdd-ddcc9d532f03-0' usage_metadata={'input_tokens': 29828, 'output_tokens': 2609, 'total_tokens': 35643, 'input_token_details': {'cache_read': 19598}, 'output_token_details': {'reasoning': 3206}}
+2025-10-05 11:50:24,821 - thread-139660780025408.app.lang_graph.nodes.context_extraction_node - INFO - Starting context extraction process
+2025-10-05 11:50:24,821 - thread-139660780025408.app.lang_graph.nodes.context_extraction_node - DEBUG - This is the original user query:
+
+--- BEGIN ORIGINAL QUERY ---
+Issue title:
+lambdify(modules='mpmath') doesn't wrap rationals
+
+Issue description: 
+```py
+>>> eqn = Eq(rf(18,x), 77 + S(1)/3)
+>>> f = lambdify(x, eqn.lhs - eqn.rhs, 'mpmath')
+>>> print(inspect.getsource(f))
+def _lambdifygenerated(x):
+    return (  # Not supported in Python:
+  # RisingFactorial
+RisingFactorial(18, x) - 232/3)
+```
+
+This results in reduced precision results from `nsolve`, because the 232/3 isn't evaluated at full precision. 
+
+```py
+>>> eqn = Eq(rf(18,x), 77 + S(1)/3)
+>>> x0 = nsolve(eqn, Float('1.5', 64), prec=64)
+>>> rf(18, x0).evalf(64)
+77.33333333333332859638176159933209419250488281250000000000000000
+```
+
+Originally reported at https://github.com/sympy/sympy/pull/14971
+
+Issue comments:
+
+
+OBJECTIVE: Find 5 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 5 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 5 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 837 - 839
+Content:
+def test_sinc_mpmath():
+    f = lambdify(x, sinc(x), "mpmath")
+    assert Abs(f(1) - sinc(1)).n() < 1e-15
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 762 - 762
+Content:
+#================== Test special printers ==========================
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 765 - 788
+Content:
+def test_special_printers():
+    class IntervalPrinter(LambdaPrinter):
+        """Use ``lambda`` printer but print numbers as ``mpi`` intervals. """
+
+        def _print_Integer(self, expr):
+            return "mpi('%s')" % super(IntervalPrinter, self)._print_Integer(expr)
+
+        def _print_Rational(self, expr):
+            return "mpi('%s')" % super(IntervalPrinter, self)._print_Rational(expr)
+
+    def intervalrepr(expr):
+        return IntervalPrinter().doprint(expr)
+
+    expr = sympy.sqrt(sympy.sqrt(2) + sympy.sqrt(3)) + sympy.S(1)/2
+
+    func0 = lambdify((), expr, modules="mpmath", printer=intervalrepr)
+    func1 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter)
+    func2 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter())
+
+    mpi = type(mpmath.mpi(1, 2))
+
+    assert isinstance(func0(), mpi)
+    assert isinstance(func1(), mpi)
+    assert isinstance(func2(), mpi)
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 1 - 500
+Content:
+1. from distutils.version import LooseVersion as V
+2. from itertools import product
+3. import math
+4. import inspect
+5. 
+6. import mpmath
+7. from sympy.utilities.pytest import XFAIL, raises
+8. from sympy import (
+9.     symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,
+10.     Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,
+11.     true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,
+12.     DotProduct, Eq, Dummy, sinc)
+13. from sympy.printing.lambdarepr import LambdaPrinter
+14. from sympy.utilities.lambdify import implemented_function
+15. from sympy.utilities.pytest import skip
+16. from sympy.utilities.decorator import conserve_mpmath_dps
+17. from sympy.external import import_module
+18. from sympy.functions.special.gamma_functions import uppergamma,lowergamma
+19. 
+20. import sympy
+21. 
+22. 
+23. MutableDenseMatrix = Matrix
+24. 
+25. numpy = import_module('numpy')
+26. numexpr = import_module('numexpr')
+27. tensorflow = import_module('tensorflow')
+28. 
+29. if tensorflow:
+30.     # Hide Tensorflow warnings
+31.     import os
+32.     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+33. 
+34. w, x, y, z = symbols('w,x,y,z')
+35. 
+36. #================== Test different arguments =======================
+37. 
+38. 
+39. def test_no_args():
+40.     f = lambdify([], 1)
+41.     raises(TypeError, lambda: f(-1))
+42.     assert f() == 1
+43. 
+44. 
+45. def test_single_arg():
+46.     f = lambdify(x, 2*x)
+47.     assert f(1) == 2
+48. 
+49. 
+50. def test_list_args():
+51.     f = lambdify([x, y], x + y)
+52.     assert f(1, 2) == 3
+53. 
+54. def test_nested_args():
+55.     f1 = lambdify([[w, x]], [w, x])
+56.     assert f1([91, 2]) == [91, 2]
+57.     raises(TypeError, lambda: f1(1, 2))
+58. 
+59.     f2 = lambdify([(w, x), (y, z)], [w, x, y, z])
+60.     assert f2((18, 12), (73, 4)) == [18, 12, 73, 4]
+61.     raises(TypeError, lambda: f2(3, 4))
+62. 
+63.     f3 = lambdify([w, [[[x]], y], z], [w, x, y, z])
+64.     assert f3(10, [[[52]], 31], 44) == [10, 52, 31, 44]
+65. 
+66. def test_str_args():
+67.     f = lambdify('x,y,z', 'z,y,x')
+68.     assert f(3, 2, 1) == (1, 2, 3)
+69.     assert f(1.0, 2.0, 3.0) == (3.0, 2.0, 1.0)
+70.     # make sure correct number of args required
+71.     raises(TypeError, lambda: f(0))
+72. 
+73. 
+74. def test_own_namespace_1():
+75.     myfunc = lambda x: 1
+76.     f = lambdify(x, sin(x), {"sin": myfunc})
+77.     assert f(0.1) == 1
+78.     assert f(100) == 1
+79. 
+80. 
+81. def test_own_namespace_2():
+82.     def myfunc(x):
+83.         return 1
+84.     f = lambdify(x, sin(x), {'sin': myfunc})
+85.     assert f(0.1) == 1
+86.     assert f(100) == 1
+87. 
+88. 
+89. def test_own_module():
+90.     f = lambdify(x, sin(x), math)
+91.     assert f(0) == 0.0
+92. 
+93. 
+94. def test_bad_args():
+95.     # no vargs given
+96.     raises(TypeError, lambda: lambdify(1))
+97.     # same with vector exprs
+98.     raises(TypeError, lambda: lambdify([1, 2]))
+99. 
+100. 
+101. def test_atoms():
+102.     # Non-Symbol atoms should not be pulled out from the expression namespace
+103.     f = lambdify(x, pi + x, {"pi": 3.14})
+104.     assert f(0) == 3.14
+105.     f = lambdify(x, I + x, {"I": 1j})
+106.     assert f(1) == 1 + 1j
+107. 
+108. #================== Test different modules =========================
+109. 
+110. # high precision output of sin(0.2*pi) is used to detect if precision is lost unwanted
+111. 
+112. 
+113. @conserve_mpmath_dps
+114. def test_sympy_lambda():
+115.     mpmath.mp.dps = 50
+116.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")
+117.     f = lambdify(x, sin(x), "sympy")
+118.     assert f(x) == sin(x)
+119.     prec = 1e-15
+120.     assert -prec < f(Rational(1, 5)).evalf() - Float(str(sin02)) < prec
+121.     # arctan is in numpy module and should not be available
+122.     raises(NameError, lambda: lambdify(x, arctan(x), "sympy"))
+123. 
+124. 
+125. @conserve_mpmath_dps
+126. def test_math_lambda():
+127.     mpmath.mp.dps = 50
+128.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")
+129.     f = lambdify(x, sin(x), "math")
+130.     prec = 1e-15
+131.     assert -prec < f(0.2) - sin02 < prec
+132.     raises(TypeError, lambda: f(x))
+133.            # if this succeeds, it can't be a python math function
+134. 
+135. 
+136. @conserve_mpmath_dps
+137. def test_mpmath_lambda():
+138.     mpmath.mp.dps = 50
+139.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")
+140.     f = lambdify(x, sin(x), "mpmath")
+141.     prec = 1e-49  # mpmath precision is around 50 decimal places
+142.     assert -prec < f(mpmath.mpf("0.2")) - sin02 < prec
+143.     raises(TypeError, lambda: f(x))
+144.            # if this succeeds, it can't be a mpmath function
+145. 
+146. 
+147. @conserve_mpmath_dps
+148. def test_number_precision():
+149.     mpmath.mp.dps = 50
+150.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")
+151.     f = lambdify(x, sin02, "mpmath")
+152.     prec = 1e-49  # mpmath precision is around 50 decimal places
+153.     assert -prec < f(0) - sin02 < prec
+154. 
+155. @conserve_mpmath_dps
+156. def test_mpmath_precision():
+157.     mpmath.mp.dps = 100
+158.     assert str(lambdify((), pi.evalf(100), 'mpmath')()) == str(pi.evalf(100))
+159. 
+160. #================== Test Translations ==============================
+161. # We can only check if all translated functions are valid. It has to be checked
+162. # by hand if they are complete.
+163. 
+164. 
+165. def test_math_transl():
+166.     from sympy.utilities.lambdify import MATH_TRANSLATIONS
+167.     for sym, mat in MATH_TRANSLATIONS.items():
+168.         assert sym in sympy.__dict__
+169.         assert mat in math.__dict__
+170. 
+171. 
+172. def test_mpmath_transl():
+173.     from sympy.utilities.lambdify import MPMATH_TRANSLATIONS
+174.     for sym, mat in MPMATH_TRANSLATIONS.items():
+175.         assert sym in sympy.__dict__ or sym == 'Matrix'
+176.         assert mat in mpmath.__dict__
+177. 
+178. 
+179. def test_numpy_transl():
+180.     if not numpy:
+181.         skip("numpy not installed.")
+182. 
+183.     from sympy.utilities.lambdify import NUMPY_TRANSLATIONS
+184.     for sym, nump in NUMPY_TRANSLATIONS.items():
+185.         assert sym in sympy.__dict__
+186.         assert nump in numpy.__dict__
+187. 
+188. def test_tensorflow_transl():
+189.     if not tensorflow:
+190.         skip("tensorflow not installed")
+191. 
+192.     from sympy.utilities.lambdify import TENSORFLOW_TRANSLATIONS
+193.     for sym, tens in TENSORFLOW_TRANSLATIONS.items():
+194.         assert sym in sympy.__dict__
+195.         assert tens in tensorflow.__dict__
+196. 
+197. def test_numpy_translation_abs():
+198.     if not numpy:
+199.         skip("numpy not installed.")
+200. 
+201.     f = lambdify(x, Abs(x), "numpy")
+202.     assert f(-1) == 1
+203.     assert f(1) == 1
+204. 
+205. def test_numexpr_printer():
+206.     if not numexpr:
+207.         skip("numexpr not installed.")
+208. 
+209.     # if translation/printing is done incorrectly then evaluating
+210.     # a lambdified numexpr expression will throw an exception
+211.     from sympy.printing.lambdarepr import NumExprPrinter
+212.     from sympy import S
+213. 
+214.     blacklist = ('where', 'complex', 'contains')
+215.     arg_tuple = (x, y, z) # some functions take more than one argument
+216.     for sym in NumExprPrinter._numexpr_functions.keys():
+217.         if sym in blacklist:
+218.             continue
+219.         ssym = S(sym)
+220.         if hasattr(ssym, '_nargs'):
+221.             nargs = ssym._nargs[0]
+222.         else:
+223.             nargs = 1
+224.         args = arg_tuple[:nargs]
+225.         f = lambdify(args, ssym(*args), modules='numexpr')
+226.         assert f(*(1, )*nargs) is not None
+227. 
+228. def test_issue_9334():
+229.     if not numexpr:
+230.         skip("numexpr not installed.")
+231.     if not numpy:
+232.         skip("numpy not installed.")
+233.     expr = sympy.S('b*a - sqrt(a**2)')
+234.     a, b = sorted(expr.free_symbols, key=lambda s: s.name)
+235.     func_numexpr = lambdify((a,b), expr, modules=[numexpr], dummify=False)
+236.     foo, bar = numpy.random.random((2, 4))
+237.     func_numexpr(foo, bar)
+238. 
+239. #================== Test some functions ============================
+240. 
+241. 
+242. def test_exponentiation():
+243.     f = lambdify(x, x**2)
+244.     assert f(-1) == 1
+245.     assert f(0) == 0
+246.     assert f(1) == 1
+247.     assert f(-2) == 4
+248.     assert f(2) == 4
+249.     assert f(2.5) == 6.25
+250. 
+251. 
+252. def test_sqrt():
+253.     f = lambdify(x, sqrt(x))
+254.     assert f(0) == 0.0
+255.     assert f(1) == 1.0
+256.     assert f(4) == 2.0
+257.     assert abs(f(2) - 1.414) < 0.001
+258.     assert f(6.25) == 2.5
+259. 
+260. 
+261. def test_trig():
+262.     f = lambdify([x], [cos(x), sin(x)], 'math')
+263.     d = f(pi)
+264.     prec = 1e-11
+265.     assert -prec < d[0] + 1 < prec
+266.     assert -prec < d[1] < prec
+267.     d = f(3.14159)
+268.     prec = 1e-5
+269.     assert -prec < d[0] + 1 < prec
+270.     assert -prec < d[1] < prec
+271. 
+272. #================== Test vectors ===================================
+273. 
+274. 
+275. def test_vector_simple():
+276.     f = lambdify((x, y, z), (z, y, x))
+277.     assert f(3, 2, 1) == (1, 2, 3)
+278.     assert f(1.0, 2.0, 3.0) == (3.0, 2.0, 1.0)
+279.     # make sure correct number of args required
+280.     raises(TypeError, lambda: f(0))
+281. 
+282. 
+283. def test_vector_discontinuous():
+284.     f = lambdify(x, (-1/x, 1/x))
+285.     raises(ZeroDivisionError, lambda: f(0))
+286.     assert f(1) == (-1.0, 1.0)
+287.     assert f(2) == (-0.5, 0.5)
+288.     assert f(-2) == (0.5, -0.5)
+289. 
+290. 
+291. def test_trig_symbolic():
+292.     f = lambdify([x], [cos(x), sin(x)], 'math')
+293.     d = f(pi)
+294.     assert abs(d[0] + 1) < 0.0001
+295.     assert abs(d[1] - 0) < 0.0001
+296. 
+297. 
+298. def test_trig_float():
+299.     f = lambdify([x], [cos(x), sin(x)])
+300.     d = f(3.14159)
+301.     assert abs(d[0] + 1) < 0.0001
+302.     assert abs(d[1] - 0) < 0.0001
+303. 
+304. 
+305. def test_docs():
+306.     f = lambdify(x, x**2)
+307.     assert f(2) == 4
+308.     f = lambdify([x, y, z], [z, y, x])
+309.     assert f(1, 2, 3) == [3, 2, 1]
+310.     f = lambdify(x, sqrt(x))
+311.     assert f(4) == 2.0
+312.     f = lambdify((x, y), sin(x*y)**2)
+313.     assert f(0, 5) == 0
+314. 
+315. 
+316. def test_math():
+317.     f = lambdify((x, y), sin(x), modules="math")
+318.     assert f(0, 5) == 0
+319. 
+320. 
+321. def test_sin():
+322.     f = lambdify(x, sin(x)**2)
+323.     assert isinstance(f(2), float)
+324.     f = lambdify(x, sin(x)**2, modules="math")
+325.     assert isinstance(f(2), float)
+326. 
+327. 
+328. def test_matrix():
+329.     A = Matrix([[x, x*y], [sin(z) + 4, x**z]])
+330.     sol = Matrix([[1, 2], [sin(3) + 4, 1]])
+331.     f = lambdify((x, y, z), A, modules="sympy")
+332.     assert f(1, 2, 3) == sol
+333.     f = lambdify((x, y, z), (A, [A]), modules="sympy")
+334.     assert f(1, 2, 3) == (sol, [sol])
+335.     J = Matrix((x, x + y)).jacobian((x, y))
+336.     v = Matrix((x, y))
+337.     sol = Matrix([[1, 0], [1, 1]])
+338.     assert lambdify(v, J, modules='sympy')(1, 2) == sol
+339.     assert lambdify(v.T, J, modules='sympy')(1, 2) == sol
+340. 
+341. def test_numpy_matrix():
+342.     if not numpy:
+343.         skip("numpy not installed.")
+344.     A = Matrix([[x, x*y], [sin(z) + 4, x**z]])
+345.     sol_arr = numpy.array([[1, 2], [numpy.sin(3) + 4, 1]])
+346.     #Lambdify array first, to ensure return to array as default
+347.     f = lambdify((x, y, z), A, ['numpy'])
+348.     numpy.testing.assert_allclose(f(1, 2, 3), sol_arr)
+349.     #Check that the types are arrays and matrices
+350.     assert isinstance(f(1, 2, 3), numpy.ndarray)
+351. 
+352. def test_numpy_transpose():
+353.     if not numpy:
+354.         skip("numpy not installed.")
+355.     A = Matrix([[1, x], [0, 1]])
+356.     f = lambdify((x), A.T, modules="numpy")
+357.     numpy.testing.assert_array_equal(f(2), numpy.array([[1, 0], [2, 1]]))
+358. 
+359. def test_numpy_dotproduct():
+360.     if not numpy:
+361.         skip("numpy not installed")
+362.     A = Matrix([x, y, z])
+363.     f1 = lambdify([x, y, z], DotProduct(A, A), modules='numpy')
+364.     f2 = lambdify([x, y, z], DotProduct(A, A.T), modules='numpy')
+365.     f3 = lambdify([x, y, z], DotProduct(A.T, A), modules='numpy')
+366.     f4 = lambdify([x, y, z], DotProduct(A, A.T), modules='numpy')
+367. 
+368.     assert f1(1, 2, 3) == \
+369.            f2(1, 2, 3) == \
+370.            f3(1, 2, 3) == \
+371.            f4(1, 2, 3) == \
+372.            numpy.array([14])
+373. 
+374. def test_numpy_inverse():
+375.     if not numpy:
+376.         skip("numpy not installed.")
+377.     A = Matrix([[1, x], [0, 1]])
+378.     f = lambdify((x), A**-1, modules="numpy")
+379.     numpy.testing.assert_array_equal(f(2), numpy.array([[1, -2], [0,  1]]))
+380. 
+381. def test_numpy_old_matrix():
+382.     if not numpy:
+383.         skip("numpy not installed.")
+384.     A = Matrix([[x, x*y], [sin(z) + 4, x**z]])
+385.     sol_arr = numpy.array([[1, 2], [numpy.sin(3) + 4, 1]])
+386.     f = lambdify((x, y, z), A, [{'ImmutableDenseMatrix': numpy.matrix}, 'numpy'])
+387.     numpy.testing.assert_allclose(f(1, 2, 3), sol_arr)
+388.     assert isinstance(f(1, 2, 3), numpy.matrix)
+389. 
+390. def test_python_div_zero_issue_11306():
+391.     if not numpy:
+392.         skip("numpy not installed.")
+393.     p = Piecewise((1 / x, y < -1), (x, y < 1), (1 / x, True))
+394.     f = lambdify([x, y], p, modules='numpy')
+395.     numpy.seterr(divide='ignore')
+396.     assert float(f(numpy.array([0]),numpy.array([0.5]))) == 0
+397.     assert str(float(f(numpy.array([0]),numpy.array([1])))) == 'inf'
+398.     numpy.seterr(divide='warn')
+399. 
+400. def test_issue9474():
+401.     mods = [None, 'math']
+402.     if numpy:
+403.         mods.append('numpy')
+404.     if mpmath:
+405.         mods.append('mpmath')
+406.     for mod in mods:
+407.         f = lambdify(x, sympy.S(1)/x, modules=mod)
+408.         assert f(2) == 0.5
+409.         f = lambdify(x, floor(sympy.S(1)/x), modules=mod)
+410.         assert f(2) == 0
+411. 
+412.     for absfunc, modules in product([Abs, abs], mods):
+413.         f = lambdify(x, absfunc(x), modules=modules)
+414.         assert f(-1) == 1
+415.         assert f(1) == 1
+416.         assert f(3+4j) == 5
+417. 
+418. 
+419. def test_issue_9871():
+420.     if not numexpr:
+421.         skip("numexpr not installed.")
+422.     if not numpy:
+423.         skip("numpy not installed.")
+424. 
+425.     r = sqrt(x**2 + y**2)
+426.     expr = diff(1/r, x)
+427. 
+428.     xn = yn = numpy.linspace(1, 10, 16)
+429.     # expr(xn, xn) = -xn/(sqrt(2)*xn)^3
+430.     fv_exact = -numpy.sqrt(2.)**-3 * xn**-2
+431. 
+432.     fv_numpy = lambdify((x, y), expr, modules='numpy')(xn, yn)
+433.     fv_numexpr = lambdify((x, y), expr, modules='numexpr')(xn, yn)
+434.     numpy.testing.assert_allclose(fv_numpy, fv_exact, rtol=1e-10)
+435.     numpy.testing.assert_allclose(fv_numexpr, fv_exact, rtol=1e-10)
+436. 
+437. 
+438. def test_numpy_piecewise():
+439.     if not numpy:
+440.         skip("numpy not installed.")
+441.     pieces = Piecewise((x, x < 3), (x**2, x > 5), (0, True))
+442.     f = lambdify(x, pieces, modules="numpy")
+443.     numpy.testing.assert_array_equal(f(numpy.arange(10)),
+444.                                      numpy.array([0, 1, 2, 0, 0, 0, 36, 49, 64, 81]))
+445.     # If we evaluate somewhere all conditions are False, we should get back NaN
+446.     nodef_func = lambdify(x, Piecewise((x, x > 0), (-x, x < 0)))
+447.     numpy.testing.assert_array_equal(nodef_func(numpy.array([-1, 0, 1])),
+448.                                      numpy.array([1, numpy.nan, 1]))
+449. 
+450. def test_numpy_logical_ops():
+451.     if not numpy:
+452.         skip("numpy not installed.")
+453.     and_func = lambdify((x, y), And(x, y), modules="numpy")
+454.     and_func_3 = lambdify((x, y, z), And(x, y, z), modules="numpy")
+455.     or_func = lambdify((x, y), Or(x, y), modules="numpy")
+456.     or_func_3 = lambdify((x, y, z), Or(x, y, z), modules="numpy")
+457.     not_func = lambdify((x), Not(x), modules="numpy")
+458.     arr1 = numpy.array([True, True])
+459.     arr2 = numpy.array([False, True])
+460.     arr3 = numpy.array([True, False])
+461.     numpy.testing.assert_array_equal(and_func(arr1, arr2), numpy.array([False, True]))
+462.     numpy.testing.assert_array_equal(and_func_3(arr1, arr2, arr3), numpy.array([False, False]))
+463.     numpy.testing.assert_array_equal(or_func(arr1, arr2), numpy.array([True, True]))
+464.     numpy.testing.assert_array_equal(or_func_3(arr1, arr2, arr3), numpy.array([True, True]))
+465.     numpy.testing.assert_array_equal(not_func(arr2), numpy.array([True, False]))
+466. 
+467. def test_numpy_matmul():
+468.     if not numpy:
+469.         skip("numpy not installed.")
+470.     xmat = Matrix([[x, y], [z, 1+z]])
+471.     ymat = Matrix([[x**2], [Abs(x)]])
+472.     mat_func = lambdify((x, y, z), xmat*ymat, modules="numpy")
+473.     numpy.testing.assert_array_equal(mat_func(0.5, 3, 4), numpy.array([[1.625], [3.5]]))
+474.     numpy.testing.assert_array_equal(mat_func(-0.5, 3, 4), numpy.array([[1.375], [3.5]]))
+475.     # Multiple matrices chained together in multiplication
+476.     f = lambdify((x, y, z), xmat*xmat*xmat, modules="numpy")
+477.     numpy.testing.assert_array_equal(f(0.5, 3, 4), numpy.array([[72.125, 119.25],
+478.                                                                 [159, 251]]))
+479. 
+480. def test_numpy_numexpr():
+481.     if not numpy:
+482.         skip("numpy not installed.")
+483.     if not numexpr:
+484.         skip("numexpr not installed.")
+485.     a, b, c = numpy.random.randn(3, 128, 128)
+486.     # ensure that numpy and numexpr return same value for complicated expression
+487.     expr = sin(x) + cos(y) + tan(z)**2 + Abs(z-y)*acos(sin(y*z)) + \
+488.            Abs(y-z)*acosh(2+exp(y-x))- sqrt(x**2+I*y**2)
+489.     npfunc = lambdify((x, y, z), expr, modules='numpy')
+490.     nefunc = lambdify((x, y, z), expr, modules='numexpr')
+491.     assert numpy.allclose(npfunc(a, b, c), nefunc(a, b, c))
+492. 
+493. def test_numexpr_userfunctions():
+494.     if not numpy:
+495.         skip("numpy not installed.")
+496.     if not numexpr:
+497.         skip("numexpr not installed.")
+498.     a, b = numpy.random.randn(2, 10)
+499.     uf = type('uf', (Function, ),
+500.               {'eval' : classmethod(lambda x, y : y**2+1)})
+
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to a given query and return it in the specified format!
+EVERY context object MUST include: reasoning, relative_path, start_line, and end_line.
+
+2025-10-05 11:51:39,661 - thread-139660780025408.app.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='1. Query requirement analysis:\n   - The user wants complete, self-contained test cases, which requires all necessary imports.\n   - This code block contains all the necessary imports from `sympy`, `mpmath`, and other libraries, as well as the symbol definitions (`w, x, y, z`) used in the selected test cases.\n2. Extended relevance:\n   - This context is essential for understanding and running the subsequent test case contexts, as it provides all the required dependencies.', relative_path='sympy/utilities/tests/test_lambdify.py', start_line=1, end_line=35), ContextOutput(reasoning='1. Query requirement analysis:\n   - The query describes a bug where `lambdify` with `mpmath` loses precision for rational numbers.\n   - This test case directly addresses the issue of precision. It checks if `lambdify` preserves the high precision of a number (`pi.evalf(100)`) when using the `mpmath` module.\n2. Extended relevance:\n   - This is highly relevant as it tests the exact functionality (precision preservation in `lambdify` with `mpmath`) that is failing in the bug report.', relative_path='sympy/utilities/tests/test_lambdify.py', start_line=155, end_line=159), ContextOutput(reasoning="1. Query requirement analysis:\n   - The bug involves `lambdify` failing to handle a numeric type (Rational) with correct precision in `mpmath`.\n   - This test case is analogous to the bug scenario. It verifies that `lambdify` correctly handles a high-precision `mpmath.mpf` float object embedded within the expression, ensuring it's not converted to a lower-precision type.\n2. Extended relevance:\n   - It demonstrates the expected correct behavior for handling pre-existing high-precision numerical objects within a lambdified expression for the `mpmath` backend.", relative_path='sympy/utilities/tests/test_lambdify.py', start_line=147, end_line=154), ContextOutput(reasoning="1. Query requirement analysis:\n   - The bug is caused by the internal printer for `lambdify` not converting a SymPy `Rational` into a high-precision `mpmath` number. This test involves a rational number `S(1)/2`.\n   - This test case is extremely relevant because it demonstrates a solution to the problem by defining a custom `LambdaPrinter` that explicitly controls the conversion of `Integer` and `Rational` types for `mpmath`.\n2. Extended relevance:\n   - It provides essential context on how `lambdify`'s code generation can be customized, which is the mechanism to fix the reported bug.", relative_path='sympy/utilities/tests/test_lambdify.py', start_line=765, end_line=788), ContextOutput(reasoning='1. Query requirement analysis:\n   - The user is experiencing a precision issue with the `mpmath` module in `lambdify`.\n   - This test establishes the baseline for precision with the `mpmath` backend. It lambdifies a standard function (`sin`) and asserts that the result maintains high precision.\n2. Extended relevance:\n   - This test confirms the expected high-precision behavior of the `mpmath` module, which contrasts with the buggy behavior reported by the user.', relative_path='sympy/utilities/tests/test_lambdify.py', start_line=136, end_line=145), ContextOutput(reasoning='1. Query requirement analysis:\n   - The query is about a precision issue in `lambdify` with the `mpmath` backend.\n   - This is a concise test case that verifies the numerical precision of `lambdify` with `mpmath` for the `sinc` function.\n2. Extended relevance:\n   - It serves as another clear example of the expected high-precision output from the `mpmath` backend, which is relevant to the reported bug.', relative_path='sympy/utilities/tests/test_lambdify.py', start_line=837, end_line=839)]
+2025-10-05 11:51:39,662 - thread-139660780025408.app.lang_graph.nodes.context_extraction_node - INFO - Context extraction complete, returning context [Context(relative_path='sympy/utilities/tests/test_lambdify.py', content="1. from distutils.version import LooseVersion as V\n2. from itertools import product\n3. import math\n4. import inspect\n5. \n6. import mpmath\n7. from sympy.utilities.pytest import XFAIL, raises\n8. from sympy import (\n9.     symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n10.     Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n11.     true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n12.     DotProduct, Eq, Dummy, sinc)\n13. from sympy.printing.lambdarepr import LambdaPrinter\n14. from sympy.utilities.lambdify import implemented_function\n15. from sympy.utilities.pytest import skip\n16. from sympy.utilities.decorator import conserve_mpmath_dps\n17. from sympy.external import import_module\n18. from sympy.functions.special.gamma_functions import uppergamma,lowergamma\n19. \n20. import sympy\n21. \n22. \n23. MutableDenseMatrix = Matrix\n24. \n25. numpy = import_module('numpy')\n26. numexpr = import_module('numexpr')\n27. tensorflow = import_module('tensorflow')\n28. \n29. if tensorflow:\n30.     # Hide Tensorflow warnings\n31.     import os\n32.     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'\n33. \n34. w, x, y, z = symbols('w,x,y,z')\n35. ", start_line_number=1, end_line_number=35), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content="155. @conserve_mpmath_dps\n156. def test_mpmath_precision():\n157.     mpmath.mp.dps = 100\n158.     assert str(lambdify((), pi.evalf(100), 'mpmath')()) == str(pi.evalf(100))\n159. ", start_line_number=155, end_line_number=159), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='147. @conserve_mpmath_dps\n148. def test_number_precision():\n149.     mpmath.mp.dps = 50\n150.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n151.     f = lambdify(x, sin02, "mpmath")\n152.     prec = 1e-49  # mpmath precision is around 50 decimal places\n153.     assert -prec < f(0) - sin02 < prec\n154. ', start_line_number=147, end_line_number=154), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='765. def test_special_printers():\n766.     class IntervalPrinter(LambdaPrinter):\n767.         """Use ``lambda`` printer but print numbers as ``mpi`` intervals. """\n768. \n769.         def _print_Integer(self, expr):\n770.             return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Integer(expr)\n771. \n772.         def _print_Rational(self, expr):\n773.             return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Rational(expr)\n774. \n775.     def intervalrepr(expr):\n776.         return IntervalPrinter().doprint(expr)\n777. \n778.     expr = sympy.sqrt(sympy.sqrt(2) + sympy.sqrt(3)) + sympy.S(1)/2\n779. \n780.     func0 = lambdify((), expr, modules="mpmath", printer=intervalrepr)\n781.     func1 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter)\n782.     func2 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter())\n783. \n784.     mpi = type(mpmath.mpi(1, 2))\n785. \n786.     assert isinstance(func0(), mpi)\n787.     assert isinstance(func1(), mpi)\n788.     assert isinstance(func2(), mpi)', start_line_number=765, end_line_number=788), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='136. @conserve_mpmath_dps\n137. def test_mpmath_lambda():\n138.     mpmath.mp.dps = 50\n139.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n140.     f = lambdify(x, sin(x), "mpmath")\n141.     prec = 1e-49  # mpmath precision is around 50 decimal places\n142.     assert -prec < f(mpmath.mpf("0.2")) - sin02 < prec\n143.     raises(TypeError, lambda: f(x))\n144.            # if this succeeds, it can\'t be a mpmath function\n145. ', start_line_number=136, end_line_number=145), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='837. def test_sinc_mpmath():\n838.     f = lambdify(x, sinc(x), "mpmath")\n839.     assert Abs(f(1) - sinc(1)).n() < 1e-15', start_line_number=837, end_line_number=839)]
+2025-10-05 11:51:39,662 - thread-139660780025408.app.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-10-05 11:51:39,662 - thread-139660780025408.app.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .travis.yml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.rst
+├── bin
+|   ├── ask_update.py
+|   ├── authors_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_update.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_external_imports.py
+|   ├── test_import.py
+|   ├── test_setup.py
+|   └── test_travis.sh
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   ├── numpydoc.py
+|   |   └── sympylive.py
+|   ├── generate_logos.py
+|   ├── man
+|   └── src
+|       ├── _static
+|       ├── _templates
+|       ├── aboutus.rst
+|       ├── citing.rst
+|       ├── conf.py
+|       ├── gotchas.rst
+|       ├── guide.rst
+|       ├── index.rst
+|       ├── install.rst
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── handlers
+|       |   |   ├── index.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── index.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   └── integrals.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   └── sparse.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── hyperexpand.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   └── tensor.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   ├── runtests.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       └── intro.rst
+|       ├── outreach.rst
+|       ├── pics
+|       ├── python-comparisons.rst
+|       ├── special_topics
+|       |   ├── finite_diff_derivatives.rst
+|       |   ├── index.rst
+|       |   └── intro.rst
+|       ├── tutorial
+|       |   ├── basic_operations.rst
+|       |   ├── calculus.rst
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── intro.rst
+|       |   ├── manipulation.rst
+|       |   ├── matrices.rst
+|       |   ├── preliminaries.rst
+|       |   ├── printing.rst
+|       |   ├── simplification.rst
+|       |   └── solvers.rst
+|       └── wiki.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── isympy.py
+├── release
+|   ├── README.md
+|   ├── fabfile.py
+|   ├── pull_and_run_rever.sh
+|   └── release.sh
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_assumptions_2.py
+    |       ├── test_context.py
+    |       ├── test_matrices.py
+    |       ├── test_query.py
+    |       ├── test_refine.py
+    |       ├── test_satask.py
+    |       └── test_sathandlers.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── algorithms.py
+    |   ├── approximations.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── cnodes.py
+    |   ├── cutils.py
+    |   ├── cxxnodes.py
+    |   ├── fnodes.py
+    |   ├── futils.py
+    |   ├── pyutils.py
+    |   ├── rewriting.py
+    |   └── tests
+    |       ├── test_algorithms.py
+    |       ├── test_applications.py
+    |       ├── test_approximations.py
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_cnodes.py
+    |       ├── test_cxxnodes.py
+    |       ├── test_fnodes.py
+    |       └── test_rewriting.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── rewritingsystem_fsm.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── evaluate.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── power.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_evaluate.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_power.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_singleton.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_trace.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   └── trace.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── deprecated
+    |   ├── __init__.py
+    |   ├── class_registry.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_class_registry.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── discrete
+    |   ├── __init__.py
+    |   ├── convolution.py
+    |   ├── recurrence.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_convolution.py
+    |   |   ├── test_recurrence.py
+    |   |   └── test_transforms.py
+    |   └── transforms.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── importtools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_sage.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── linearsolver.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── rubi
+    |   |   ├── __init__.py
+    |   |   ├── parsetools
+    |   |   |   ├── __init__.py
+    |   |   |   ├── header.py.txt
+    |   |   |   ├── parse.py
+    |   |   |   └── tests
+    |   |   ├── rubi.py
+    |   |   ├── rules
+    |   |   |   ├── __init__.py
+    |   |   |   ├── binomial_products.py
+    |   |   |   ├── exponential.py
+    |   |   |   ├── hyperbolic.py
+    |   |   |   ├── integrand_simplification.py
+    |   |   |   ├── inverse_hyperbolic.py
+    |   |   |   ├── inverse_trig.py
+    |   |   |   ├── linear_products.py
+    |   |   |   ├── logarithms.py
+    |   |   |   ├── miscellaneous_algebraic.py
+    |   |   |   ├── miscellaneous_integration.py
+    |   |   |   ├── miscellaneous_trig.py
+    |   |   |   ├── piecewise_linear.py
+    |   |   |   ├── quadratic_products.py
+    |   |   |   ├── secant.py
+    |   |   |   ├── sine.py
+    |   |   |   ├── tangent.py
+    |   |   |   └── trinomial_products.py
+    |   |   ├── symbol.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_1_2.py
+    |   |   |   ├── test_1_3.py
+    |   |   |   ├── test_1_4.py
+    |   |   |   ├── test_rubi_integrate.py
+    |   |   |   └── test_utility_function.py
+    |   |   └── utility_function.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── ipythonprinting.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_interactive.py
+    |       ├── test_ipython.py
+    |       └── test_ipythonprinting.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   └── dpll2.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── dense.py
+    |   ├── densearith.py
+    |   ├── densesolve.py
+    |   ├── densetools.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── kronecker.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── slice.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_derivatives.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_kronecker.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── immutable.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_commonmatrix.py
+    |       ├── test_densearith.py
+    |       ├── test_densesolve.py
+    |       ├── test_densetools.py
+    |       ├── test_immutable.py
+    |       ├── test_interactions.py
+    |       ├── test_matrices.py
+    |       ├── test_normalforms.py
+    |       ├── test_sparse.py
+    |       └── test_sparsetools.py
+    ├── multipledispatch
+    |   ├── __init__.py
+    |   ├── conflict.py
+    |   ├── core.py
+    |   ├── dispatcher.py
+    |   ├── tests
+    |   |   ├── test_conflict.py
+    |   |   ├── test_core.py
+    |   |   └── test_dispatcher.py
+    |   └── utils.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── egyptian_fraction.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── latex
+    |   |   ├── LICENSE.txt
+    |   |   ├── __init__.py
+    |   |   ├── _antlr
+    |   |   |   ├── __init__.py
+    |   |   |   ├── latexlexer.py
+    |   |   |   └── latexparser.py
+    |   |   ├── _build_latex_antlr.py
+    |   |   ├── _parse_latex_antlr.py
+    |   |   └── errors.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sympy_parser.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_latex.py
+    |       ├── test_latex_deps.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_beam.py
+    |   ├── gaussopt.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_anticommutator.py
+    |   |       ├── test_boson.py
+    |   |       ├── test_cartesian.py
+    |   |       ├── test_cg.py
+    |   |       ├── test_circuitplot.py
+    |   |       ├── test_circuitutils.py
+    |   |       ├── test_commutator.py
+    |   |       ├── test_constants.py
+    |   |       ├── test_dagger.py
+    |   |       ├── test_density.py
+    |   |       ├── test_fermion.py
+    |   |       ├── test_gate.py
+    |   |       ├── test_grover.py
+    |   |       ├── test_hilbert.py
+    |   |       ├── test_identitysearch.py
+    |   |       ├── test_innerproduct.py
+    |   |       ├── test_matrixutils.py
+    |   |       ├── test_operator.py
+    |   |       ├── test_operatorordering.py
+    |   |       ├── test_operatorset.py
+    |   |       ├── test_pauli.py
+    |   |       ├── test_piab.py
+    |   |       ├── test_printing.py
+    |   |       ├── test_qapply.py
+    |   |       ├── test_qasm.py
+    |   |       ├── test_qexpr.py
+    |   |       ├── test_qft.py
+    |   |       ├── test_qubit.py
+    |   |       ├── test_represent.py
+    |   |       ├── test_sho1d.py
+    |   |       ├── test_shor.py
+    |   |       ├── test_spin.py
+    |   |       ├── test_state.py
+    |   |       └── test_tensorproduct.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── unitsystems.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_plot.py
+    |   |   └── test_plot_implicit.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── extensions.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_extensions.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── multivariate_resultants.py
+    |   ├── numberfields.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_multivariate_resultants.py
+    |       ├── test_numberfields.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── ccode.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxxcode.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fcode.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_ccode.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cxxcode.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fcode.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   └── test_theanocode.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── add.py
+    |   |   ├── functions.py
+    |   |   ├── intersection.py
+    |   |   ├── mul.py
+    |   |   ├── power.py
+    |   |   └── union.py
+    |   ├── ordinals.py
+    |   ├── setexpr.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       ├── test_ordinals.py
+    |       ├── test_setexpr.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   ├── test_traversaltools.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_diophantine.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_ode.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── joint_rv.py
+    |   ├── joint_rv_types.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_joint_rv.py
+    |       ├── test_mix.py
+    |       ├── test_rv.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       ├── test_mutable_ndim_array.py
+    |   |       └── test_ndim_array_conversions.py
+    |   ├── functions.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_functions.py
+    |       ├── test_index_methods.py
+    |       ├── test_indexed.py
+    |       └── test_tensor.py
+    ├── this.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── _compilation
+    |   |   ├── __init__.py
+    |   |   ├── availability.py
+    |   |   ├── compilation.py
+    |   |   ├── runners.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_compilation.py
+    |   |   └── util.py
+    |   ├── autowrap.py
+    |   ├── benchmarking.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_module_imports.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_pytest.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   └── timeutils.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── operators.py
+        ├── orienters.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_operators.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+Issue title:
+lambdify(modules='mpmath') doesn't wrap rationals
+
+Issue description: 
+```py
+>>> eqn = Eq(rf(18,x), 77 + S(1)/3)
+>>> f = lambdify(x, eqn.lhs - eqn.rhs, 'mpmath')
+>>> print(inspect.getsource(f))
+def _lambdifygenerated(x):
+    return (  # Not supported in Python:
+  # RisingFactorial
+RisingFactorial(18, x) - 232/3)
+```
+
+This results in reduced precision results from `nsolve`, because the 232/3 isn't evaluated at full precision. 
+
+```py
+>>> eqn = Eq(rf(18,x), 77 + S(1)/3)
+>>> x0 = nsolve(eqn, Float('1.5', 64), prec=64)
+>>> rf(18, x0).evalf(64)
+77.33333333333332859638176159933209419250488281250000000000000000
+```
+
+Originally reported at https://github.com/sympy/sympy/pull/14971
+
+Issue comments:
+
+
+OBJECTIVE: Find 5 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 5 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 5 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 1 - 35
+Content:
+1. from distutils.version import LooseVersion as V
+2. from itertools import product
+3. import math
+4. import inspect
+5. 
+6. import mpmath
+7. from sympy.utilities.pytest import XFAIL, raises
+8. from sympy import (
+9.     symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,
+10.     Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,
+11.     true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,
+12.     DotProduct, Eq, Dummy, sinc)
+13. from sympy.printing.lambdarepr import LambdaPrinter
+14. from sympy.utilities.lambdify import implemented_function
+15. from sympy.utilities.pytest import skip
+16. from sympy.utilities.decorator import conserve_mpmath_dps
+17. from sympy.external import import_module
+18. from sympy.functions.special.gamma_functions import uppergamma,lowergamma
+19. 
+20. import sympy
+21. 
+22. 
+23. MutableDenseMatrix = Matrix
+24. 
+25. numpy = import_module('numpy')
+26. numexpr = import_module('numexpr')
+27. tensorflow = import_module('tensorflow')
+28. 
+29. if tensorflow:
+30.     # Hide Tensorflow warnings
+31.     import os
+32.     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+33. 
+34. w, x, y, z = symbols('w,x,y,z')
+35. 
+
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 155 - 159
+Content:
+155. @conserve_mpmath_dps
+156. def test_mpmath_precision():
+157.     mpmath.mp.dps = 100
+158.     assert str(lambdify((), pi.evalf(100), 'mpmath')()) == str(pi.evalf(100))
+159. 
+
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 147 - 154
+Content:
+147. @conserve_mpmath_dps
+148. def test_number_precision():
+149.     mpmath.mp.dps = 50
+150.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")
+151.     f = lambdify(x, sin02, "mpmath")
+152.     prec = 1e-49  # mpmath precision is around 50 decimal places
+153.     assert -prec < f(0) - sin02 < prec
+154. 
+
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 765 - 788
+Content:
+765. def test_special_printers():
+766.     class IntervalPrinter(LambdaPrinter):
+767.         """Use ``lambda`` printer but print numbers as ``mpi`` intervals. """
+768. 
+769.         def _print_Integer(self, expr):
+770.             return "mpi('%s')" % super(IntervalPrinter, self)._print_Integer(expr)
+771. 
+772.         def _print_Rational(self, expr):
+773.             return "mpi('%s')" % super(IntervalPrinter, self)._print_Rational(expr)
+774. 
+775.     def intervalrepr(expr):
+776.         return IntervalPrinter().doprint(expr)
+777. 
+778.     expr = sympy.sqrt(sympy.sqrt(2) + sympy.sqrt(3)) + sympy.S(1)/2
+779. 
+780.     func0 = lambdify((), expr, modules="mpmath", printer=intervalrepr)
+781.     func1 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter)
+782.     func2 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter())
+783. 
+784.     mpi = type(mpmath.mpi(1, 2))
+785. 
+786.     assert isinstance(func0(), mpi)
+787.     assert isinstance(func1(), mpi)
+788.     assert isinstance(func2(), mpi)
+
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 136 - 145
+Content:
+136. @conserve_mpmath_dps
+137. def test_mpmath_lambda():
+138.     mpmath.mp.dps = 50
+139.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")
+140.     f = lambdify(x, sin(x), "mpmath")
+141.     prec = 1e-49  # mpmath precision is around 50 decimal places
+142.     assert -prec < f(mpmath.mpf("0.2")) - sin02 < prec
+143.     raises(TypeError, lambda: f(x))
+144.            # if this succeeds, it can't be a mpmath function
+145. 
+
+
+File: sympy/utilities/tests/test_lambdify.py
+Line number range: 837 - 839
+Content:
+837. def test_sinc_mpmath():
+838.     f = lambdify(x, sinc(x), "mpmath")
+839.     assert Abs(f(1) - sinc(1)).n() < 1e-15
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+2025-10-05 11:52:17,340 - thread-139660780025408.app.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user wants to find 5 relevant test cases for a bug in `lambdify` with the `mpmath` module where `Rational` numbers lose precision. The provided context contains snippets from `sympy/utilities/tests/test_lambdify.py`, which is the correct location for such tests. The context includes the file's header with all necessary imports, and several test functions that use `lambdify` with the `mpmath` module. Specifically, `test_special_printers` deals with `Rational` numbers in the context of `lambdify` and `mpmath`, making it highly relevant. Other included tests, while not directly involving `Rational` numbers, are still relevant as they test precision and the general use of `lambdify` with `mpmath`. The available information is sufficient to construct 5 relevant, self-contained test cases as requested." refined_query=''
+2025-10-05 11:52:17,341 - thread-139660780025408.app.lang_graph.nodes.context_retrieval_subgraph_node - INFO - Context retrieved: [Context(relative_path='sympy/utilities/tests/test_lambdify.py', content="1. from distutils.version import LooseVersion as V\n2. from itertools import product\n3. import math\n4. import inspect\n5. \n6. import mpmath\n7. from sympy.utilities.pytest import XFAIL, raises\n8. from sympy import (\n9.     symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n10.     Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n11.     true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n12.     DotProduct, Eq, Dummy, sinc)\n13. from sympy.printing.lambdarepr import LambdaPrinter\n14. from sympy.utilities.lambdify import implemented_function\n15. from sympy.utilities.pytest import skip\n16. from sympy.utilities.decorator import conserve_mpmath_dps\n17. from sympy.external import import_module\n18. from sympy.functions.special.gamma_functions import uppergamma,lowergamma\n19. \n20. import sympy\n21. \n22. \n23. MutableDenseMatrix = Matrix\n24. \n25. numpy = import_module('numpy')\n26. numexpr = import_module('numexpr')\n27. tensorflow = import_module('tensorflow')\n28. \n29. if tensorflow:\n30.     # Hide Tensorflow warnings\n31.     import os\n32.     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'\n33. \n34. w, x, y, z = symbols('w,x,y,z')\n35. ", start_line_number=1, end_line_number=35), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content="155. @conserve_mpmath_dps\n156. def test_mpmath_precision():\n157.     mpmath.mp.dps = 100\n158.     assert str(lambdify((), pi.evalf(100), 'mpmath')()) == str(pi.evalf(100))\n159. ", start_line_number=155, end_line_number=159), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='147. @conserve_mpmath_dps\n148. def test_number_precision():\n149.     mpmath.mp.dps = 50\n150.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n151.     f = lambdify(x, sin02, "mpmath")\n152.     prec = 1e-49  # mpmath precision is around 50 decimal places\n153.     assert -prec < f(0) - sin02 < prec\n154. ', start_line_number=147, end_line_number=154), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='765. def test_special_printers():\n766.     class IntervalPrinter(LambdaPrinter):\n767.         """Use ``lambda`` printer but print numbers as ``mpi`` intervals. """\n768. \n769.         def _print_Integer(self, expr):\n770.             return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Integer(expr)\n771. \n772.         def _print_Rational(self, expr):\n773.             return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Rational(expr)\n774. \n775.     def intervalrepr(expr):\n776.         return IntervalPrinter().doprint(expr)\n777. \n778.     expr = sympy.sqrt(sympy.sqrt(2) + sympy.sqrt(3)) + sympy.S(1)/2\n779. \n780.     func0 = lambdify((), expr, modules="mpmath", printer=intervalrepr)\n781.     func1 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter)\n782.     func2 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter())\n783. \n784.     mpi = type(mpmath.mpi(1, 2))\n785. \n786.     assert isinstance(func0(), mpi)\n787.     assert isinstance(func1(), mpi)\n788.     assert isinstance(func2(), mpi)', start_line_number=765, end_line_number=788), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='136. @conserve_mpmath_dps\n137. def test_mpmath_lambda():\n138.     mpmath.mp.dps = 50\n139.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n140.     f = lambdify(x, sin(x), "mpmath")\n141.     prec = 1e-49  # mpmath precision is around 50 decimal places\n142.     assert -prec < f(mpmath.mpf("0.2")) - sin02 < prec\n143.     raises(TypeError, lambda: f(x))\n144.            # if this succeeds, it can\'t be a mpmath function\n145. ', start_line_number=136, end_line_number=145), Context(relative_path='sympy/utilities/tests/test_lambdify.py', content='837. def test_sinc_mpmath():\n838.     f = lambdify(x, sinc(x), "mpmath")\n839.     assert Abs(f(1) - sinc(1)).n() < 1e-15', start_line_number=837, end_line_number=839)]
+2025-10-05 11:52:17,341 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_write_message_node - DEBUG - Sending message to BugReproducingWriteNode:
+content='Issue title:\nlambdify(modules=\'mpmath\') doesn\'t wrap rationals\n\nIssue description: \n```py\n>>> eqn = Eq(rf(18,x), 77 + S(1)/3)\n>>> f = lambdify(x, eqn.lhs - eqn.rhs, \'mpmath\')\n>>> print(inspect.getsource(f))\ndef _lambdifygenerated(x):\n    return (  # Not supported in Python:\n  # RisingFactorial\nRisingFactorial(18, x) - 232/3)\n```\n\nThis results in reduced precision results from `nsolve`, because the 232/3 isn\'t evaluated at full precision. \n\n```py\n>>> eqn = Eq(rf(18,x), 77 + S(1)/3)\n>>> x0 = nsolve(eqn, Float(\'1.5\', 64), prec=64)\n>>> rf(18, x0).evalf(64)\n77.33333333333332859638176159933209419250488281250000000000000000\n```\n\nOriginally reported at https://github.com/sympy/sympy/pull/14971\n\nIssue comments:\n\n\nBug reproducing context:\nFile: sympy/utilities/tests/test_lambdify.py\nLine number range: 1 - 35\nContent:\n1. from distutils.version import LooseVersion as V\n2. from itertools import product\n3. import math\n4. import inspect\n5. \n6. import mpmath\n7. from sympy.utilities.pytest import XFAIL, raises\n8. from sympy import (\n9.     symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n10.     Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n11.     true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n12.     DotProduct, Eq, Dummy, sinc)\n13. from sympy.printing.lambdarepr import LambdaPrinter\n14. from sympy.utilities.lambdify import implemented_function\n15. from sympy.utilities.pytest import skip\n16. from sympy.utilities.decorator import conserve_mpmath_dps\n17. from sympy.external import import_module\n18. from sympy.functions.special.gamma_functions import uppergamma,lowergamma\n19. \n20. import sympy\n21. \n22. \n23. MutableDenseMatrix = Matrix\n24. \n25. numpy = import_module(\'numpy\')\n26. numexpr = import_module(\'numexpr\')\n27. tensorflow = import_module(\'tensorflow\')\n28. \n29. if tensorflow:\n30.     # Hide Tensorflow warnings\n31.     import os\n32.     os.environ[\'TF_CPP_MIN_LOG_LEVEL\'] = \'2\'\n33. \n34. w, x, y, z = symbols(\'w,x,y,z\')\n35. \n\n\nFile: sympy/utilities/tests/test_lambdify.py\nLine number range: 155 - 159\nContent:\n155. @conserve_mpmath_dps\n156. def test_mpmath_precision():\n157.     mpmath.mp.dps = 100\n158.     assert str(lambdify((), pi.evalf(100), \'mpmath\')()) == str(pi.evalf(100))\n159. \n\n\nFile: sympy/utilities/tests/test_lambdify.py\nLine number range: 147 - 154\nContent:\n147. @conserve_mpmath_dps\n148. def test_number_precision():\n149.     mpmath.mp.dps = 50\n150.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n151.     f = lambdify(x, sin02, "mpmath")\n152.     prec = 1e-49  # mpmath precision is around 50 decimal places\n153.     assert -prec < f(0) - sin02 < prec\n154. \n\n\nFile: sympy/utilities/tests/test_lambdify.py\nLine number range: 765 - 788\nContent:\n765. def test_special_printers():\n766.     class IntervalPrinter(LambdaPrinter):\n767.         """Use ``lambda`` printer but print numbers as ``mpi`` intervals. """\n768. \n769.         def _print_Integer(self, expr):\n770.             return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Integer(expr)\n771. \n772.         def _print_Rational(self, expr):\n773.             return "mpi(\'%s\')" % super(IntervalPrinter, self)._print_Rational(expr)\n774. \n775.     def intervalrepr(expr):\n776.         return IntervalPrinter().doprint(expr)\n777. \n778.     expr = sympy.sqrt(sympy.sqrt(2) + sympy.sqrt(3)) + sympy.S(1)/2\n779. \n780.     func0 = lambdify((), expr, modules="mpmath", printer=intervalrepr)\n781.     func1 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter)\n782.     func2 = lambdify((), expr, modules="mpmath", printer=IntervalPrinter())\n783. \n784.     mpi = type(mpmath.mpi(1, 2))\n785. \n786.     assert isinstance(func0(), mpi)\n787.     assert isinstance(func1(), mpi)\n788.     assert isinstance(func2(), mpi)\n\n\nFile: sympy/utilities/tests/test_lambdify.py\nLine number range: 136 - 145\nContent:\n136. @conserve_mpmath_dps\n137. def test_mpmath_lambda():\n138.     mpmath.mp.dps = 50\n139.     sin02 = mpmath.mpf("0.19866933079506121545941262711838975037020672954020")\n140.     f = lambdify(x, sin(x), "mpmath")\n141.     prec = 1e-49  # mpmath precision is around 50 decimal places\n142.     assert -prec < f(mpmath.mpf("0.2")) - sin02 < prec\n143.     raises(TypeError, lambda: f(x))\n144.            # if this succeeds, it can\'t be a mpmath function\n145. \n\n\nFile: sympy/utilities/tests/test_lambdify.py\nLine number range: 837 - 839\nContent:\n837. def test_sinc_mpmath():\n838.     f = lambdify(x, sinc(x), "mpmath")\n839.     assert Abs(f(1) - sinc(1)).n() < 1e-15\n\n\nNow generate the complete self-contained test case that reproduces the bug with the same error/exception.\n' additional_kwargs={} response_metadata={}
+2025-10-05 11:53:30,705 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_write_node - DEBUG - content='```python\nimport mpmath\nimport inspect\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc, S)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma, lowergamma, RisingFactorial\n\nw, x, y, z = symbols(\'w,x,y,z\')\n\ndef test_lambdify_mpmath_rational():\n    """\n    Test that lambdify with mpmath module wraps rationals.\n\n    Based on https://github.com/sympy/sympy/pull/14971, where rationals\n    were not being converted to mpmath objects, resulting in precision loss.\n    """\n    expr = RisingFactorial(18, x) - (77 + S(1)/3)\n    f = lambdify(x, expr, \'mpmath\')\n    src = inspect.getsource(f)\n\n    # The bug causes the rational to be printed as a standard Python float division\n    # which results in precision loss.\n    # A fixed version should use mpmath\'s high-precision objects.\n    assert \'232/3\' not in src\n```' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'citation_metadata': {'citations': [{'start_index': 14852, 'end_index': 15163, 'uri': 'https://github.com/holzschu/python3_ios', 'title': '', 'license_': ''}, {'start_index': 15416, 'end_index': 15717, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 25141, 'end_index': 25349, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}]}, 'usage_metadata': {'prompt_token_count': 2718, 'candidates_token_count': 393, 'total_token_count': 10861, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2718}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 393}], 'thoughts_token_count': 7750, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -3.346368454794847, 'model_name': 'gemini-2.5-pro'} id='run--c39ad44f-3985-46d8-beb4-5be8a57a8a9d-0' usage_metadata={'input_tokens': 2718, 'output_tokens': 393, 'total_tokens': 10861, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 7750}}
+2025-10-05 11:53:54,136 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_file_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'create_file', 'arguments': '{"content": "import mpmath\\nimport inspect\\nfrom sympy.utilities.pytest import XFAIL, raises\\nfrom sympy import (\\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\\n    DotProduct, Eq, Dummy, sinc, S)\\nfrom sympy.printing.lambdarepr import LambdaPrinter\\nfrom sympy.utilities.lambdify import implemented_function\\nfrom sympy.utilities.pytest import skip\\nfrom sympy.utilities.decorator import conserve_mpmath_dps\\nfrom sympy.external import import_module\\nfrom sympy.functions.special.gamma_functions import uppergamma, lowergamma, RisingFactorial\\n\\nw, x, y, z = symbols(\'w,x,y,z\')\\n\\ndef test_lambdify_mpmath_rational():\\n    \\"\\"\\"\\n    Test that lambdify with mpmath module wraps rationals.\\n\\n    Based on https://github.com/sympy/sympy/pull/14971, where rationals\\n    were not being converted to mpmath objects, resulting in precision loss.\\n    \\"\\"\\"\\n    expr = RisingFactorial(18, x) - (77 + S(1)/3)\\n    f = lambdify(x, expr, \'mpmath\')\\n    src = inspect.getsource(f)\\n\\n    # The bug causes the rational to be printed as a standard Python float division\\n    # which results in precision loss.\\n    # A fixed version should use mpmath\'s high-precision objects.\\n    assert \'232/3\' not in src\\n", "relative_path": "sympy/utilities/tests/test_lambdify_rational.py"}'}, '__gemini_function_call_thought_signatures__': {'3dbca13f-f6cd-4c58-b014-5465b3a14ad4': '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'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'citation_metadata': {'citations': [{'start_index': 6478, 'end_index': 6686, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}, {'start_index': 8389, 'end_index': 8597, 'uri': 'https://github.com/Shist/Zhukouski_Pavel_BSU_Projects', 'title': '', 'license_': ''}]}, 'usage_metadata': {'prompt_token_count': 17176, 'candidates_token_count': 411, 'total_token_count': 19791, 'prompt_tokens_details': [{'modality': 1, 'token_count': 17176}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 411}], 'thoughts_token_count': 2204, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.6304505434059459, 'model_name': 'gemini-2.5-pro'} id='run--72a93b26-c30f-44ac-b39b-c7a7b021ff93-0' tool_calls=[{'name': 'create_file', 'args': {'content': 'import mpmath\nimport inspect\nfrom sympy.utilities.pytest import XFAIL, raises\nfrom sympy import (\n    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,\n    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,\n    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,\n    DotProduct, Eq, Dummy, sinc, S)\nfrom sympy.printing.lambdarepr import LambdaPrinter\nfrom sympy.utilities.lambdify import implemented_function\nfrom sympy.utilities.pytest import skip\nfrom sympy.utilities.decorator import conserve_mpmath_dps\nfrom sympy.external import import_module\nfrom sympy.functions.special.gamma_functions import uppergamma, lowergamma, RisingFactorial\n\nw, x, y, z = symbols(\'w,x,y,z\')\n\ndef test_lambdify_mpmath_rational():\n    """\n    Test that lambdify with mpmath module wraps rationals.\n\n    Based on https://github.com/sympy/sympy/pull/14971, where rationals\n    were not being converted to mpmath objects, resulting in precision loss.\n    """\n    expr = RisingFactorial(18, x) - (77 + S(1)/3)\n    f = lambdify(x, expr, \'mpmath\')\n    src = inspect.getsource(f)\n\n    # The bug causes the rational to be printed as a standard Python float division\n    # which results in precision loss.\n    # A fixed version should use mpmath\'s high-precision objects.\n    assert \'232/3\' not in src\n', 'relative_path': 'sympy/utilities/tests/test_lambdify_rational.py'}, 'id': '3dbca13f-f6cd-4c58-b014-5465b3a14ad4', 'type': 'tool_call'}] usage_metadata={'input_tokens': 17176, 'output_tokens': 411, 'total_tokens': 19791, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 2204}}
+2025-10-05 11:53:55,357 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_file_node - DEBUG - content='sympy/utilities/tests/test_lambdify_rational.py' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 17611, 'candidates_token_count': 15, 'total_token_count': 17626, 'cached_content_token_count': 15898, 'prompt_tokens_details': [{'modality': 1, 'token_count': 19813}], 'cache_tokens_details': [{'modality': 1, 'token_count': 15898}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 15}], 'thoughts_token_count': 0}, 'finish_reason': 'STOP', 'avg_logprobs': -0.0013628258059422175, 'model_name': 'gemini-2.5-pro'} id='run--ae8e73e6-8903-4b0f-ae7c-dc92d2f53bc1-0' usage_metadata={'input_tokens': 17611, 'output_tokens': 15, 'total_tokens': 17626, 'input_token_details': {'cache_read': 15898}}
+2025-10-05 11:53:55,435 - thread-139660780025408.app.lang_graph.nodes.git_diff_node - INFO - Generated patch:
+diff --git a/sympy/utilities/tests/test_lambdify_rational.py b/sympy/utilities/tests/test_lambdify_rational.py
+new file mode 100644
+index 0000000000..4f02932f88
+--- /dev/null
++++ b/sympy/utilities/tests/test_lambdify_rational.py
+@@ -0,0 +1,32 @@
++import mpmath
++import inspect
++from sympy.utilities.pytest import XFAIL, raises
++from sympy import (
++    symbols, lambdify, sqrt, sin, cos, tan, pi, acos, acosh, Rational,
++    Float, Matrix, Lambda, Piecewise, exp, Integral, oo, I, Abs, Function,
++    true, false, And, Or, Not, ITE, Min, Max, floor, diff, IndexedBase, Sum,
++    DotProduct, Eq, Dummy, sinc, S)
++from sympy.printing.lambdarepr import LambdaPrinter
++from sympy.utilities.lambdify import implemented_function
++from sympy.utilities.pytest import skip
++from sympy.utilities.decorator import conserve_mpmath_dps
++from sympy.external import import_module
++from sympy.functions.special.gamma_functions import uppergamma, lowergamma, RisingFactorial
++
++w, x, y, z = symbols('w,x,y,z')
++
++def test_lambdify_mpmath_rational():
++    """
++    Test that lambdify with mpmath module wraps rationals.
++
++    Based on https://github.com/sympy/sympy/pull/14971, where rationals
++    were not being converted to mpmath objects, resulting in precision loss.
++    """
++    expr = RisingFactorial(18, x) - (77 + S(1)/3)
++    f = lambdify(x, expr, 'mpmath')
++    src = inspect.getsource(f)
++
++    # The bug causes the rational to be printed as a standard Python float division
++    # which results in precision loss.
++    # A fixed version should use mpmath's high-precision objects.
++    assert '232/3' not in src
+
+2025-10-05 11:53:55,436 - thread-139660780025408.app.lang_graph.nodes.update_container_node - INFO - Copy over all updated files to the container
+2025-10-05 11:53:55,448 - thread-139660780025408.app.docker.base_container - INFO - Resetting git repository in the container
+2025-10-05 11:53:55,448 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: git reset --hard
+2025-10-05 11:53:55,688 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 0
+2025-10-05 11:53:55,689 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+
+HEAD is now at 9cbea13422 Merge pull request #14971 from cbm755/rf_ff_hiprec_fix
+
+2025-10-05 11:53:55,689 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: git clean -fd
+2025-10-05 11:53:55,789 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 0
+2025-10-05 11:53:55,789 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+
+
+2025-10-05 11:53:55,789 - thread-139660780025408.app.docker.base_container - INFO - Updating files in the container after edits.
+2025-10-05 11:53:55,790 - thread-139660780025408.app.docker.base_container - INFO - Creating directory sympy/utilities/tests in the container
+2025-10-05 11:53:55,790 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: mkdir -p sympy/utilities/tests
+2025-10-05 11:53:55,890 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 0
+2025-10-05 11:53:55,890 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+
+
+2025-10-05 11:53:55,890 - thread-139660780025408.app.docker.base_container - INFO - Updating sympy/utilities/tests/test_lambdify_rational.py in the container
+2025-10-05 11:53:55,893 - thread-139660780025408.app.docker.base_container - INFO - Files updated successfully
+2025-10-05 11:53:58,476 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_execute_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'run_command', 'arguments': '{"command": "bin/test sympy/utilities/tests/test_lambdify_rational.py"}'}, '__gemini_function_call_thought_signatures__': {'9fa06538-18f4-4652-adbc-5e7eb5d4ec87': 'CuUEAR/MhbYhZXRiJt5V+NqcqT7cnxXATy/rH10nLlRMu3o2knEK4iQ4AmAecVpYxdJRIZ5ecfcAbtRV9F94rTX3KUalIk+zNkOFJ9Sn6xHUPYFm4+/ZKk55gFPofGoHyPnoiZhsmSPC6p/sCO/VPNjK1kH2zGkav2bCsChV22XMLj9PwgVndNPAZ6ZB0HqDwcc+v8tHMl+WF2VCP0V9SroZkKeXMpACqFwMHJsSS1myRbfwu2ZlXhxvGjAYMIs7RWVAN73oNfrnBOWHc5socyOEXL7i6ZXhWOPvnhe5Msv4fhmL0cxli0XV6qf+ABWQMxj6lkL/vKnU5nEtEaR6aRV0/nF4yDBSQGnvkkXIPzrg04WJSLkhwu+jpMsg3gs12TCRpW1qK91eNalPih+wArllZxw8SGZ9+ZFTj5lDbNs6YfGsrp52JIYaWcl8AyhQRyjstP0nbwhEaLTAU4LEB7mTAZxH6K/52CwpbtVMfU1mQg1gwAdXmQIbamjlq69z+Vyc37Yqo3/ceAtPTNPBNLShRevfqVG5LXYOoKscYmlTEhcn0IbZZ6MM0LjVaX4wpvJB+LbTJ9q+RW6DJtarL7i8KnSyJ3OciMPQLr6HOTXXCuFsX5Bs+nultaSB5p52TAq43v36QwXdbJXd1FXp61l79btZS0ZinsVXfA0k51m+qSuTEUWN08hi1Ew/wbCN2Essq9Dd02g79O1KytMtYlRwhaO7N073d5z5WO96YL5M9b9NDu4l5pb6xHfa7+20UZn03i+w1UbDJauma1Lp+dmhELQPFvgDXG0qnNJsrmr0kPOQScS4Wg=='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 531, 'candidates_token_count': 21, 'total_token_count': 708, 'prompt_tokens_details': [{'modality': 1, 'token_count': 531}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 21}], 'thoughts_token_count': 156, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.6183119274321056, 'model_name': 'gemini-2.5-pro'} id='run--4ed3b19d-7240-428f-819c-8efa027751ec-0' tool_calls=[{'name': 'run_command', 'args': {'command': 'bin/test sympy/utilities/tests/test_lambdify_rational.py'}, 'id': '9fa06538-18f4-4652-adbc-5e7eb5d4ec87', 'type': 'tool_call'}] usage_metadata={'input_tokens': 531, 'output_tokens': 21, 'total_tokens': 708, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 156}}
+2025-10-05 11:53:58,477 - thread-139660780025408.app.docker.base_container - DEBUG - Executing command: bin/test sympy/utilities/tests/test_lambdify_rational.py
+2025-10-05 11:53:59,567 - thread-139660780025408.app.docker.base_container - DEBUG - Command exit code: 1
+2025-10-05 11:53:59,567 - thread-139660780025408.app.docker.base_container - DEBUG - Command output:
+bin/test sympy/utilities/tests/t
+test_lambdify_rational.py
+
+/testbed/sympy/solvers/diophantine.py:3188: SyntaxWarning: "is" with a literal. Did you mean "=="?
+  if feasible is 1:  # it's prime and k == 2
+============================= test process starts ==============================
+executable:         /opt/miniconda3/envs/testbed/bin/python  (3.9.20-final-0) [CPython]
+architecture:       64-bit
+cache:              yes
+ground types:       python 
+numpy:              None
+random seed:        11662097
+hash randomization: on (PYTHONHASHSEED=1929473184)
+
+sympy/utilities/tests/test_lambdify_rational.py[1] [0;31mF[0m                      [0;31m[FAIL][0m
+
+________________________________________________________________________________
+ sympy/utilities/tests/test_lambdify_rational.py:test_lambdify_mpmath_rational _
+Traceback (most recent call last):
+  File "/testbed/sympy/utilities/tests/test_lambdify_rational.py", line 32, in test_lambdify_mpmath_rational
+    assert '232/3' not in src
+AssertionError
+
+============= tests finished: 0 passed, 1 failed, in 0.01 seconds ==============
+DO *NOT* COMMIT!
+
+2025-10-05 11:54:03,890 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_execute_node - DEBUG - content='The test command `bin/test sympy/utilities/tests/test_lambdify_rational.py` failed with the following output:\n```\nbin/test sympy/utilities/tests/t\ntest_lambdify_rational.py\n\n/testbed/sympy/solvers/diophantine.py:3188: SyntaxWarning: "is" with a literal. Did you mean "=="?\n  if feasible is 1:  # it\'s prime and k == 2\n============================= test process starts ==============================\nexecutable:         /opt/miniconda3/envs/testbed/bin/python  (3.9.20-final-0) [CPython]\narchitecture:       64-bit\ncache:              yes\nground types:       python \nnumpy:              None\nrandom seed:        11662097\nhash randomization: on (PYTHONHASHSEED=1929473184)\n\nsympy/utilities/tests/test_lambdify_rational.py[1] F                      [FAIL]\n\n________________________________________________________________________________\n sympy/utilities/tests/test_lambdify_rational.py:test_lambdify_mpmath_rational _\nTraceback (most recent call last):\n  File "/testbed/sympy/utilities/tests/test_lambdify_rational.py", line 32, in test_lambdify_mpmath_rational\n    assert \'232/3\' not in src\nAssertionError\n\n============= tests finished: 0 passed, 1 failed, in 0.01 seconds ==============\nDO *NOT* COMMIT!\n```' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 909, 'candidates_token_count': 362, 'total_token_count': 1344, 'prompt_tokens_details': [{'modality': 1, 'token_count': 1063}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 362}], 'thoughts_token_count': 73, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.01973746231247707, 'model_name': 'gemini-2.5-pro'} id='run--1b30c750-58af-4a4b-8829-1c483ce6dc5d-0' usage_metadata={'input_tokens': 909, 'output_tokens': 362, 'total_tokens': 1344, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 73}}
+2025-10-05 11:54:15,187 - thread-139660780025408.app.lang_graph.nodes.bug_reproducing_structured_node - DEBUG - reproduced_bug=True reproduced_bug_failure_log='bin/test sympy/utilities/tests/t\ntest_lambdify_rational.py\n\n/testbed/sympy/solvers/diophantine.py:3188: SyntaxWarning: "is" with a literal. Did you mean "=="?\n  if feasible is 1:  # it\'s prime and k == 2\n============================= test process starts ==============================\nexecutable:         /opt/miniconda3/envs/testbed/bin/python  (3.9.20-final-0) [CPython]\narchitecture:       64-bit\ncache:              yes\nground types:       python \nnumpy:              None\nrandom seed:        11662097\nhash randomization: on (PYTHONHASHSEED=1929473184)\n\nsympy/utilities/tests/test_lambdify_rational.py[1] F                      [FAIL]\n\n________________________________________________________________________________\n sympy/utilities/tests/test_lambdify_rational.py:test_lambdify_mpmath_rational _\nTraceback (most recent call last):\n  File "/testbed/sympy/utilities/tests/test_lambdify_rational.py", line 32, in test_lambdify_mpmath_rational\n    assert \'232/3\' not in src\nAssertionError\n\n============= tests finished: 0 passed, 1 failed, in 0.01 seconds ==============\nDO *NOT* COMMIT!' reproduced_bug_commands=['bin/test sympy/utilities/tests/test_lambdify_rational.py']
+2025-10-05 11:54:15,188 - thread-139660780025408.app.docker.base_container - INFO - Cleaning up container and temporary files
+2025-10-05 11:54:15,188 - thread-139660780025408.app.docker.base_container - INFO - Closing persistent shell...
+2025-10-05 11:54:15,288 - thread-139660780025408.app.docker.base_container - INFO - Cleaning up container and temporary files
