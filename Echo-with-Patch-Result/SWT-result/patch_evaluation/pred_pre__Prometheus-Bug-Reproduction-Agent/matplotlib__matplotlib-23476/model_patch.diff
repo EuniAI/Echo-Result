@@ -1,0 +1,43 @@
+diff --git a/lib/matplotlib/tests/test_dpi_scaling_pickle.py b/lib/matplotlib/tests/test_dpi_scaling_pickle.py
+new file mode 100644
+index 0000000000..b87ceb0db9
+--- /dev/null
++++ b/lib/matplotlib/tests/test_dpi_scaling_pickle.py
+@@ -0,0 +1,37 @@
++import pickle
++import platform
++
++import pytest
++
++import matplotlib as mpl
++import matplotlib.pyplot as plt
++
++
++def test_unpickle_dpi_scaling():
++    """
++    Test that unpickling a figure does not incorrectly scale the DPI.
++
++    This test simulates the behavior of a high-DPI display where the backend
++    sets a device pixel ratio. The bug occurs when unpickling creates a new
++    canvas and incorrectly resets the figure's `_original_dpi`, leading to
++    the DPI being scaled a second time.
++    """
++    # Create a figure with a base DPI.
++    fig = plt.figure(dpi=100)
++    
++    # 1. Simulate the first scaling on a high-DPI display.
++    #    A backend would call `_set_device_pixel_ratio`, we do it manually.
++    fig.canvas._set_device_pixel_ratio(2.0)
++    scaled_dpi = 200.0
++
++    # 2. Pickle and unpickle the figure.
++    buf = pickle.dumps(fig)
++    unpickled_fig = pickle.loads(buf)
++
++    # 3. On unpickling, a new canvas is created. On a high-DPI backend,
++    #    this would again trigger a call to `_set_device_pixel_ratio`.
++    unpickled_fig.canvas._set_device_pixel_ratio(2.0)
++
++    # With the bug, the DPI would be scaled again (100 -> 200 -> 400).
++    # With the fix, the DPI should remain at the correctly scaled value.
++    assert unpickled_fig.dpi == scaled_dpi

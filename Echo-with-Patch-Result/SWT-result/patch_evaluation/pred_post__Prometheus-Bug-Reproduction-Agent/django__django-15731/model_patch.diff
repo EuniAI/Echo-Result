@@ -1,0 +1,40 @@
+diff --git a/tests/test_manager_signature.py b/tests/test_manager_signature.py
+new file mode 100644
+index 0000000000..1da4d4227b
+--- /dev/null
++++ b/tests/test_manager_signature.py
+@@ -0,0 +1,34 @@
++import inspect
++
++from django.db import models
++from django.db.models.query import QuerySet
++from django.test import TestCase
++
++
++class Person(models.Model):
++    name = models.CharField(max_length=100)
++
++    class Meta:
++        app_label = "manager_signature"
++
++
++class ManagerSignatureTests(TestCase):
++    def test_manager_method_signature(self):
++        """
++        inspect.signature() should return the correct signature for manager
++        methods that are proxied from QuerySet.
++        """
++        # On the buggy version, this is (*args, **kwargs).
++        manager_sig = inspect.signature(Person.objects.bulk_create)
++
++        # The signature from the source QuerySet method is the source of truth.
++        queryset_sig = inspect.signature(QuerySet.bulk_create)
++
++        # The expected signature on the manager is the same as the queryset
++        # method, but without the 'self' parameter, as inspect.signature() on
++        # a bound method omits it.
++        expected_params = list(queryset_sig.parameters.values())[1:]
++        expected_sig = inspect.Signature(parameters=expected_params)
++
++        # This will fail on the old code and pass on the new code.
++        self.assertEqual(manager_sig, expected_sig)

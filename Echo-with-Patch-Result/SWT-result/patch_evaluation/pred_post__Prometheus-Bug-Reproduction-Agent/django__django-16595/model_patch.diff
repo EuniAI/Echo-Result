@@ -1,0 +1,79 @@
+diff --git a/tests/test_migrations_optimizer.py b/tests/test_migrations_optimizer.py
+new file mode 100644
+index 0000000000..3ea64e5582
+--- /dev/null
++++ b/tests/test_migrations_optimizer.py
+@@ -0,0 +1,73 @@
++import unittest
++from django.db import migrations, models
++from django.db.migrations.optimizer import MigrationOptimizer
++from django.db.migrations.serializer import serializer_factory
++from django.test import SimpleTestCase
++
++
++class OptimizerTests(SimpleTestCase):
++    """
++    Tests the migration optimizer.
++    """
++
++    def optimize(self, operations, app_label):
++        """
++        Handy shortcut for getting results + number of loops
++        """
++        optimizer = MigrationOptimizer()
++        return optimizer.optimize(operations, app_label), optimizer._iterations
++
++    def serialize(self, value):
++        return serializer_factory(value).serialize()[0]
++
++    def assertOptimizesTo(
++        self, operations, expected, exact=None, less_than=None, app_label=None
++    ):
++        result, iterations = self.optimize(operations, app_label or "migrations")
++        result = [self.serialize(f) for f in result]
++        expected = [self.serialize(f) for f in expected]
++        self.assertEqual(expected, result)
++        if exact is not None and iterations != exact:
++            raise self.failureException(
++                "Optimization did not take exactly %s iterations (it took %s)"
++                % (exact, iterations)
++            )
++        if less_than is not None and iterations >= less_than:
++            raise self.failureException(
++                "Optimization did not take less than %s iterations (it took %s)"
++                % (less_than, iterations)
++            )
++
++    def test_alter_field_alter_field(self):
++        """
++        Multiple AlterField operations should be optimized into a single one.
++        """
++        operations = [
++            migrations.AlterField(
++                model_name="Book",
++                name="title",
++                field=models.CharField(max_length=128, null=True),
++            ),
++            migrations.AlterField(
++                model_name="Book",
++                name="title",
++                field=models.CharField(max_length=128, null=True, help_text="help"),
++            ),
++            migrations.AlterField(
++                model_name="Book",
++                name="title",
++                field=models.CharField(
++                    max_length=128, null=True, help_text="help", default=None
++                ),
++            ),
++        ]
++        expected = [
++            migrations.AlterField(
++                model_name="Book",
++                name="title",
++                field=models.CharField(
++                    max_length=128, null=True, help_text="help", default=None
++                ),
++            ),
++        ]
++        self.assertOptimizesTo(operations, expected, app_label="books")

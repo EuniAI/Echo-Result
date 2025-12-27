@@ -1,0 +1,43 @@
+diff --git a/tests/test_mail_unicode_domain.py b/tests/test_mail_unicode_domain.py
+new file mode 100644
+index 0000000000..3eca8b8cdb
+--- /dev/null
++++ b/tests/test_mail_unicode_domain.py
+@@ -0,0 +1,37 @@
++from django.conf import settings
++
++# The test runner can fail with an ImproperlyConfigured error if settings
++# are not configured before test discovery begins. This explicit configuration
++# ensures the test environment is correctly set up, especially when tests are
++# run in a standalone fashion.
++if not settings.configured:
++    settings.configure(
++        # A dummy SECRET_KEY is required for Django's settings object to be valid.
++        SECRET_KEY='dummy-key-for-testing',
++    )
++
++from unittest.mock import patch
++from django.core.mail import EmailMessage
++from django.test import SimpleTestCase, override_settings
++
++
++# Overriding EMAIL_BACKEND is a clean way to ensure the test uses a specific
++# backend without affecting global configuration.
++@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
++class MailUnicodeDomainTests(SimpleTestCase):
++    def test_unicode_dns_with_non_unicode_encoding(self):
++        """
++        Punycode is used for non-ASCII domain names in Message-ID when the
++        email encoding is not Unicode.
++        """
++        # Patch DNS_NAME to simulate a non-ASCII hostname.
++        with patch('django.core.mail.message.DNS_NAME', '漢字'):
++            email = EmailMessage(
++                'subject', '', 'from@example.com', ['to@example.com']
++            )
++            # Set a non-Unicode encoding to trigger the bug.
++            email.encoding = 'iso-8859-1'
++            # This call fails on unpatched code with a UnicodeEncodeError.
++            message = email.message()
++            # The patched code should use IDNA (punycode) to encode the domain.
++            self.assertIn('xn--p8s937b', message['Message-ID'])

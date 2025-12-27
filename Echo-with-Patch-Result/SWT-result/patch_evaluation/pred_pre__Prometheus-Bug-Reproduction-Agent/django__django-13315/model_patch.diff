@@ -1,0 +1,68 @@
+diff --git a/model_forms/tests/test_limit_choices_to_duplicates.py b/model_forms/tests/test_limit_choices_to_duplicates.py
+new file mode 100644
+index 0000000000..1c38ffed62
+--- /dev/null
++++ b/model_forms/tests/test_limit_choices_to_duplicates.py
+@@ -0,0 +1,62 @@
++from django.db import models
++from django.db.models import Q
++from django.forms.models import modelform_factory
++from django.test import TestCase
++
++
++# Models for regression test for #15132
++class LCTGroup(models.Model):
++    name = models.CharField(max_length=20)
++
++    class Meta:
++        app_label = "model_forms"
++
++
++class LCTPerson(models.Model):
++    name = models.CharField(max_length=20)
++
++    class Meta:
++        app_label = "model_forms"
++
++
++class LCTMembership(models.Model):
++    person = models.ForeignKey(LCTPerson, models.CASCADE)
++    group = models.ForeignKey(LCTGroup, models.CASCADE)
++
++    class Meta:
++        app_label = "model_forms"
++
++
++class LCTMessage(models.Model):
++    author = models.ForeignKey(
++        LCTPerson,
++        models.CASCADE,
++        limit_choices_to=Q(lctmembership__group__name="foo"),
++    )
++
++    class Meta:
++        app_label = "model_forms"
++
++
++class LimitChoicesToDuplicatesTest(TestCase):
++    def test_limit_choices_to_q_object_with_join(self):
++        """
++        Regression test for #15132.
++
++        A Q object as limit_choices_to on a ForeignKey involving a join could
++        result in duplicate choices in a formfield.
++        """
++        group = LCTGroup.objects.create(name="foo")
++        person = LCTPerson.objects.create(name="test_user")
++        # Create two memberships to the same group to introduce duplication
++        # in the join.
++        LCTMembership.objects.create(person=person, group=group)
++        LCTMembership.objects.create(person=person, group=group)
++
++        MessageForm = modelform_factory(LCTMessage, fields=["author"])
++        form = MessageForm()
++
++        # The queryset for the 'author' field should not contain duplicates.
++        # Before the fix, the join on LCTMembership causes the person to
++        # appear twice.
++        self.assertEqual(form.fields["author"].queryset.count(), 1)

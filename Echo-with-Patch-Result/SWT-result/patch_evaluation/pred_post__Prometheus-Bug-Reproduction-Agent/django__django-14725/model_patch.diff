@@ -1,0 +1,41 @@
+diff --git a/tests/test_modelformset_edit_only.py b/tests/test_modelformset_edit_only.py
+new file mode 100644
+index 0000000000..ba76d44cdb
+--- /dev/null
++++ b/tests/test_modelformset_edit_only.py
+@@ -0,0 +1,35 @@
++from django.forms.models import modelformset_factory
++from django.test import TestCase
++
++from .models import Author
++
++
++class EditOnlyModelFormsetTest(TestCase):
++    def test_edit_only_formset_with_initial_data(self):
++        """
++        A model formset with max_num=0, validate_max=True, and
++        can_delete=False should be valid if it only contains initial forms.
++        """
++        author = Author.objects.create(name='Charles Baudelaire')
++        AuthorFormSet = modelformset_factory(
++            Author,
++            fields='__all__',
++            max_num=0,
++            validate_max=True,
++            extra=0,
++            can_delete=False,
++        )
++        # POST data for only the existing author.
++        data = {
++            'form-TOTAL_FORMS': '1',
++            'form-INITIAL_FORMS': '1',
++            'form-0-id': str(author.pk),
++            'form-0-name': 'Charles Baudelaire (edited)',
++        }
++        formset = AuthorFormSet(data=data, queryset=Author.objects.all())
++
++        # Before the fix, this fails with an AssertionError because total
++        # forms (1) > max_num (0). After the fix, this passes because new
++        # forms (0) <= max_num (0). can_delete=False is used to avoid an
++        # infinite recursion that would otherwise cause a timeout.
++        self.assertTrue(formset.is_valid())

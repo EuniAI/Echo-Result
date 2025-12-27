@@ -1,0 +1,41 @@
+diff --git a/tests/backends/base/test_execute_sql_flush_signature.py b/tests/backends/base/test_execute_sql_flush_signature.py
+new file mode 100644
+index 0000000000..4f0b9341a9
+--- /dev/null
++++ b/tests/backends/base/test_execute_sql_flush_signature.py
+@@ -0,0 +1,35 @@
++import unittest
++from unittest.mock import MagicMock, patch
++
++from django.db.backends.base.operations import BaseDatabaseOperations
++
++
++class ExecuteSqlFlushSignatureTest(unittest.TestCase):
++    """
++    Test the simplified signature of DatabaseOperations.execute_sql_flush().
++    """
++
++    @patch('django.db.backends.base.operations.transaction')
++    def test_execute_sql_flush_signature(self, mock_transaction):
++        """
++        Test that execute_sql_flush accepts a single `sql_list` argument.
++        """
++        mock_connection = MagicMock()
++        mock_connection.alias = 'default'
++        mock_connection.features.can_rollback_ddl = True
++        ops = BaseDatabaseOperations(mock_connection)
++        sql_list = ['DELETE FROM test_table;']
++
++        # Before the patch, this call fails with a TypeError because the
++        # required positional argument 'using' is missing.
++        # After the patch, this call is valid.
++        ops.execute_sql_flush(sql_list=sql_list)
++
++        # On the patched version, this should succeed, and we can assert
++        # that the transaction is started with the correct alias.
++        mock_transaction.atomic.assert_called_once_with(
++            using='default',
++            savepoint=True,
++        )
++        mock_cursor = mock_connection.cursor.return_value.__enter__.return_value
++        mock_cursor.execute.assert_called_once_with(sql_list[0])

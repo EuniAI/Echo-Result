@@ -1,0 +1,55 @@
+diff --git a/tests/check_framework/test_model_default_auto_field.py b/tests/check_framework/test_model_default_auto_field.py
+new file mode 100644
+index 0000000000..b73b366318
+--- /dev/null
++++ b/tests/check_framework/test_model_default_auto_field.py
+@@ -0,0 +1,49 @@
++from unittest import mock
++
++from django.core import checks
++from django.core.checks import Warning
++from django.db import models
++from django.test import SimpleTestCase
++from django.test.utils import isolate_apps, override_settings, override_system_checks
++
++
++def mocked_is_overridden(self, setting):
++    # Force treating DEFAULT_AUTO_FIELD = 'django.db.models.AutoField' as a not
++    # overridden setting.
++    return (
++        setting != 'DEFAULT_AUTO_FIELD' or
++        self.DEFAULT_AUTO_FIELD != 'django.db.models.AutoField'
++    )
++
++
++@mock.patch('django.conf.UserSettingsHolder.is_overridden', mocked_is_overridden)
++@override_settings(DEFAULT_AUTO_FIELD='django.db.models.AutoField')
++@isolate_apps('check_framework.apps.CheckDefaultPKConfig', attr_name='apps')
++@override_system_checks([checks.model_checks.check_all_models])
++class ModelDefaultAutoFieldTests(SimpleTestCase):
++    def test_multi_table_inheritance(self):
++        """
++        W042 is not raised for a model with a primary key inherited from a
++        parent model.
++        """
++        class Parent(models.Model):
++            pass
++
++        class Child(Parent):
++            pass
++
++        # The warning is expected for Parent, but not for Child.
++        self.assertEqual(checks.run_checks(app_configs=self.apps.get_app_configs()), [
++            Warning(
++                "Auto-created primary key used when not defining a primary "
++                "key type, by default 'django.db.models.AutoField'.",
++                hint=(
++                    "Configure the DEFAULT_AUTO_FIELD setting or the "
++                    "CheckDefaultPKConfig.default_auto_field attribute to "
++                    "point to a subclass of AutoField, e.g. "
++                    "'django.db.models.BigAutoField'."
++                ),
++                obj=Parent,
++                id='models.W042',
++            ),
++        ])

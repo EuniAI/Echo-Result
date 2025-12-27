@@ -1,0 +1,42 @@
+diff --git a/tests/test_fast_delete_combination.py b/tests/test_fast_delete_combination.py
+new file mode 100644
+index 0000000000..d74d2336c4
+--- /dev/null
++++ b/tests/test_fast_delete_combination.py
+@@ -0,0 +1,36 @@
++from django.test import TestCase
++
++from .models import Origin, Referrer, SecondReferrer
++
++
++class FastDeleteCombinationTests(TestCase):
++    def test_fast_delete_combined_queries(self):
++        """
++        When a model is referenced by multiple FKs from another model,
++        fast-deleting an instance of the first model should combine the
++        cascading deletes on the second model into a single query.
++        """
++        origin = Origin.objects.create()
++        ref_to_delete = Referrer.objects.create(
++            origin=origin, unique_field=1, large_field='foo'
++        )
++        other_ref = Referrer.objects.create(
++            origin=origin, unique_field=2, large_field='bar'
++        )
++
++        # This object will be deleted via the `referrer` FK cascade.
++        SecondReferrer.objects.create(referrer=ref_to_delete, other_referrer=other_ref)
++        # This object will be deleted via the `other_referrer` FK cascade.
++        SecondReferrer.objects.create(referrer=other_ref, other_referrer=ref_to_delete)
++
++        # Deleting `ref_to_delete` triggers two cascades to SecondReferrer.
++        # Before the fix, this is two separate fast delete queries. With the
++        # fix, these are combined into one.
++        # Queries:
++        # 1. DELETE FROM SecondReferrer WHERE ... (combined)
++        # 2. DELETE FROM Referrer WHERE ...
++        with self.assertNumQueries(2):
++            ref_to_delete.delete()
++
++        self.assertFalse(Referrer.objects.filter(pk=ref_to_delete.pk).exists())
++        self.assertEqual(SecondReferrer.objects.count(), 0)

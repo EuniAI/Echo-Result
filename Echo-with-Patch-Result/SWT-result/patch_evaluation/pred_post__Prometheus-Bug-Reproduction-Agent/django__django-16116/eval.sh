@@ -1,0 +1,103 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 5d36a8266c7d5d1994d7a7eeb4016f80d9cb0401 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 5d36a8266c7d5d1994d7a7eeb4016f80d9cb0401
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/django/core/management/commands/makemigrations.py b/django/core/management/commands/makemigrations.py
+--- a/django/core/management/commands/makemigrations.py
++++ b/django/core/management/commands/makemigrations.py
+@@ -70,7 +70,10 @@ def add_arguments(self, parser):
+             "--check",
+             action="store_true",
+             dest="check_changes",
+-            help="Exit with a non-zero status if model changes are missing migrations.",
++            help=(
++                "Exit with a non-zero status if model changes are missing migrations "
++                "and don't actually write them."
++            ),
+         )
+         parser.add_argument(
+             "--scriptable",
+@@ -248,12 +251,12 @@ def handle(self, *app_labels, **options):
+                 else:
+                     self.log("No changes detected")
+         else:
++            if check_changes:
++                sys.exit(1)
+             if self.update:
+                 self.write_to_last_migration_files(changes)
+             else:
+                 self.write_migration_files(changes)
+-            if check_changes:
+-                sys.exit(1)
+ 
+     def write_to_last_migration_files(self, changes):
+         loader = MigrationLoader(connections[DEFAULT_DB_ALIAS])
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/migrations/test_makemigrations_check.py b/tests/migrations/test_makemigrations_check.py
+new file mode 100644
+index 0000000000..6e73b45f8f
+--- /dev/null
++++ b/tests/migrations/test_makemigrations_check.py
+@@ -0,0 +1,43 @@
++from unittest import mock
++
++from django.core.management import call_command
++from django.core.management.base import CommandError
++
++from .test_base import MigrationTestBase
++
++
++class MakeMigrationsCheckCommandTests(MigrationTestBase):
++    @mock.patch(
++        "django.core.management.commands.makemigrations.Command.write_migration_files"
++    )
++    def test_makemigrations_check_does_not_write_files(self, mock_write_migration_files):
++        """
++        makemigrations --check should not write any migration files.
++        """
++        # An app with model changes but no migrations will trigger an exit.
++        with self.temporary_migration_module():
++            # The command should exit with a non-zero status because there are
++            # changes to be migrated.
++            with self.assertRaises(SystemExit):
++                call_command("makemigrations", "migrations", "--check", verbosity=0)
++
++        # Before the patch, write_migration_files() was called even with
++        # --check. After the patch, the command exits before calling it.
++        mock_write_migration_files.assert_not_called()
++
++    def test_makemigrations_check_no_changes(self):
++        """
++        makemigrations --check should exit with a zero status if there are no
++        changes.
++        """
++        # An app with no model changes.
++        with self.temporary_migration_module(
++            module="migrations.test_migrations_no_changes"
++        ):
++            try:
++                call_command("makemigrations", "migrations", "--check", verbosity=0)
++            except (CommandError, SystemExit):
++                self.fail(
++                    "makemigrations --check should not exit with an error if there "
++                    "are no changes."
++                )
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/core/management/commands/makemigrations\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 migrations.test_makemigrations_check
+cat coverage.cover
+git checkout 5d36a8266c7d5d1994d7a7eeb4016f80d9cb0401
+git apply /root/pre_state.patch

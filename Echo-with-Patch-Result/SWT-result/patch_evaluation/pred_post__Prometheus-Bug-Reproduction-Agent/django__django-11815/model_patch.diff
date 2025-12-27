@@ -1,0 +1,63 @@
+diff --git a/tests/migrations/test_writer_enum_serialization.py b/tests/migrations/test_writer_enum_serialization.py
+new file mode 100644
+index 0000000000..1fa640225e
+--- /dev/null
++++ b/tests/migrations/test_writer_enum_serialization.py
+@@ -0,0 +1,57 @@
++import enum
++import decimal
++
++from django.db import migrations, models
++from django.db.migrations.writer import MigrationWriter
++from django.test import SimpleTestCase
++from django.utils.translation import gettext_lazy as _
++
++
++# Enum with translatable value, defined at module level to be importable.
++class Status(enum.Enum):
++    GOOD = _('Good')
++
++
++class WriterTests(SimpleTestCase):
++    """
++    Tests the migration writer (makes migration files from Migration instances)
++    """
++
++    def safe_exec(self, string, value=None):
++        d = {}
++        try:
++            exec(string, globals(), d)
++        except Exception as e:
++            if value:
++                self.fail("Could not exec %r (from value %r): %s" % (string.strip(), value, e))
++            else:
++                self.fail("Could not exec %r: %s" % (string.strip(), e))
++        return d
++
++    def serialize_round_trip(self, value):
++        string, imports = MigrationWriter.serialize(value)
++        return self.safe_exec("%s\ntest_value_result = %s" % ("\n".join(imports), string), value)['test_value_result']
++
++    def assertSerializedEqual(self, value):
++        self.assertEqual(self.serialize_round_trip(value), value)
++
++    def assertSerializedResultEqual(self, value, target):
++        self.assertEqual(MigrationWriter.serialize(value), target)
++
++    def assertSerializedFieldEqual(self, value):
++        new_value = self.serialize_round_trip(value)
++        self.assertEqual(value.__class__, new_value.__class__)
++        self.assertEqual(value.max_length, new_value.max_length)
++        self.assertEqual(value.null, new_value.null)
++        self.assertEqual(value.unique, new_value.unique)
++
++    def test_serialize_translatable_enum(self):
++        """
++        When serializing an enum member with a translatable value, the name of
++        the member should be used rather than its value.
++        """
++        module_name = Status.__module__
++        self.assertSerializedResultEqual(
++            Status.GOOD,
++            (f'{module_name}.Status[\'GOOD\']', {f'import {module_name}'})
++        )

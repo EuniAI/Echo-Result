@@ -1,0 +1,85 @@
+diff --git a/tests/model_forms/test_inlineformset_uuid_fk.py b/tests/model_forms/test_inlineformset_uuid_fk.py
+new file mode 100644
+index 0000000000..fbedd6bbdd
+--- /dev/null
++++ b/tests/model_forms/test_inlineformset_uuid_fk.py
+@@ -0,0 +1,79 @@
++import uuid
++
++from django.db import models
++from django.forms import modelform_factory
++from django.forms.models import inlineformset_factory
++from django.test import TestCase
++
++
++# Models are based on the bug report.
++# `app_label` is set to `model_forms` to align with the test suite structure,
++# ensuring models are discovered and tables are created by the test runner.
++class Thing(models.Model):
++    pkid = models.BigAutoField(primary_key=True, editable=False)
++    id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
++    name = models.CharField(max_length=191)
++
++    class Meta:
++        app_label = "model_forms"
++
++
++class SubThing(models.Model):
++    name = models.CharField(max_length=191)
++    thing = models.ForeignKey(
++        Thing,
++        to_field="id",
++        on_delete=models.CASCADE,
++        related_name="subthings",
++    )
++
++    class Meta:
++        app_label = "model_forms"
++
++
++class InlineUUIDDefaultTests(TestCase):
++    def test_create_parent_with_uuid_to_field_and_inline(self):
++        """
++        A parent's UUID field default should be preserved when adding an inline
++        for a new, unsaved parent.
++        """
++        # 1. Define the forms for parent and inline child.
++        ThingForm = modelform_factory(Thing, fields=("name",))
++        SubThingFormSet = inlineformset_factory(
++            Thing, SubThing, fields=("name",), extra=1
++        )
++
++        # 2. Simulate POST data for creating a new parent and a new child.
++        data = {
++            "name": "thing",
++            "subthings-TOTAL_FORMS": "1",
++            "subthings-INITIAL_FORMS": "0",
++            "subthings-0-name": "subthing",
++        }
++
++        # 3. Validate the parent form and get an unsaved instance.
++        # At this point, `thing.id` has a default UUID value.
++        thing_form = ThingForm(data)
++        self.assertTrue(thing_form.is_valid())
++        thing = thing_form.save(commit=False)
++
++        # 4. Instantiate and validate the inline formset with the unsaved parent.
++        # On the unpatched codebase, this is where the bug is triggered:
++        # the `thing.id` field is incorrectly cleared (set to None).
++        formset = SubThingFormSet(data, instance=thing)
++        self.assertTrue(formset.is_valid())
++
++        # 5. Attempt to save the parent instance.
++        # Before the fix, this `save()` call fails with an `IntegrityError`
++        # because `thing.id` is `None`, violating the NOT NULL constraint.
++        # This is the expected failure that demonstrates the bug.
++        # After the fix, `thing.id` is preserved, and this save succeeds.
++        thing.save()
++
++        # 6. Save the formset. This code is only reached on the patched version.
++        formset.save()
++
++        # 7. Verify that the objects were created correctly in the database.
++        self.assertEqual(Thing.objects.count(), 1)
++        self.assertEqual(SubThing.objects.count(), 1)
++        self.assertEqual(SubThing.objects.get().thing, thing)

@@ -1,0 +1,160 @@
+2025-12-25 22:16:10,879 - WARNING - Starting evaluation at 1766700970.8795345
+2025-12-25 22:16:10,927 - INFO - Creating container for django__django-15554...
+2025-12-25 22:16:15,568 - INFO - Container for django__django-15554 created: 4ca3bd0fe3aecf3a84864309d11a7b6e7f4d5467f48071874396632735e4d02a
+2025-12-25 22:16:17,762 - INFO - Container for django__django-15554 started: 4ca3bd0fe3aecf3a84864309d11a7b6e7f4d5467f48071874396632735e4d02a
+2025-12-25 22:16:19,329 - INFO - Git diff before:
+
+2025-12-25 22:16:19,329 - INFO - Eval script for django__django-15554 written to eval.sh, now applying to container...
+2025-12-25 22:16:55,138 - INFO - Test output for django__django-15554 written to run_instance_swt_logs/patch_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/django__django-15554/test_output.txt
+2025-12-25 22:16:55,221 - INFO - Git diff after:
+diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py
+index 54f3258eac..efe0e28c89 100644
+--- a/django/db/models/sql/query.py
++++ b/django/db/models/sql/query.py
+@@ -1011,7 +1011,7 @@ class Query(BaseExpression):
+         """
+         return len([1 for count in self.alias_refcount.values() if count])
+ 
+-    def join(self, join, reuse=None):
++    def join(self, join, reuse=None, reuse_with_filtered_relation=False):
+         """
+         Return an alias for the 'join', either reusing an existing alias for
+         that join or creating a new one. 'join' is either a base_table_class or
+@@ -1020,15 +1020,23 @@ class Query(BaseExpression):
+         The 'reuse' parameter can be either None which means all joins are
+         reusable, or it can be a set containing the aliases that can be reused.
+ 
++        The 'reuse_with_filtered_relation' parameter is used when computing
++        FilteredRelation instances.
++
+         A join is always created as LOUTER if the lhs alias is LOUTER to make
+         sure chains like t1 LOUTER t2 INNER t3 aren't generated. All new
+         joins are created as LOUTER if the join is nullable.
+         """
+-        reuse_aliases = [
+-            a
+-            for a, j in self.alias_map.items()
+-            if (reuse is None or a in reuse) and j.equals(join)
+-        ]
++        if reuse_with_filtered_relation and reuse:
++            reuse_aliases = [
++                a for a, j in self.alias_map.items() if a in reuse and j.equals(join)
++            ]
++        else:
++            reuse_aliases = [
++                a
++                for a, j in self.alias_map.items()
++                if (reuse is None or a in reuse) and j == join
++            ]
+         if reuse_aliases:
+             if join.table_alias in reuse_aliases:
+                 reuse_alias = join.table_alias
+@@ -1323,6 +1331,7 @@ class Query(BaseExpression):
+         can_reuse=None,
+         allow_joins=True,
+         split_subq=True,
++        reuse_with_filtered_relation=False,
+         check_filterable=True,
+     ):
+         """
+@@ -1346,6 +1355,9 @@ class Query(BaseExpression):
+ 
+         The 'can_reuse' is a set of reusable joins for multijoins.
+ 
++        If 'reuse_with_filtered_relation' is True, then only joins in can_reuse
++        will be reused.
++
+         The method will create a filter clause that can be added to the current
+         query. However, if the filter isn't added to the query then the caller
+         is responsible for unreffing the joins used.
+@@ -1404,6 +1416,7 @@ class Query(BaseExpression):
+                 alias,
+                 can_reuse=can_reuse,
+                 allow_many=allow_many,
++                reuse_with_filtered_relation=reuse_with_filtered_relation,
+             )
+ 
+             # Prevent iterator from being consumed by check_related_objects()
+@@ -1565,6 +1578,7 @@ class Query(BaseExpression):
+                     current_negated=current_negated,
+                     allow_joins=True,
+                     split_subq=False,
++                    reuse_with_filtered_relation=True,
+                 )
+             target_clause.add(child_clause, connector)
+         return target_clause
+@@ -1716,7 +1730,15 @@ class Query(BaseExpression):
+                 break
+         return path, final_field, targets, names[pos + 1 :]
+ 
+-    def setup_joins(self, names, opts, alias, can_reuse=None, allow_many=True):
++    def setup_joins(
++        self,
++        names,
++        opts,
++        alias,
++        can_reuse=None,
++        allow_many=True,
++        reuse_with_filtered_relation=False,
++    ):
+         """
+         Compute the necessary table joins for the passage through the fields
+         given in 'names'. 'opts' is the Options class for the current model
+@@ -1728,6 +1750,9 @@ class Query(BaseExpression):
+         that can be reused. Note that non-reverse foreign keys are always
+         reusable when using setup_joins().
+ 
++        The 'reuse_with_filtered_relation' can be used to force 'can_reuse'
++        parameter and force the relation on the given connections.
++
+         If 'allow_many' is False, then any reverse foreign key seen will
+         generate a MultiJoin exception.
+ 
+@@ -1818,8 +1843,12 @@ class Query(BaseExpression):
+                 nullable,
+                 filtered_relation=filtered_relation,
+             )
+-            reuse = can_reuse if join.m2m else None
+-            alias = self.join(connection, reuse=reuse)
++            reuse = can_reuse if join.m2m or reuse_with_filtered_relation else None
++            alias = self.join(
++                connection,
++                reuse=reuse,
++                reuse_with_filtered_relation=reuse_with_filtered_relation,
++            )
+             joins.append(alias)
+             if filtered_relation:
+                 filtered_relation.path = joins[:]
+2025-12-25 22:16:55,221 - INFO - Git diff changed after running eval script
+2025-12-25 22:16:55,221 - INFO - Attempting to stop container exec.eval.x86_64.6b24dca158642bd6288384.4105b8d1d74a822ae63a89.129975669667984...
+2025-12-25 22:17:13,749 - INFO - Attempting to remove container exec.eval.x86_64.6b24dca158642bd6288384.4105b8d1d74a822ae63a89.129975669667984...
+2025-12-25 22:17:14,294 - INFO - Container exec.eval.x86_64.6b24dca158642bd6288384.4105b8d1d74a822ae63a89.129975669667984 removed.
+2025-12-25 22:17:14,295 - WARNING - End of eval at 1766701034.2950354
+2025-12-26 02:43:31,558 - WARNING - Starting evaluation at 1766717011.5581777
+2025-12-26 02:43:31,577 - WARNING - Starting evaluation at 1766717011.5776753
+2025-12-26 02:43:31,604 - WARNING - Starting evaluation at 1766717011.6040266
+2025-12-26 02:43:31,620 - WARNING - Starting evaluation at 1766717011.620253
+2025-12-26 02:43:31,644 - WARNING - Starting evaluation at 1766717011.644748
+2025-12-26 09:38:11,961 - WARNING - Starting evaluation at 1766741891.9615076
+2025-12-26 09:38:11,973 - WARNING - Starting evaluation at 1766741891.973565
+2025-12-26 09:38:11,985 - WARNING - Starting evaluation at 1766741891.9853718
+2025-12-26 09:38:11,997 - WARNING - Starting evaluation at 1766741891.9977965
+2025-12-26 09:38:12,007 - WARNING - Starting evaluation at 1766741892.0072696
+2025-12-26 09:53:36,686 - WARNING - Starting evaluation at 1766742816.6866374
+2025-12-26 09:53:36,696 - WARNING - Starting evaluation at 1766742816.6964314
+2025-12-26 09:53:36,706 - WARNING - Starting evaluation at 1766742816.7060223
+2025-12-26 09:53:36,713 - WARNING - Starting evaluation at 1766742816.7137914
+2025-12-26 09:53:36,722 - WARNING - Starting evaluation at 1766742816.7227163
+2025-12-26 10:15:30,456 - WARNING - Starting evaluation at 1766744130.4561477
+2025-12-26 10:15:30,469 - WARNING - Starting evaluation at 1766744130.4698143
+2025-12-26 10:15:30,484 - WARNING - Starting evaluation at 1766744130.4841487
+2025-12-26 10:15:30,502 - WARNING - Starting evaluation at 1766744130.502704
+2025-12-26 10:15:30,522 - WARNING - Starting evaluation at 1766744130.5221548
+2025-12-26 11:07:39,358 - WARNING - Starting evaluation at 1766747259.358189
+2025-12-26 11:07:39,367 - WARNING - Starting evaluation at 1766747259.367168
+2025-12-26 11:07:39,376 - WARNING - Starting evaluation at 1766747259.3765202
+2025-12-26 11:07:39,383 - WARNING - Starting evaluation at 1766747259.38354
+2025-12-26 11:07:39,394 - WARNING - Starting evaluation at 1766747259.394753
+2025-12-26 11:07:52,646 - INFO - Grading answer for django__django-15554...
+2025-12-26 11:07:52,655 - INFO - report: {'django__django-15554': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'coverage_pred': 0.875, 'coverage_gold': 1.0, 'coverage_base': 0.125, 'coverage_delta_pred': 0.75, 'coverage_delta_gold': 0.875, 'added_f2p': 0, 'tests_base': {'FAIL_TO_PASS': [], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_filtered_relation_join_reuse (unittest.loader._FailedTest)']}, 'tests_pred': {'FAIL_TO_PASS': [], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': []}, 'tests_gold': {'FAIL_TO_PASS': ['test_multiple_times (filtered_relation.tests.FilteredRelationTests)', 'test_multiple (filtered_relation.tests.FilteredRelationTests)'], 'PASS_TO_PASS': ['test_with_prefetch_related (filtered_relation.tests.FilteredRelationTests)', 'test_condition_outside_relation_name (filtered_relation.tests.FilteredRelationTests)', 'test_difference (filtered_relation.tests.FilteredRelationTests)', 'test_select_related_with_empty_relation (filtered_relation.tests.FilteredRelationTests)', 'test_internal_queryset_alias_mapping (filtered_relation.tests.FilteredRelationTests)', 'test_with_m2m_deep (filtered_relation.tests.FilteredRelationTests)', 'test_select_related (filtered_relation.tests.FilteredRelationTests)', 'test_nested_chained_relations (filtered_relation.tests.FilteredRelationTests)', 'test_condition_deeper_relation_name (filtered_relation.tests.FilteredRelationTests)', 'test_nested_foreign_key_nested_field (filtered_relation.tests.FilteredRelationTests)', 'test_with_generic_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_nested_foreign_key_filtered_base_object (filtered_relation.tests.FilteredRelationTests)', 'test_with_empty_relation_name_error (filtered_relation.tests.FilteredRelationTests)', 'test_without_join (filtered_relation.tests.FilteredRelationTests)', 'test_with_condition_as_expression_error (filtered_relation.tests.FilteredRelationTests)', 'test_aggregate (filtered_relation.tests.FilteredRelationAggregationTests)', 'test_with_join_and_complex_condition (filtered_relation.tests.FilteredRelationTests)', 'test_select_for_update (filtered_relation.tests.FilteredRelationTests)', 'test_relation_name_lookup (filtered_relation.tests.FilteredRelationTests)', 'test_with_m2m (filtered_relation.tests.FilteredRelationTests)', 'test_defer (filtered_relation.tests.FilteredRelationTests)', 'test_nested_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_exclude_relation_with_join (filtered_relation.tests.FilteredRelationTests)', 'test_intersection (filtered_relation.tests.FilteredRelationTests)', 'test_select_related_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_aggregate (filtered_relation.tests.FilteredRelationAnalyticalAggregationTests)', 'test_deep_nested_foreign_key (filtered_relation.tests.FilteredRelationTests)', 'test_values_list (filtered_relation.tests.FilteredRelationTests)', 'test_select_related_multiple (filtered_relation.tests.FilteredRelationTests)', 'test_only_not_supported (filtered_relation.tests.FilteredRelationTests)', 'test_with_exclude (filtered_relation.tests.FilteredRelationTests)', 'test_eq (filtered_relation.tests.FilteredRelationTests)', 'test_union (filtered_relation.tests.FilteredRelationTests)', 'test_values (filtered_relation.tests.FilteredRelationTests)', 'test_with_multiple_filter (filtered_relation.tests.FilteredRelationTests)', 'test_with_m2m_multijoin (filtered_relation.tests.FilteredRelationTests)', 'test_as_subquery (filtered_relation.tests.FilteredRelationTests)', 'test_nested_m2m_filtered (filtered_relation.tests.FilteredRelationTests)', 'test_extra (filtered_relation.tests.FilteredRelationTests)', 'test_with_join (filtered_relation.tests.FilteredRelationTests)'], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_select_related_foreign_key_for_update_of (filtered_relation.tests.FilteredRelationTests)']}}}
+Result for django__django-15554: resolved: False

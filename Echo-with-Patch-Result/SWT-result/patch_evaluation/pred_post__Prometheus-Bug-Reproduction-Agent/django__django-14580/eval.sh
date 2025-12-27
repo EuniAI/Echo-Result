@@ -1,0 +1,93 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 36fa071d6ebd18a61c4d7f1b5c9d17106134bd44 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 36fa071d6ebd18a61c4d7f1b5c9d17106134bd44
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/django/db/migrations/serializer.py b/django/db/migrations/serializer.py
+--- a/django/db/migrations/serializer.py
++++ b/django/db/migrations/serializer.py
+@@ -273,7 +273,7 @@ def _format(self):
+ class TypeSerializer(BaseSerializer):
+     def serialize(self):
+         special_cases = [
+-            (models.Model, "models.Model", []),
++            (models.Model, "models.Model", ['from django.db import models']),
+             (type(None), 'type(None)', []),
+         ]
+         for case, string, imports in special_cases:
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/django/db/migrations/tests/test_writer_bug.py b/django/db/migrations/tests/test_writer_bug.py
+new file mode 100644
+index 0000000000..aab2e392c2
+--- /dev/null
++++ b/django/db/migrations/tests/test_writer_bug.py
+@@ -0,0 +1,51 @@
++import sys
++from django.db import migrations, models
++from django.db.migrations.writer import MigrationWriter
++from django.test import SimpleTestCase
++
++# Define a mixin class directly in the test module to ensure the test is
++# self-contained and avoids any ModuleNotFoundError issues.
++# We also need to add it to sys.modules so the `exec` in the test can find it.
++class MyMixin:
++    pass
++
++sys.modules['migrations.test_writer_bug'] = sys.modules[__name__]
++
++class MigrationWriterNameErrorTest(SimpleTestCase):
++    def test_create_model_with_mixin_and_model_base(self):
++        """
++        Tests that a CreateModel operation with `models.Model` in a `bases`
++        tuple generates a valid, executable migration.
++
++        The bug is that `models.Model` is serialized without its required
++        import, leading to a NameError when the migration file is executed.
++        """
++        operation = migrations.CreateModel(
++            name='MyModel',
++            fields=[],  # No fields are needed to reproduce the bug.
++            bases=(MyMixin, models.Model),
++        )
++        migration = type('Migration', (migrations.Migration,), {
++            'app_label': 'migrations',
++            'operations': [operation],
++            'dependencies': [],
++        })
++
++        writer = MigrationWriter(migration)
++        output = writer.as_string()
++
++        # Execute the generated migration code in an empty scope.
++        # On the buggy version, this will fail with a NameError because
++        # 'models' is not defined.
++        # On the fixed version, the import will be present and it will pass.
++        scope = {}
++        try:
++            exec(output, scope)
++        except NameError:
++            self.fail(
++                "Executing the generated migration failed with a NameError. "
++                "This confirms the bug where 'models.Model' is used in `bases` "
++                "without the corresponding 'models' import."
++            )
++        # A minimal assertion to confirm the migration class was created in the scope.
++        self.assertIn('Migration', scope)
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/db/migrations/serializer\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 django.db.migrations.tests.test_writer_bug
+cat coverage.cover
+git checkout 36fa071d6ebd18a61c4d7f1b5c9d17106134bd44
+git apply /root/pre_state.patch

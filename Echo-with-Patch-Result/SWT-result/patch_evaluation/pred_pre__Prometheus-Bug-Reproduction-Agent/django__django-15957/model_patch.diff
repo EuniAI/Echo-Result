@@ -1,0 +1,58 @@
+diff --git a/tests/prefetch_related/test_sliced_prefetch.py b/tests/prefetch_related/test_sliced_prefetch.py
+new file mode 100644
+index 0000000000..a9ec7842c3
+--- /dev/null
++++ b/tests/prefetch_related/test_sliced_prefetch.py
+@@ -0,0 +1,52 @@
++from django.db import models
++from django.db.models import Prefetch
++from django.test import TestCase
++
++
++class Category(models.Model):
++    name = models.CharField(max_length=255)
++
++    class Meta:
++        app_label = "prefetch_related"
++        ordering = ["id"]
++
++
++class Post(models.Model):
++    title = models.CharField(max_length=255)
++    category = models.ForeignKey(
++        Category, on_delete=models.CASCADE, related_name="post_set"
++    )
++
++    class Meta:
++        app_label = "prefetch_related"
++        ordering = ["id"]
++
++
++class SlicedPrefetchTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.category = Category.objects.create(name="Test Category")
++        # Create more posts than the slice limit to test the slicing.
++        for i in range(5):
++            Post.objects.create(title=f"Post {i}", category=cls.category)
++
++    def test_prefetch_with_sliced_queryset(self):
++        """
++        Tests that a sliced queryset can be used in a Prefetch object.
++        """
++        # This query uses a sliced queryset in a Prefetch, which would fail
++        # before the fix.
++        categories_qs = Category.objects.prefetch_related(
++            Prefetch(
++                "post_set",
++                queryset=Post.objects.order_by("title")[:3],
++                to_attr="example_posts",
++            )
++        )
++
++        # Evaluating the queryset triggers the prefetch and the bug.
++        category = categories_qs.get()
++
++        # This assertion verifies that the slice was correctly applied to the
++        # prefetched objects for the given category.
++        self.assertEqual(len(category.example_posts), 3)

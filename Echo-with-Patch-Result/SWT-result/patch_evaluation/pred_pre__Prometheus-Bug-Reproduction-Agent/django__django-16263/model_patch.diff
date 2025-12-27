@@ -1,0 +1,35 @@
+diff --git a/regression_tests/test_strip_unused_annotations.py b/regression_tests/test_strip_unused_annotations.py
+new file mode 100644
+index 0000000000..9ea233975e
+--- /dev/null
++++ b/regression_tests/test_strip_unused_annotations.py
+@@ -0,0 +1,29 @@
++from django.db import connection
++from django.db.models import Count
++from django.test import TestCase
++from django.test.utils import CaptureQueriesContext
++
++from .models import Book, Chapter
++
++
++class StripUnusedAnnotationsTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        book = Book.objects.create(name="The Unused Annotation")
++        Chapter.objects.create(title="Chapter 1", book=book)
++
++    def test_unused_annotation_is_stripped_from_count(self):
++        """
++        An annotation that is not used by any other part of the query should
++        be stripped from a .count() call.
++        """
++        with CaptureQueriesContext(connection) as queries:
++            annotated_qs = Book.objects.annotate(chapters_count=Count("chapter"))
++            self.assertEqual(annotated_qs.count(), 1)
++        annotated_sql = queries[0]["sql"]
++
++        with CaptureQueriesContext(connection) as queries_simple:
++            self.assertEqual(Book.objects.count(), 1)
++        simple_sql = queries_simple[0]["sql"]
++
++        self.assertEqual(annotated_sql, simple_sql)

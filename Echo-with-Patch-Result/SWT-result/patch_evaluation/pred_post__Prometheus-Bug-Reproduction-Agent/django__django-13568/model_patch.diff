@@ -1,0 +1,38 @@
+diff --git a/tests/auth_tests/test_user_model_unique_constraint.py b/tests/auth_tests/test_user_model_unique_constraint.py
+new file mode 100644
+index 0000000000..2aeb113619
+--- /dev/null
++++ b/tests/auth_tests/test_user_model_unique_constraint.py
+@@ -0,0 +1,32 @@
++from django.contrib.auth.checks import check_user_model
++from django.contrib.auth.models import AbstractBaseUser
++from django.core import checks
++from django.db import models
++from django.db.models.constraints import UniqueConstraint
++from django.test import SimpleTestCase, override_settings, override_system_checks
++from django.test.utils import isolate_apps
++
++
++@isolate_apps('auth_tests', attr_name='apps')
++@override_system_checks([check_user_model])
++class UserModelChecksWithUniqueConstraintTests(SimpleTestCase):
++    @override_settings(AUTH_USER_MODEL='auth_tests.UserWithUniqueConstraint')
++    def test_username_field_unique_constraint(self):
++        """
++        auth.E003 is not raised when USERNAME_FIELD has a UniqueConstraint.
++        """
++        class UserWithUniqueConstraint(AbstractBaseUser):
++            username = models.CharField(max_length=150)
++            USERNAME_FIELD = 'username'
++
++            class Meta:
++                constraints = [
++                    UniqueConstraint(fields=['username'], name='user_username_unq'),
++                ]
++                app_label = 'auth_tests'
++
++        errors = checks.run_checks(app_configs=self.apps.get_app_configs())
++        # Before the patch, `errors` contains auth.E003, so this assertion
++        # fails. After the patch, the check is aware of UniqueConstraint,
++        # `errors` is empty, and the assertion passes.
++        self.assertEqual(errors, [])

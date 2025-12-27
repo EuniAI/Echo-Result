@@ -1,0 +1,49 @@
+diff --git a/tests/migrations/test_makemigrations_check.py b/tests/migrations/test_makemigrations_check.py
+new file mode 100644
+index 0000000000..6e73b45f8f
+--- /dev/null
++++ b/tests/migrations/test_makemigrations_check.py
+@@ -0,0 +1,43 @@
++from unittest import mock
++
++from django.core.management import call_command
++from django.core.management.base import CommandError
++
++from .test_base import MigrationTestBase
++
++
++class MakeMigrationsCheckCommandTests(MigrationTestBase):
++    @mock.patch(
++        "django.core.management.commands.makemigrations.Command.write_migration_files"
++    )
++    def test_makemigrations_check_does_not_write_files(self, mock_write_migration_files):
++        """
++        makemigrations --check should not write any migration files.
++        """
++        # An app with model changes but no migrations will trigger an exit.
++        with self.temporary_migration_module():
++            # The command should exit with a non-zero status because there are
++            # changes to be migrated.
++            with self.assertRaises(SystemExit):
++                call_command("makemigrations", "migrations", "--check", verbosity=0)
++
++        # Before the patch, write_migration_files() was called even with
++        # --check. After the patch, the command exits before calling it.
++        mock_write_migration_files.assert_not_called()
++
++    def test_makemigrations_check_no_changes(self):
++        """
++        makemigrations --check should exit with a zero status if there are no
++        changes.
++        """
++        # An app with no model changes.
++        with self.temporary_migration_module(
++            module="migrations.test_migrations_no_changes"
++        ):
++            try:
++                call_command("makemigrations", "migrations", "--check", verbosity=0)
++            except (CommandError, SystemExit):
++                self.fail(
++                    "makemigrations --check should not exit with an error if there "
++                    "are no changes."
++                )

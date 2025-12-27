@@ -1,0 +1,52 @@
+diff --git a/model_inheritance/tests/test_reset_pk_on_child.py b/model_inheritance/tests/test_reset_pk_on_child.py
+new file mode 100644
+index 0000000000..b9384edc26
+--- /dev/null
++++ b/model_inheritance/tests/test_reset_pk_on_child.py
+@@ -0,0 +1,46 @@
++from django.test import TestCase
++from model_inheritance.models import Place, Restaurant
++
++class ResetPrimaryKeyOnChildTest(TestCase):
++    """
++    Tests that resetting a primary key on a child model with multi-table
++    inheritance creates a new parent object on save, instead of updating
++    the original parent.
++    """
++
++    def test_resetting_pk_on_child_model(self):
++        """
++        Reproduces the bug where saving a child instance with a reset PK
++        incorrectly overwrites the parent instance.
++        """
++        # 1. Create an initial Restaurant object. This also creates a parent
++        #    Place object. We set serves_hot_dogs to True.
++        r = Restaurant.objects.create(
++            name="Original Dogs",
++            address="123 Main St",
++            serves_hot_dogs=True,
++        )
++        original_place_pk = r.pk
++
++        # 2. Get the same restaurant object to modify it.
++        r_to_modify = Restaurant.objects.get(pk=original_place_pk)
++
++        # 3. Reset the primary key fields to None. This should signal that
++        #    we want to create a *new* object on save. We also change the
++        #    boolean field's value.
++        r_to_modify.pk = None
++        r_to_modify.place_ptr_id = None
++        r_to_modify.serves_hot_dogs = False
++
++        # 4. Save the modified object.
++        #    THE BUG: This action incorrectly updates the original Place and
++        #    Restaurant records instead of creating new ones.
++        r_to_modify.save()
++
++        # 5. Fetch the original Place object via its original PK.
++        original_place = Place.objects.get(pk=original_place_pk)
++
++        # 6. Assert that the original restaurant's data is unchanged.
++        #    This assertion will fail on the unpatched code because the bug
++        #    causes `serves_hot_dogs` to be overwritten to False.
++        self.assertTrue(original_place.restaurant.serves_hot_dogs)

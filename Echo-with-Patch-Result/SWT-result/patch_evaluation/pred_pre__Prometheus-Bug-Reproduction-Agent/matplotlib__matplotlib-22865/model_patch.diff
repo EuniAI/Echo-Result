@@ -1,0 +1,45 @@
+diff --git a/lib/matplotlib/tests/test_colorbar_drawedges.py b/lib/matplotlib/tests/test_colorbar_drawedges.py
+new file mode 100644
+index 0000000000..4f5099e9c9
+--- /dev/null
++++ b/lib/matplotlib/tests/test_colorbar_drawedges.py
+@@ -0,0 +1,39 @@
++import numpy as np
++import matplotlib as mpl
++import matplotlib.pyplot as plt
++from matplotlib.colors import from_levels_and_colors
++import pytest
++
++
++def test_colorbar_drawedges_extended():
++    """
++    Test that colorbar with drawedges=True and extend='both' draws all edges.
++
++    This is a regression test for a bug where the lines at the boundaries
++    between the main colorbar area and the extensions were not being drawn.
++    """
++    # Setup from the bug report that reproduces the issue.
++    my_cmap = mpl.cm.viridis
++    bounds = np.arange(10)
++    # The number of colors used here is inconsistent with from_levels_and_colors
++    # documentation, but we follow the bug report's example.
++    nb_colors = len(bounds) + 1
++    colors = my_cmap(np.linspace(100, 255, nb_colors).astype(int))
++    my_cmap, my_norm = from_levels_and_colors(bounds, colors, extend='both')
++
++    fig, ax = plt.subplots()
++    # The object of interest is the ColorbarBase instance.
++    cbar = mpl.colorbar.ColorbarBase(
++        ax, cmap=my_cmap, norm=my_norm, orientation='horizontal',
++        drawedges=True)
++
++    # `bounds` has 10 values, which define 9 color intervals. With
++    # `extend='both'`, there are 11 color regions separated by 10 boundaries.
++    # `drawedges=True` should draw a line at each of these 10 boundaries.
++    # The bug was that the two outer boundaries were sliced off, resulting in
++    # only 8 divider lines.
++    num_segments = len(cbar.dividers.get_segments())
++
++    # Before the fix, num_segments is 8. After the fix, it should be 10.
++    # The number of dividers should be equal to the number of boundaries.
++    assert num_segments == len(bounds)

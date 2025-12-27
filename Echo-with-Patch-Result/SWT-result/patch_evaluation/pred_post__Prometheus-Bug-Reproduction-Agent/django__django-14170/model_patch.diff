@@ -1,0 +1,65 @@
+diff --git a/tests/db_functions/datetime/test_iso_year_boundary.py b/tests/db_functions/datetime/test_iso_year_boundary.py
+new file mode 100644
+index 0000000000..1769f08480
+--- /dev/null
++++ b/tests/db_functions/datetime/test_iso_year_boundary.py
+@@ -0,0 +1,59 @@
++from datetime import datetime, timedelta, timezone as datetime_timezone
++
++import pytz
++
++try:
++    import zoneinfo
++except ImportError:
++    try:
++        from backports import zoneinfo
++    except ImportError:
++        zoneinfo = None
++
++from django.conf import settings
++from django.db.models import (
++    DateField, DateTimeField, F, IntegerField, Max, OuterRef, Subquery,
++    TimeField,
++)
++from django.db.models.functions import (
++    Extract, ExtractDay, ExtractHour, ExtractIsoWeekDay, ExtractIsoYear,
++    ExtractMinute, ExtractMonth, ExtractQuarter, ExtractSecond, ExtractWeek,
++    ExtractWeekDay, ExtractYear, Trunc, TruncDate, TruncDay, TruncHour,
++    TruncMinute, TruncMonth, TruncQuarter, TruncSecond, TruncTime, TruncWeek,
++    TruncYear,
++)
++from django.test import (
++    TestCase, override_settings, skipIfDBFeature, skipUnlessDBFeature,
++)
++from django.utils import timezone
++
++from ..models import DTModel
++
++
++@override_settings(USE_TZ=False)
++class DateFunctionTests(TestCase):
++    def create_model(self, start_datetime, end_datetime):
++        return DTModel.objects.create(
++            name=start_datetime.isoformat() if start_datetime else 'None',
++            start_datetime=start_datetime,
++            end_datetime=end_datetime,
++            start_date=start_datetime.date() if start_datetime else None,
++            end_date=end_datetime.date() if end_datetime else None,
++            start_time=start_datetime.time() if start_datetime else None,
++            end_time=end_datetime.time() if end_datetime else None,
++            duration=(end_datetime - start_datetime) if start_datetime and end_datetime else None,
++        )
++
++    def test_iso_year_filter_on_boundary_date(self):
++        """
++        The __iso_year lookup must not be optimized to a BETWEEN query, as that
++        can yield incorrect results for dates on year boundaries.
++        """
++        # 2021-01-01 is a Friday. It belongs to week 53 of 2020, so its ISO
++        # year is 2020.
++        boundary_dt = datetime(2021, 1, 1, 14, 0)
++        obj = self.create_model(boundary_dt, boundary_dt)
++        # This filter should find the object. The buggy implementation uses a
++        # BETWEEN clause for the calendar year 2020 and fails to find it.
++        qs = DTModel.objects.filter(start_date__iso_year=2020)
++        self.assertQuerysetEqual(qs, [obj], lambda o: o)

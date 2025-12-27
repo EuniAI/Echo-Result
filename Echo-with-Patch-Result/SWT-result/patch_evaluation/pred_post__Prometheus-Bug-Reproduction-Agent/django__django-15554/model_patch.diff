@@ -1,0 +1,84 @@
+diff --git a/tests/test_filtered_relation_join_reuse.py b/tests/test_filtered_relation_join_reuse.py
+new file mode 100644
+index 0000000000..e85126515f
+--- /dev/null
++++ b/tests/test_filtered_relation_join_reuse.py
+@@ -0,0 +1,78 @@
++from decimal import Decimal
++
++from django.db import models
++from django.db.models import Case, F, FilteredRelation, Q, When
++from django.test import TestCase
++
++
++class Contract(models.Model):
++    name = models.CharField(max_length=255)
++    zone = models.CharField(max_length=50)
++
++    class Meta:
++        app_label = "queries"
++
++
++class ContractFee(models.Model):
++    contract = models.ForeignKey(
++        Contract, on_delete=models.CASCADE, related_name="fees"
++    )
++
++    class Meta:
++        app_label = "queries"
++
++
++class ContractFeeDetails(models.Model):
++    contract_fee = models.ForeignKey(
++        ContractFee, on_delete=models.CASCADE, related_name="details"
++    )
++    zone = models.CharField(max_length=50, null=True, blank=True)
++    is_all = models.BooleanField(default=False)
++    price = models.DecimalField(max_digits=10, decimal_places=2)
++
++    class Meta:
++        app_label = "queries"
++
++
++class FilteredRelationJoinReuseTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        contract1 = Contract.objects.create(name="C1", zone="A")
++        fee1 = ContractFee.objects.create(contract=contract1)
++        ContractFeeDetails.objects.create(
++            contract_fee=fee1, zone="A", is_all=False, price=Decimal("10.00")
++        )
++        ContractFeeDetails.objects.create(
++            contract_fee=fee1, is_all=True, price=Decimal("20.00")
++        )
++        contract2 = Contract.objects.create(name="C2", zone="B")
++        fee2 = ContractFee.objects.create(contract=contract2)
++        ContractFeeDetails.objects.create(
++            contract_fee=fee2, is_all=True, price=Decimal("30.00")
++        )
++
++    def test_multiple_filtered_relation_on_same_relation(self):
++        qs = (
++            Contract.objects.alias(
++                relation_zone=FilteredRelation(
++                    "fees__details",
++                    condition=Q(fees__details__zone=F("zone")),
++                ),
++                relation_all=FilteredRelation(
++                    "fees__details",
++                    condition=Q(fees__details__is_all=True),
++                ),
++            )
++            .annotate(price_zone=F("relation_zone__price"))
++            .annotate(
++                price_final=Case(
++                    When(price_zone__isnull=True, then=F("relation_all__price")),
++                    default=F("price_zone"),
++                    output_field=models.DecimalField(),
++                )
++            )
++        )
++        c1 = qs.get(name="C1")
++        c2 = qs.get(name="C2")
++        self.assertEqual(c1.price_final, Decimal("10.00"))
++        self.assertEqual(c2.price_final, Decimal("30.00"))

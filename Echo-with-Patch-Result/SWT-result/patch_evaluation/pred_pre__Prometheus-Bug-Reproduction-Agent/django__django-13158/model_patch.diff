@@ -1,0 +1,43 @@
+diff --git a/tests/queries/test_combinator_none.py b/tests/queries/test_combinator_none.py
+new file mode 100644
+index 0000000000..75146c9937
+--- /dev/null
++++ b/tests/queries/test_combinator_none.py
+@@ -0,0 +1,37 @@
++from django.test import TestCase, skipUnlessDBFeature
++
++# The Number model is a simple, pre-existing model in the 'queries' test app.
++# Using it avoids all previous model definition and setup errors.
++from .models import Number
++
++
++@skipUnlessDBFeature('supports_select_union')
++class CombinatorNoneTest(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        # Create a range of numbers to query against.
++        for i in range(10):
++            Number.objects.create(num=i)
++
++    def test_combined_queryset_none(self):
++        """
++        QuerySet.none() on a combined queryset (e.g., using union) should
++        return an empty queryset.
++        """
++        # Create two distinct querysets.
++        qs1 = Number.objects.filter(num__lt=2)  # Should contain 0, 1
++        qs2 = Number.objects.filter(num__gt=7)  # Should contain 8, 9
++
++        # Combine them using union.
++        union_qs = qs1.union(qs2)
++        # The union queryset represents numbers 0, 1, 8, 9. Its count is 4.
++        self.assertEqual(union_qs.count(), 4)
++
++        # Call .none() on the combined queryset.
++        none_qs = union_qs.none()
++
++        # Before the fix, the .none() call is ineffective on a union, and the
++        # count will be 4 instead of 0. This assertion will fail.
++        # After the fix, the query will be correctly emptied, and the count
++        # will be 0, causing the test to pass.
++        self.assertEqual(none_qs.count(), 0)

@@ -1,0 +1,61 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 7fa1a93c6c8109010a6ff3f604fda83b604e0e97 >> /root/pre_state.patch
+sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US:en
+export LC_ALL=en_US.UTF-8
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 7fa1a93c6c8109010a6ff3f604fda83b604e0e97
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_security_middleware.py b/tests/test_security_middleware.py
+new file mode 100644
+index 0000000000..6ea7c1062b
+--- /dev/null
++++ b/tests/test_security_middleware.py
+@@ -0,0 +1,30 @@
++from django.http import HttpResponse
++from django.test import RequestFactory, SimpleTestCase
++from django.test.utils import override_settings
++
++
++class SecurityMiddlewareTest(SimpleTestCase):
++    @property
++    def middleware(self):
++        from django.middleware.security import SecurityMiddleware
++        return SecurityMiddleware()
++
++    def response(self, *args, headers=None, **kwargs):
++        response = HttpResponse(*args, **kwargs)
++        if headers:
++            for k, v in headers.items():
++                response[k] = v
++        return response
++
++    def process_response(self, *args, **kwargs):
++        request = self.request.get('/some/url')
++        return self.middleware.process_response(request, self.response(*args, **kwargs))
++
++    request = RequestFactory()
++
++    def test_referrer_policy_default(self):
++        """
++        With SECURE_REFERRER_POLICY unset, the middleware adds a
++        "Referrer-Policy: same-origin" header to the response.
++        """
++        self.assertEqual(self.process_response()['Referrer-Policy'], 'same-origin')
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/conf/global_settings\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 test_security_middleware
+cat coverage.cover
+git checkout 7fa1a93c6c8109010a6ff3f604fda83b604e0e97
+git apply /root/pre_state.patch

@@ -1,0 +1,47 @@
+diff --git a/lib/matplotlib/tests/test_patch_dash_offset.py b/lib/matplotlib/tests/test_patch_dash_offset.py
+new file mode 100644
+index 0000000000..842f26a5e8
+--- /dev/null
++++ b/lib/matplotlib/tests/test_patch_dash_offset.py
+@@ -0,0 +1,41 @@
++import matplotlib as mpl
++import matplotlib.patches as mpatches
++import matplotlib.pyplot as plt
++import pytest
++from unittest.mock import patch
++
++
++@patch('matplotlib.backend_bases.GraphicsContextBase.set_dashes')
++def test_patch_dash_offset_is_applied(mock_set_dashes):
++    """
++    Test that the dash offset in a patch's linestyle is not ignored.
++
++    The bug was that Patch.draw() would reset the dash offset to 0. This
++    test draws a patch with a non-zero dash offset and checks that the
++    renderer's `set_dashes` method is called with the correctly scaled
++    offset.
++    """
++    fig, ax = plt.subplots()
++
++    # This is the patch from the bug report with a non-zero dash offset.
++    patch_with_offset = mpatches.Rectangle(
++        (0.5, 0.5), 1, 1,
++        edgecolor='b', linewidth=4, ls=(10, (10, 10)), fill=False)
++    ax.add_patch(patch_with_offset)
++
++    # Draw the figure to trigger the patch drawing.
++    fig.canvas.draw()
++
++    # Calculate the expected scaled offset and dashes.
++    # The offset is scaled by linewidth if lines.scale_dashes is True (default).
++    linewidth = patch_with_offset.get_linewidth()
++    ls = patch_with_offset.get_linestyle()
++    offset, dashes = ls
++
++    expected_offset = offset * linewidth
++    expected_dashes = tuple(d * linewidth for d in dashes)
++
++    # The buggy code calls set_dashes with an offset of 0. The fixed code
++    # calls it with the expected scaled offset. We assert that a call with
++    # the correct offset was made at some point during the draw.
++    mock_set_dashes.assert_any_call(expected_offset, expected_dashes)

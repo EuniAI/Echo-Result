@@ -1,0 +1,58 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD f39634ff229887bf7790c069d0c411b38494ca38 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff f39634ff229887bf7790c069d0c411b38494ca38
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_char_pk_fk_assignment.py b/tests/test_char_pk_fk_assignment.py
+new file mode 100644
+index 0000000000..f72f045438
+--- /dev/null
++++ b/tests/test_char_pk_fk_assignment.py
+@@ -0,0 +1,31 @@
++from django.db import models, transaction
++from django.test import TestCase
++
++
++class Product(models.Model):
++    sku = models.CharField(primary_key=True, max_length=50)
++
++
++class Order(models.Model):
++    product = models.ForeignKey(Product, on_delete=models.CASCADE)
++
++
++class CharPKFKAssignmentTests(TestCase):
++    def test_fk_assignment_char_pk_save(self):
++        """
++        Test that assigning a related object and then setting its CharField
++        primary key before saving doesn't result in data loss.
++        """
++        with transaction.atomic():
++            order = Order()
++            # Assign an empty Product instance first.
++            order.product = Product()
++            # Then, set the PK on the related Product.
++            order.product.sku = "foo"
++            order.product.save()
++            # Now, save the Order. The FK should be correctly pulled from the
++            # saved Product instance.
++            order.save()
++        # Before the fix, the order.product_id would be an empty string,
++        # causing this lookup to fail.
++        self.assertTrue(Order.objects.filter(product=order.product).exists())
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/db/models/base\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 test_char_pk_fk_assignment
+cat coverage.cover
+git checkout f39634ff229887bf7790c069d0c411b38494ca38
+git apply /root/pre_state.patch

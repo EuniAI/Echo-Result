@@ -1,0 +1,48 @@
+diff --git a/tests/queryset_pickle/test_pickled_queryset_values.py b/tests/queryset_pickle/test_pickled_queryset_values.py
+new file mode 100644
+index 0000000000..a09769f8b7
+--- /dev/null
++++ b/tests/queryset_pickle/test_pickled_queryset_values.py
+@@ -0,0 +1,42 @@
++import pickle
++
++from django.db import models
++from django.db.models import Sum
++from django.test import TestCase
++
++# The Toy model from the bug report, defined here to make the test
++# self-contained. The app_label is necessary for the test runner to handle
++# the model correctly.
++class Toy(models.Model):
++    name = models.CharField(max_length=16)
++    material = models.CharField(max_length=16)
++    price = models.PositiveIntegerField()
++
++    class Meta:
++        app_label = 'queryset_pickle'
++
++
++class PickledQuerysetValuesTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        Toy.objects.create(name='foo', price=10, material='wood')
++        Toy.objects.create(name='bar', price=20, material='plastic')
++        Toy.objects.create(name='baz', price=100, material='wood')
++
++    def test_pickled_values_queryset(self):
++        """
++        A queryset recreated from a pickled .query object from a
++        values() queryset should produce dictionaries, not model instances.
++        """
++        prices = Toy.objects.values('material').annotate(total_price=Sum('price'))
++        pickled_query = pickle.dumps(prices.query)
++        unpickled_query = pickle.loads(pickled_query)
++
++        prices_recreated = Toy.objects.all()
++        prices_recreated.query = unpickled_query
++
++        # Before the fix, this would raise an AttributeError when evaluating the
++        # queryset because it would incorrectly use ModelIterable instead of
++        # ValuesIterable, trying to create model instances from aggregated data.
++        # The assertion checks that the returned item is a dict as expected.
++        self.assertIsInstance(prices_recreated[0], dict)

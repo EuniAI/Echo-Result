@@ -1,0 +1,54 @@
+diff --git a/tests/test_matplotlib_backend.py b/tests/test_matplotlib_backend.py
+new file mode 100644
+index 0000000000..555a576cf0
+--- /dev/null
++++ b/tests/test_matplotlib_backend.py
+@@ -0,0 +1,48 @@
++import subprocess
++import sys
++import os
++import pytest
++
++def test_get_backend_rc_context_fig_destroy():
++    """
++    Test that get_backend() does not clear figures created in an rc_context.
++
++    This test runs the minimal reproducer from the bug report in a separate
++    process to ensure a clean Matplotlib state. This is necessary because
++    the bug is tied to the initial backend resolution, which cannot be
++    reliably re-triggered within the main test process.
++    """
++    # The exact code for reproduction from the bug report.
++    repro_code = """
++import matplotlib.pyplot as plt
++from matplotlib import get_backend, rc_context
++
++# This code will trigger the bug when run in a fresh process where the
++# backend has not yet been resolved.
++with rc_context():
++    fig2 = plt.figure()
++
++before = f'{id(plt._pylab_helpers.Gcf)} {plt._pylab_helpers.Gcf.figs!r}'
++get_backend()
++after = f'{id(plt._pylab_helpers.Gcf)} {plt._pylab_helpers.Gcf.figs!r}'
++
++# This assertion fails when the bug is present, as Gcf.figs is cleared.
++assert before == after, '\\n' + before + '\\n' + after
++"""
++
++    # Use a clean environment, ensuring MPLBACKEND is not set, so that
++    # the default 'auto' backend selection logic is triggered.
++    env = os.environ.copy()
++    env.pop('MPLBACKEND', None)
++
++    # Execute the reproducer code in a subprocess.
++    # If the assertion in the script fails, the process will exit with an
++    # error, and `check=True` will raise a CalledProcessError, correctly
++    # indicating a test failure, which is the expected outcome for this bug.
++    subprocess.run(
++        [sys.executable, "-c", repro_code],
++        check=True,
++        env=env,
++        capture_output=True,
++        text=True
++    )

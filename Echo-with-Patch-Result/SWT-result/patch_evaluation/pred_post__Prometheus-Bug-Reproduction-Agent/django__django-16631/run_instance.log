@@ -1,0 +1,108 @@
+2025-12-25 22:44:59,569 - WARNING - Starting evaluation at 1766702699.569455
+2025-12-25 22:44:59,616 - INFO - Creating container for django__django-16631...
+2025-12-25 22:45:04,622 - INFO - Container for django__django-16631 created: 62f12744f6b7e6de3a648da5252f1677a2d04edbd9ae2923f185ea48b0c76786
+2025-12-25 22:45:07,139 - INFO - Container for django__django-16631 started: 62f12744f6b7e6de3a648da5252f1677a2d04edbd9ae2923f185ea48b0c76786
+2025-12-25 22:45:08,626 - INFO - Git diff before:
+
+2025-12-25 22:45:08,626 - INFO - Eval script for django__django-16631 written to eval.sh, now applying to container...
+2025-12-25 22:45:36,796 - INFO - Test output for django__django-16631 written to run_instance_swt_logs/patch_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/django__django-16631/test_output.txt
+2025-12-25 22:45:36,883 - INFO - Git diff after:
+diff --git a/django/contrib/auth/__init__.py b/django/contrib/auth/__init__.py
+index 155330c596..2c81d62a0c 100644
+--- a/django/contrib/auth/__init__.py
++++ b/django/contrib/auth/__init__.py
+@@ -199,12 +199,26 @@ def get_user(request):
+             # Verify the session
+             if hasattr(user, "get_session_auth_hash"):
+                 session_hash = request.session.get(HASH_SESSION_KEY)
+-                session_hash_verified = session_hash and constant_time_compare(
+-                    session_hash, user.get_session_auth_hash()
+-                )
++                if not session_hash:
++                    session_hash_verified = False
++                else:
++                    session_auth_hash = user.get_session_auth_hash()
++                    session_hash_verified = constant_time_compare(
++                        session_hash, session_auth_hash
++                    )
+                 if not session_hash_verified:
+-                    request.session.flush()
+-                    user = None
++                    # If the current secret does not verify the session, try
++                    # with the fallback secrets and stop when a matching one is
++                    # found.
++                    if session_hash and any(
++                        constant_time_compare(session_hash, fallback_auth_hash)
++                        for fallback_auth_hash in user.get_session_auth_fallback_hash()
++                    ):
++                        request.session.cycle_key()
++                        request.session[HASH_SESSION_KEY] = session_auth_hash
++                    else:
++                        request.session.flush()
++                        user = None
+ 
+     return user or AnonymousUser()
+ 
+diff --git a/django/contrib/auth/base_user.py b/django/contrib/auth/base_user.py
+index 5ee30bf59c..e205ccccf2 100644
+--- a/django/contrib/auth/base_user.py
++++ b/django/contrib/auth/base_user.py
+@@ -5,6 +5,7 @@ not in INSTALLED_APPS.
+ import unicodedata
+ import warnings
+ 
++from django.conf import settings
+ from django.contrib.auth import password_validation
+ from django.contrib.auth.hashers import (
+     check_password,
+@@ -135,10 +136,18 @@ class AbstractBaseUser(models.Model):
+         """
+         Return an HMAC of the password field.
+         """
++        return self._get_session_auth_hash()
++
++    def get_session_auth_fallback_hash(self):
++        for fallback_secret in settings.SECRET_KEY_FALLBACKS:
++            yield self._get_session_auth_hash(secret=fallback_secret)
++
++    def _get_session_auth_hash(self, secret=None):
+         key_salt = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
+         return salted_hmac(
+             key_salt,
+             self.password,
++            secret=secret,
+             algorithm="sha256",
+         ).hexdigest()
+2025-12-25 22:45:36,883 - INFO - Git diff changed after running eval script
+2025-12-25 22:45:36,883 - INFO - Attempting to stop container exec.eval.x86_64.9097b18874f4d0ac315ef2.9fe46469c62633c45bbc90.129975669676928...
+2025-12-25 22:45:53,786 - INFO - Attempting to remove container exec.eval.x86_64.9097b18874f4d0ac315ef2.9fe46469c62633c45bbc90.129975669676928...
+2025-12-25 22:45:53,997 - INFO - Container exec.eval.x86_64.9097b18874f4d0ac315ef2.9fe46469c62633c45bbc90.129975669676928 removed.
+2025-12-25 22:45:53,997 - WARNING - End of eval at 1766702753.9977052
+2025-12-26 02:43:32,325 - WARNING - Starting evaluation at 1766717012.3251688
+2025-12-26 02:43:32,346 - WARNING - Starting evaluation at 1766717012.3467193
+2025-12-26 02:43:32,369 - WARNING - Starting evaluation at 1766717012.3694563
+2025-12-26 02:43:32,387 - WARNING - Starting evaluation at 1766717012.3873873
+2025-12-26 02:43:32,408 - WARNING - Starting evaluation at 1766717012.4087834
+2025-12-26 09:38:12,598 - WARNING - Starting evaluation at 1766741892.5986032
+2025-12-26 09:38:12,606 - WARNING - Starting evaluation at 1766741892.6059947
+2025-12-26 09:38:12,612 - WARNING - Starting evaluation at 1766741892.6128716
+2025-12-26 09:38:12,619 - WARNING - Starting evaluation at 1766741892.619568
+2025-12-26 09:38:12,625 - WARNING - Starting evaluation at 1766741892.6256607
+2025-12-26 09:53:37,490 - WARNING - Starting evaluation at 1766742817.4908137
+2025-12-26 09:53:37,498 - WARNING - Starting evaluation at 1766742817.49828
+2025-12-26 09:53:37,506 - WARNING - Starting evaluation at 1766742817.506553
+2025-12-26 09:53:37,513 - WARNING - Starting evaluation at 1766742817.5134058
+2025-12-26 09:53:37,521 - WARNING - Starting evaluation at 1766742817.52165
+2025-12-26 10:15:31,580 - WARNING - Starting evaluation at 1766744131.5802138
+2025-12-26 10:15:31,591 - WARNING - Starting evaluation at 1766744131.5916922
+2025-12-26 10:15:31,602 - WARNING - Starting evaluation at 1766744131.602726
+2025-12-26 10:15:31,614 - WARNING - Starting evaluation at 1766744131.6144323
+2025-12-26 10:15:31,636 - WARNING - Starting evaluation at 1766744131.6367438
+2025-12-26 11:07:39,783 - WARNING - Starting evaluation at 1766747259.7835677
+2025-12-26 11:07:39,792 - WARNING - Starting evaluation at 1766747259.7928178
+2025-12-26 11:07:39,802 - WARNING - Starting evaluation at 1766747259.8024879
+2025-12-26 11:07:39,811 - WARNING - Starting evaluation at 1766747259.8110418
+2025-12-26 11:07:39,818 - WARNING - Starting evaluation at 1766747259.8186138
+2025-12-26 11:07:53,008 - INFO - Grading answer for django__django-16631...
+2025-12-26 11:07:53,012 - INFO - report: {'django__django-16631': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'coverage_pred': 0.8695652173913043, 'coverage_gold': 0.8695652173913043, 'coverage_base': 0.13043478260869565, 'coverage_delta_pred': 0.7391304347826086, 'coverage_delta_gold': 0.7391304347826086, 'added_f2p': 1, 'tests_base': {'FAIL_TO_PASS': [], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_session_secret_key_rotation (unittest.loader._FailedTest.test_session_secret_key_rotation)']}, 'tests_pred': {'FAIL_TO_PASS': ['test_secret_key_fallbacks_used_for_session_hash (test_session_secret_key_rotation.SessionSecretKeyRotationTests.test_secret_key_fallbacks_used_for_session_hash)'], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': []}, 'tests_gold': {'FAIL_TO_PASS': ['test_get_user_fallback_secret (auth_tests.test_basic.TestGetUser.test_get_user_fallback_secret)'], 'PASS_TO_PASS': ['test_get_user_anonymous (auth_tests.test_basic.TestGetUser.test_get_user_anonymous)', 'test_superuser (auth_tests.test_basic.BasicTestCase.test_superuser)', 'test_unicode_username (auth_tests.test_basic.BasicTestCase.test_unicode_username)', 'test_get_user (auth_tests.test_basic.TestGetUser.test_get_user)', 'test_superuser_no_email_or_password (auth_tests.test_basic.BasicTestCase.test_superuser_no_email_or_password)', 'test_user_no_email (auth_tests.test_basic.BasicTestCase.test_user_no_email)', 'test_swappable_user_nonexistent_model (auth_tests.test_basic.BasicTestCase.test_swappable_user_nonexistent_model)', 'test_user (auth_tests.test_basic.BasicTestCase.test_user)', 'test_get_user_model (auth_tests.test_basic.BasicTestCase.test_get_user_model)', 'test_swappable_user (auth_tests.test_basic.BasicTestCase.test_swappable_user)', 'test_user_verbose_names_translatable (auth_tests.test_basic.BasicTestCase.test_user_verbose_names_translatable)', 'test_swappable_user_bad_setting (auth_tests.test_basic.BasicTestCase.test_swappable_user_bad_setting)'], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': []}}}
+Result for django__django-16631: resolved: True

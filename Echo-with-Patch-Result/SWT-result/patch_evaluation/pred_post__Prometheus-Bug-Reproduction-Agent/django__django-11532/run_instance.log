@@ -1,0 +1,170 @@
+2025-12-25 18:55:47,155 - WARNING - Starting evaluation at 1766688947.1551423
+2025-12-25 18:55:47,203 - INFO - Creating container for django__django-11532...
+2025-12-25 18:55:49,226 - INFO - Container for django__django-11532 created: 5fcc1008742b9387e2594c82003e3913483fbc23a0327c0b8c14ab3365cd5627
+2025-12-25 18:55:50,721 - INFO - Container for django__django-11532 started: 5fcc1008742b9387e2594c82003e3913483fbc23a0327c0b8c14ab3365cd5627
+2025-12-25 18:55:52,419 - INFO - Git diff before:
+
+2025-12-25 18:55:52,419 - INFO - Eval script for django__django-11532 written to eval.sh, now applying to container...
+2025-12-25 18:58:12,355 - INFO - Test output for django__django-11532 written to run_instance_swt_logs/patch_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/django__django-11532/test_output.txt
+2025-12-25 18:58:12,438 - INFO - Git diff after:
+diff --git a/django/core/mail/message.py b/django/core/mail/message.py
+index e393b4cf5c..234c9416c6 100644
+--- a/django/core/mail/message.py
++++ b/django/core/mail/message.py
+@@ -16,7 +16,7 @@ from pathlib import Path
+ 
+ from django.conf import settings
+ from django.core.mail.utils import DNS_NAME
+-from django.utils.encoding import force_str
++from django.utils.encoding import force_str, punycode
+ 
+ # Don't BASE64-encode UTF-8 messages so that we avoid unwanted attention from
+ # some spam filters.
+@@ -102,10 +102,7 @@ def sanitize_address(addr, encoding):
+         localpart.encode('ascii')
+     except UnicodeEncodeError:
+         localpart = Header(localpart, encoding).encode()
+-    try:
+-        domain.encode('ascii')
+-    except UnicodeEncodeError:
+-        domain = domain.encode('idna').decode('ascii')
++    domain = punycode(domain)
+ 
+     parsed_address = Address(nm, username=localpart, domain=domain)
+     return str(parsed_address)
+diff --git a/django/core/mail/utils.py b/django/core/mail/utils.py
+index d18dfe4667..1e48faa366 100644
+--- a/django/core/mail/utils.py
++++ b/django/core/mail/utils.py
+@@ -4,6 +4,8 @@ Email message and email sending related helper functions.
+ 
+ import socket
+ 
++from django.utils.encoding import punycode
++
+ 
+ # Cache the hostname, but do it lazily: socket.getfqdn() can take a couple of
+ # seconds, which slows down the restart of the server.
+@@ -13,7 +15,7 @@ class CachedDnsName:
+ 
+     def get_fqdn(self):
+         if not hasattr(self, '_fqdn'):
+-            self._fqdn = socket.getfqdn()
++            self._fqdn = punycode(socket.getfqdn())
+         return self._fqdn
+ 
+ 
+diff --git a/django/core/validators.py b/django/core/validators.py
+index 827b1eea09..2e00ca3ff3 100644
+--- a/django/core/validators.py
++++ b/django/core/validators.py
+@@ -5,6 +5,7 @@ from urllib.parse import urlsplit, urlunsplit
+ 
+ from django.core.exceptions import ValidationError
+ from django.utils.deconstruct import deconstructible
++from django.utils.encoding import punycode
+ from django.utils.functional import SimpleLazyObject
+ from django.utils.ipv6 import is_valid_ipv6_address
+ from django.utils.translation import gettext_lazy as _, ngettext_lazy
+@@ -124,7 +125,7 @@ class URLValidator(RegexValidator):
+                 except ValueError:  # for example, "Invalid IPv6 URL"
+                     raise ValidationError(self.message, code=self.code)
+                 try:
+-                    netloc = netloc.encode('idna').decode('ascii')  # IDN -> ACE
++                    netloc = punycode(netloc)  # IDN -> ACE
+                 except UnicodeError:  # invalid domain part
+                     raise e
+                 url = urlunsplit((scheme, netloc, path, query, fragment))
+@@ -199,7 +200,7 @@ class EmailValidator:
+                 not self.validate_domain_part(domain_part)):
+             # Try for possible IDN domain-part
+             try:
+-                domain_part = domain_part.encode('idna').decode('ascii')
++                domain_part = punycode(domain_part)
+             except UnicodeError:
+                 pass
+             else:
+diff --git a/django/utils/encoding.py b/django/utils/encoding.py
+index 94b63762db..2e2ad44e31 100644
+--- a/django/utils/encoding.py
++++ b/django/utils/encoding.py
+@@ -218,6 +218,11 @@ def escape_uri_path(path):
+     return quote(path, safe="/:@&+$,-_.!~*'()")
+ 
+ 
++def punycode(domain):
++    """Return the Punycode of the given domain if it's non-ASCII."""
++    return domain.encode('idna').decode('ascii')
++
++
+ def repercent_broken_unicode(path):
+     """
+     As per section 3.2 of RFC 3987, step three of converting a URI into an IRI,
+diff --git a/django/utils/html.py b/django/utils/html.py
+index fb636600c9..d8fa00dab8 100644
+--- a/django/utils/html.py
++++ b/django/utils/html.py
+@@ -8,6 +8,7 @@ from urllib.parse import (
+     parse_qsl, quote, unquote, urlencode, urlsplit, urlunsplit,
+ )
+ 
++from django.utils.encoding import punycode
+ from django.utils.functional import Promise, keep_lazy, keep_lazy_text
+ from django.utils.http import RFC3986_GENDELIMS, RFC3986_SUBDELIMS
+ from django.utils.safestring import SafeData, SafeString, mark_safe
+@@ -210,7 +211,7 @@ def smart_urlquote(url):
+         return unquote_quote(url)
+ 
+     try:
+-        netloc = netloc.encode('idna').decode('ascii')  # IDN -> ACE
++        netloc = punycode(netloc)  # IDN -> ACE
+     except UnicodeError:  # invalid domain part
+         return unquote_quote(url)
+ 
+@@ -319,7 +320,7 @@ def urlize(text, trim_url_limit=None, nofollow=False, autoescape=False):
+             elif ':' not in middle and is_email_simple(middle):
+                 local, domain = middle.rsplit('@', 1)
+                 try:
+-                    domain = domain.encode('idna').decode('ascii')
++                    domain = punycode(domain)
+                 except UnicodeError:
+                     continue
+                 url = 'mailto:%s@%s' % (local, domain)
+2025-12-25 18:58:12,439 - INFO - Git diff changed after running eval script
+2025-12-25 18:58:12,439 - INFO - Attempting to stop container exec.eval.x86_64.ee2ad6945f237e9160354f.906240bb443ef755360447.129899102648224...
+2025-12-25 18:58:37,930 - INFO - Attempting to remove container exec.eval.x86_64.ee2ad6945f237e9160354f.906240bb443ef755360447.129899102648224...
+2025-12-25 18:58:38,464 - INFO - Container exec.eval.x86_64.ee2ad6945f237e9160354f.906240bb443ef755360447.129899102648224 removed.
+2025-12-25 18:58:38,464 - WARNING - End of eval at 1766689118.4643517
+2025-12-25 19:46:03,198 - WARNING - Starting evaluation at 1766691963.198174
+2025-12-25 19:46:03,218 - WARNING - Starting evaluation at 1766691963.2181733
+2025-12-25 19:46:03,234 - WARNING - Starting evaluation at 1766691963.2348344
+2025-12-25 19:46:03,252 - WARNING - Starting evaluation at 1766691963.2519872
+2025-12-25 19:46:03,266 - WARNING - Starting evaluation at 1766691963.2662048
+2025-12-26 02:43:28,671 - WARNING - Starting evaluation at 1766717008.671279
+2025-12-26 02:43:28,701 - WARNING - Starting evaluation at 1766717008.70159
+2025-12-26 02:43:28,722 - WARNING - Starting evaluation at 1766717008.722956
+2025-12-26 02:43:28,749 - WARNING - Starting evaluation at 1766717008.749904
+2025-12-26 02:43:28,777 - WARNING - Starting evaluation at 1766717008.7772915
+2025-12-26 09:38:09,604 - WARNING - Starting evaluation at 1766741889.604004
+2025-12-26 09:38:09,610 - WARNING - Starting evaluation at 1766741889.6107218
+2025-12-26 09:38:09,617 - WARNING - Starting evaluation at 1766741889.6177187
+2025-12-26 09:38:09,625 - WARNING - Starting evaluation at 1766741889.6253283
+2025-12-26 09:38:09,633 - WARNING - Starting evaluation at 1766741889.6332755
+2025-12-26 09:53:33,564 - WARNING - Starting evaluation at 1766742813.564606
+2025-12-26 09:53:33,575 - WARNING - Starting evaluation at 1766742813.5758445
+2025-12-26 09:53:33,587 - WARNING - Starting evaluation at 1766742813.5877976
+2025-12-26 09:53:33,600 - WARNING - Starting evaluation at 1766742813.6003184
+2025-12-26 09:53:33,611 - WARNING - Starting evaluation at 1766742813.6113927
+2025-12-26 10:15:25,980 - WARNING - Starting evaluation at 1766744125.9799833
+2025-12-26 10:15:25,991 - WARNING - Starting evaluation at 1766744125.991918
+2025-12-26 10:15:26,009 - WARNING - Starting evaluation at 1766744126.0098302
+2025-12-26 10:15:26,022 - WARNING - Starting evaluation at 1766744126.0221548
+2025-12-26 10:15:26,040 - WARNING - Starting evaluation at 1766744126.0403857
+2025-12-26 11:07:37,729 - WARNING - Starting evaluation at 1766747257.7299364
+2025-12-26 11:07:37,740 - WARNING - Starting evaluation at 1766747257.7406936
+2025-12-26 11:07:37,752 - WARNING - Starting evaluation at 1766747257.7528539
+2025-12-26 11:07:37,765 - WARNING - Starting evaluation at 1766747257.7651875
+2025-12-26 11:07:37,777 - WARNING - Starting evaluation at 1766747257.777752
+2025-12-26 11:07:49,399 - INFO - Grading answer for django__django-11532...
+2025-12-26 11:07:49,445 - INFO - report: {'django__django-11532': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': False, 'coverage_pred': 0.2727272727272727, 'coverage_gold': 0.6363636363636364, 'coverage_base': 0.3181818181818182, 'coverage_delta_pred': 0.0, 'coverage_delta_gold': 0.36363636363636365, 'added_f2p': 0, 'tests_base': {'FAIL_TO_PASS': [], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_mail_unicode_domain (unittest.loader._FailedTest)']}, 'tests_pred': {'FAIL_TO_PASS': [], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_unicode_dns_with_non_unicode_encoding (test_mail_unicode_domain.MailUnicodeDomainTests)']}, 'tests_gold': {'FAIL_TO_PASS': ['test_email_tls_attempts_starttls (mail.tests.SMTPBackendTests)', 'test_message_cc_header (mail.tests.SMTPBackendTests)', 'test_non_ascii_dns_non_unicode_email (mail.tests.MailTests)', 'test_plaintext_send_mail (mail.tests.SMTPBackendTests)', 'test_lazy_addresses (mail.tests.SMTPBackendTests)', 'test_send_long_lines (mail.tests.SMTPBackendTests)', 'test_html_mail_admins (mail.tests.SMTPBackendTests)', 'test_server_login (mail.tests.SMTPBackendTests)', 'test_recipient_without_domain (mail.tests.SMTPBackendTests)', 'test_send_unicode (mail.tests.SMTPBackendTests)', 'test_idn_send (mail.tests.SMTPBackendTests)', 'test_html_send_mail (mail.tests.SMTPBackendTests)', 'test_send (mail.tests.SMTPBackendTests)', 'test_auth_attempted (mail.tests.SMTPBackendTests)', 'test_email_msg_uses_crlf (mail.tests.SMTPBackendTests)', 'test_send_verbose_name (mail.tests.SMTPBackendTests)', 'test_manager_and_admin_mail_prefix (mail.tests.SMTPBackendTests)', 'test_html_mail_managers (mail.tests.SMTPBackendTests)', 'test_send_many (mail.tests.SMTPBackendTests)'], 'PASS_TO_PASS': ['test_attachments_two_tuple (mail.tests.MailTests)', 'test_html_mail_managers (mail.tests.LocmemBackendTests)', 'test_date_header_utc (mail.tests.MailTimeZoneTests)', 'test_cc_headers (mail.tests.MailTests)', 'test_attachments (mail.tests.MailTests)', 'test_send_long_lines (mail.tests.FileBackendTests)', 'test_none_body (mail.tests.MailTests)', 'test_unicode_address_header (mail.tests.MailTests)', 'test_use_as_contextmanager (mail.tests.FileBackendTests)', 'test_utf8 (mail.tests.PythonGlobalState)', 'test_reply_to_in_headers_only (mail.tests.MailTests)', 'test_email_ssl_keyfile_default_disabled (mail.tests.SMTPBackendTests)', 'test_close_connection (mail.tests.ConsoleBackendTests)', 'test_message_header_overrides (mail.tests.MailTests)', 'test_wrong_admins_managers (mail.tests.SMTPBackendTests)', 'test_custom_utf8_encoding (mail.tests.MailTests)', 'test_reopen_connection (mail.tests.SMTPBackendTests)', 'test_send_long_lines (mail.tests.LocmemBackendTests)', 'test_empty_admins (mail.tests.FileBackendTests)', 'test_encoding (mail.tests.MailTests)', 'test_send_messages_zero_sent (mail.tests.SMTPBackendTests)', 'test_sanitize_address_invalid (mail.tests.MailTests)', 'test_plaintext_send_mail (mail.tests.LocmemBackendTests)', 'test_attachments_MIMEText (mail.tests.MailTests)', 'test_email_ssl_default_disabled (mail.tests.SMTPBackendTests)', 'test_use_as_contextmanager (mail.tests.LocmemBackendTests)', 'test_html_send_mail (mail.tests.ConsoleBackendTests)', 'test_html_mail_admins (mail.tests.FileBackendTests)', 'test_empty_admins (mail.tests.LocmemBackendTests)', 'test_connection_timeout_default (mail.tests.SMTPBackendTests)', 'test_empty_admins (mail.tests.ConsoleBackendTests)', 'test_close_connection (mail.tests.SMTPBackendTests)', 'test_idn_send (mail.tests.ConsoleBackendTests)', 'test_email_disabled_authentication (mail.tests.SMTPBackendTests)', 'test_manager_and_admin_mail_prefix (mail.tests.FileBackendTests)', 'test_safe_mime_multipart_with_attachments (mail.tests.MailTests)', 'test_send_unicode (mail.tests.ConsoleBackendTests)', 'test_email_ssl_certfile_use_settings (mail.tests.SMTPBackendTests)', 'test_email_timeout_override_settings (mail.tests.SMTPBackendTests)', 'test_file_sessions (mail.tests.FileBackendTests)', 'test_wrong_admins_managers (mail.tests.LocmemBackendTests)', 'test_html_mail_managers (mail.tests.ConsoleBackendTests)', 'test_recipient_without_domain (mail.tests.LocmemBackendTests)', 'test_arbitrary_keyword (mail.tests.MailTests)', 'test_manager_and_admin_mail_prefix (mail.tests.ConsoleBackendTests)', 'test_lazy_addresses (mail.tests.LocmemBackendTests)', 'test_cc_in_headers_only (mail.tests.MailTests)', 'test_recipient_without_domain (mail.tests.FileBackendTests)', 'test_html_send_mail (mail.tests.LocmemBackendTests)', 'test_attach_non_utf8_text_as_bytes (mail.tests.MailTests)', 'test_date_header_localtime (mail.tests.MailTimeZoneTests)', 'test_recipients_as_tuple (mail.tests.MailTests)', 'test_send_verbose_name (mail.tests.ConsoleBackendTests)', 'test_server_stopped (mail.tests.SMTPBackendStoppedServerTests)', 'test_send_messages_after_open_failed (mail.tests.SMTPBackendTests)', 'test_reply_to_header (mail.tests.MailTests)', 'test_email_ssl_certfile_default_disabled (mail.tests.SMTPBackendTests)', 'test_8bit_non_latin (mail.tests.PythonGlobalState)', 'test_multiple_recipients (mail.tests.MailTests)', 'test_dont_mangle_from_in_body (mail.tests.MailTests)', 'test_recipients_with_empty_strings (mail.tests.MailTests)', 'test_html_send_mail (mail.tests.FileBackendTests)', 'test_ssl_tls_mutually_exclusive (mail.tests.SMTPBackendTests)', 'test_message_cc_header (mail.tests.FileBackendTests)', 'test_html_mail_admins (mail.tests.LocmemBackendTests)', 'test_email_ssl_attempts_ssl_connection (mail.tests.SMTPBackendTests)', 'test_connection_arg (mail.tests.MailTests)', 'test_7bit (mail.tests.PythonGlobalState)', 'test_to_in_headers_only (mail.tests.MailTests)', 'test_send_long_lines (mail.tests.ConsoleBackendTests)', 'test_header_omitted_for_no_to_recipients (mail.tests.MailTests)', 'test_recipient_without_domain (mail.tests.ConsoleBackendTests)', 'test_space_continuation (mail.tests.MailTests)', 'test_send_verbose_name (mail.tests.FileBackendTests)', 'test_header_injection (mail.tests.MailTests)', 'test_use_as_contextmanager (mail.tests.ConsoleBackendTests)', 'test_plaintext_send_mail (mail.tests.ConsoleBackendTests)', 'test_email_ssl_use_settings (mail.tests.SMTPBackendTests)', 'test_dont_base64_encode (mail.tests.MailTests)', 'test_send_messages_empty_list (mail.tests.SMTPBackendTests)', 'test_email_ssl_override_settings (mail.tests.SMTPBackendTests)', 'test_custom_backend (mail.tests.MailTests)', 'test_non_ascii_attachment_filename (mail.tests.MailTests)', 'test_lazy_addresses (mail.tests.ConsoleBackendTests)', 'test_html_mail_admins (mail.tests.ConsoleBackendTests)', 'test_plaintext_send_mail (mail.tests.FileBackendTests)', 'test_send_unicode (mail.tests.FileBackendTests)', 'test_ascii (mail.tests.MailTests)', 'test_reply_to (mail.tests.MailTests)', 'test_send_many (mail.tests.FileBackendTests)', 'test_email_ssl_keyfile_use_settings (mail.tests.SMTPBackendTests)', 'test_wrong_admins_managers (mail.tests.FileBackendTests)', 'test_manager_and_admin_mail_prefix (mail.tests.LocmemBackendTests)', 'test_email_tls_override_settings (mail.tests.SMTPBackendTests)', 'test_dummy_backend (mail.tests.MailTests)', 'test_attach_utf8_text_as_bytes (mail.tests.MailTests)', 'test_close_connection (mail.tests.LocmemBackendTests)', 'test_backend_arg (mail.tests.MailTests)', 'test_close_connection (mail.tests.FileBackendTests)', 'test_html_mail_managers (mail.tests.FileBackendTests)', 'test_sanitize_address (mail.tests.MailTests)', 'test_send (mail.tests.LocmemBackendTests)', 'test_locmem_shared_messages (mail.tests.LocmemBackendTests)', 'test_email_tls_use_settings (mail.tests.SMTPBackendTests)', 'test_fail_silently_on_connection_error (mail.tests.SMTPBackendStoppedServerTests)', 'test_attach_text_as_bytes (mail.tests.MailTests)', 'test_email_ssl_keyfile_override_settings (mail.tests.SMTPBackendTests)', 'test_console_stream_kwarg (mail.tests.ConsoleBackendTests)', 'test_send (mail.tests.ConsoleBackendTests)', 'test_cc (mail.tests.MailTests)', 'test_send_many (mail.tests.LocmemBackendTests)', 'test_safe_mime_multipart (mail.tests.MailTests)', 'test_8bit_latin (mail.tests.PythonGlobalState)', 'test_attach_file (mail.tests.MailTests)', 'test_dont_base64_encode_message_rfc822 (mail.tests.MailTests)', 'test_connection_timeout_custom (mail.tests.SMTPBackendTests)', 'test_idn_send (mail.tests.LocmemBackendTests)', 'test_email_authentication_override_settings (mail.tests.SMTPBackendTests)', 'test_multiple_message_call (mail.tests.MailTests)', 'test_use_as_contextmanager (mail.tests.SMTPBackendTests)', 'test_email_ssl_certfile_override_settings (mail.tests.SMTPBackendTests)', 'test_send_unicode (mail.tests.LocmemBackendTests)', 'test_from_header (mail.tests.MailTests)', 'test_send_verbose_name (mail.tests.LocmemBackendTests)', 'test_idn_send (mail.tests.FileBackendTests)', 'test_unicode_headers (mail.tests.MailTests)', 'test_recipients_as_string (mail.tests.MailTests)', 'test_to_header (mail.tests.MailTests)', 'test_lazy_addresses (mail.tests.FileBackendTests)', 'test_message_cc_header (mail.tests.ConsoleBackendTests)', 'test_validate_multiline_headers (mail.tests.LocmemBackendTests)', 'test_email_tls_default_disabled (mail.tests.SMTPBackendTests)', 'test_send_many (mail.tests.ConsoleBackendTests)', 'test_message_cc_header (mail.tests.LocmemBackendTests)', 'test_server_open (mail.tests.SMTPBackendTests)', 'test_send (mail.tests.FileBackendTests)', 'test_wrong_admins_managers (mail.tests.ConsoleBackendTests)', 'test_email_authentication_use_settings (mail.tests.SMTPBackendTests)', 'test_empty_admins (mail.tests.SMTPBackendTests)'], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': []}}}
+Result for django__django-11532: resolved: False

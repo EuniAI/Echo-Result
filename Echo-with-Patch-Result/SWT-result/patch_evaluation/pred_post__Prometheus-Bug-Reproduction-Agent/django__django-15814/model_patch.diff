@@ -1,0 +1,50 @@
+diff --git a/tests/proxy_models/test_select_related_only_crash.py b/tests/proxy_models/test_select_related_only_crash.py
+new file mode 100644
+index 0000000000..9e6cdb462c
+--- /dev/null
++++ b/tests/proxy_models/test_select_related_only_crash.py
+@@ -0,0 +1,44 @@
++from django.db import models
++from django.test import TestCase
++
++# These models should be added to a file like `tests/proxy_models/models.py`
++# to ensure they are part of a correctly configured application.
++class CustomModelForProxy(models.Model):
++    name = models.CharField(max_length=16)
++
++
++class ProxyCustomModelForProxy(CustomModelForProxy):
++    class Meta:
++        proxy = True
++
++
++class AnotherModelForProxy(models.Model):
++    custom = models.ForeignKey(
++        ProxyCustomModelForProxy,
++        on_delete=models.SET_NULL,
++        null=True,
++        blank=True,
++    )
++
++
++# This test class should be added to `tests/proxy_models/tests.py`.
++class ProxyModelSelectRelatedOnlyCrashTest(TestCase):
++    def test_select_related_only_on_proxy_model_fk(self):
++        """
++        Tests that .only() after .select_related() on a proxy model FK
++        crashes with ValueError.
++        """
++        # Create instances of the models.
++        custom = CustomModelForProxy.objects.create(name="custom")
++        AnotherModelForProxy.objects.create(custom=custom)
++
++        # This is the exact query from the bug report that causes the crash.
++        # The list() call forces the queryset to be evaluated. Before the fix,
++        # this test will fail with an unhandled `ValueError: 'id' is not in
++        # list`. After the fix, it will run without error, and the test will
++        # pass.
++        list(
++            AnotherModelForProxy.objects.select_related("custom")
++            .only("custom__name")
++            .all()
++        )

@@ -1,0 +1,42 @@
+diff --git a/tests/test_autoreload_child_arguments.py b/tests/test_autoreload_child_arguments.py
+new file mode 100644
+index 0000000000..447cac717d
+--- /dev/null
++++ b/tests/test_autoreload_child_arguments.py
+@@ -0,0 +1,36 @@
++import sys
++import tempfile
++import types
++from pathlib import Path
++from unittest import mock
++
++from django.test import SimpleTestCase
++from django.utils import autoreload
++
++
++class AutoreloadChildArgumentsTests(SimpleTestCase):
++    @mock.patch('sys.warnoptions', [])
++    def test_run_as_other_module(self):
++        """
++        get_child_arguments() detects run-as-module for any module, not
++        just Django.
++        """
++        with tempfile.TemporaryDirectory() as tmpdir:
++            # Create a fake module structure to properly simulate `python -m my_app`.
++            module_dir = Path(tmpdir) / 'my_app'
++            module_dir.mkdir()
++            main_py = module_dir / '__main__.py'
++            main_py.touch()
++
++            # When running `python -m my_app`, __main__'s spec has a parent
++            # and sys.argv[0] is the path to __main__.py.
++            main_spec = mock.Mock(parent='my_app')
++            main_module = types.ModuleType('__main__')
++            main_module.__spec__ = main_spec
++
++            with mock.patch.dict(sys.modules, {'__main__': main_module}), \
++                    mock.patch('sys.argv', [str(main_py), 'runserver']):
++                self.assertEqual(
++                    autoreload.get_child_arguments(),
++                    [sys.executable, '-m', 'my_app', 'runserver'],
++                )

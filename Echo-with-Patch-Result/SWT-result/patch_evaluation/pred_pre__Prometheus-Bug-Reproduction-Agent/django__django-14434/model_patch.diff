@@ -1,0 +1,36 @@
+diff --git a/tests/schema/test_create_unique_sql.py b/tests/schema/test_create_unique_sql.py
+new file mode 100644
+index 0000000000..861d8a6159
+--- /dev/null
++++ b/tests/schema/test_create_unique_sql.py
+@@ -0,0 +1,30 @@
++from django.db import connection, models
++from django.test import TestCase
++from django.test.utils import isolate_apps
++
++
++@isolate_apps('schema')
++class SchemaEditorDDLReferenceTests(TestCase):
++    def test_create_unique_sql_references_column(self):
++        """
++        A Statement created by _create_unique_sql() should correctly
++        reference the columns of a table.
++        """
++        class Author(models.Model):
++            name = models.CharField(max_length=255)
++
++            class Meta:
++                app_label = 'schema'
++
++        editor = connection.schema_editor()
++        model = Author
++        columns = [model._meta.get_field('name').column]
++        # Providing a name is required to reveal the bug, otherwise IndexName
++        # is used, which works correctly and hides the issue in the Columns
++        # part of the statement.
++        statement = editor._create_unique_sql(
++            model, columns, name='my_unique_constraint'
++        )
++        self.assertTrue(
++            statement.references_column(model._meta.db_table, columns[0])
++        )

@@ -1,0 +1,32 @@
+diff --git a/tests/test_field_clean_refactor.py b/tests/test_field_clean_refactor.py
+new file mode 100644
+index 0000000000..6e19321b53
+--- /dev/null
++++ b/tests/test_field_clean_refactor.py
+@@ -0,0 +1,26 @@
++import datetime
++
++from django import forms
++from django.test import SimpleTestCase
++
++
++class FieldCleanRefactorTests(SimpleTestCase):
++    def test_clean_fields_disabled_callable_initial(self):
++        """
++        form._clean_fields() should return the same value as form[name].initial
++        for disabled fields with a callable initial.
++        """
++        now = datetime.datetime(2021, 10, 25, 14, 30, 45, 123456)
++
++        class DateTimeForm(forms.Form):
++            dt = forms.DateTimeField(initial=lambda: now, disabled=True)
++
++        form = DateTimeForm({})
++        self.assertTrue(form.is_valid())
++        # Before the fix, form.cleaned_data['dt'] contains microseconds
++        # because _clean_fields() uses get_initial_for_field(), but
++        # form['dt'].initial strips them because the default widget for
++        # DateTimeField doesn't support them. This assertion will fail.
++        # After the fix, _clean_fields() uses bound_field.initial, so the
++        # values will match.
++        self.assertEqual(form.cleaned_data['dt'], form['dt'].initial)

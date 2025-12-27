@@ -1,0 +1,59 @@
+diff --git a/tests/dbshell/test_postgresql_ssl.py b/tests/dbshell/test_postgresql_ssl.py
+new file mode 100644
+index 0000000000..5a4a8296e9
+--- /dev/null
++++ b/tests/dbshell/test_postgresql_ssl.py
+@@ -0,0 +1,53 @@
++import os
++import subprocess
++from unittest import mock
++
++from django.db.backends.postgresql.client import DatabaseClient
++from django.test import SimpleTestCase
++
++
++class PsqlDbshellCommandSslTestCase(SimpleTestCase):
++    def _get_subprocess_env(self, dbinfo):
++        """
++        Mock subprocess.run() and return the environment used to call it.
++        """
++        subprocess_env = None
++
++        def _mock_subprocess_run(*args, env=os.environ, **kwargs):
++            nonlocal subprocess_env
++            subprocess_env = env
++            return subprocess.CompletedProcess(list(*args), 0)
++
++        with mock.patch("subprocess.run", new=_mock_subprocess_run):
++            DatabaseClient.runshell_db(dbinfo)
++        return subprocess_env
++
++    def test_ssl_parameters_are_passed_to_psql_environment(self):
++        """
++        SSL options are passed to psql via environment variables.
++        """
++        dbinfo = {
++            "database": "dbname",
++            "user": "someuser",
++            "host": "somehost",
++            "port": "444",
++            "sslmode": "verify-ca",
++            "sslrootcert": "ca.crt",
++            "sslcert": "client_cert_chain.crt",
++            "sslkey": "client_key.key",
++        }
++        env = self._get_subprocess_env(dbinfo)
++        self.assertEqual(
++            {
++                "PGSSLMODE": env.get("PGSSLMODE"),
++                "PGSSLROOTCERT": env.get("PGSSLROOTCERT"),
++                "PGSSLCERT": env.get("PGSSLCERT"),
++                "PGSSLKEY": env.get("PGSSLKEY"),
++            },
++            {
++                "PGSSLMODE": "verify-ca",
++                "PGSSLROOTCERT": "ca.crt",
++                "PGSSLCERT": "client_cert_chain.crt",
++                "PGSSLKEY": "client_key.key",
++            },
++        )

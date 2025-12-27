@@ -1,0 +1,287 @@
+2025-12-25 22:46:57,494 - WARNING - Starting evaluation at 1766702817.4945672
+2025-12-25 22:46:57,550 - INFO - Creating container for django__django-16560...
+2025-12-25 22:46:59,682 - INFO - Container for django__django-16560 created: e6d602f5f6a1fa40075b4a5e32fda4c96aa99393d0a6bc6954857a6571492c5d
+2025-12-25 22:47:03,306 - INFO - Container for django__django-16560 started: e6d602f5f6a1fa40075b4a5e32fda4c96aa99393d0a6bc6954857a6571492c5d
+2025-12-25 22:47:04,981 - INFO - Git diff before:
+
+2025-12-25 22:47:04,981 - INFO - Eval script for django__django-16560 written to eval.sh, now applying to container...
+2025-12-25 22:47:23,919 - INFO - Test output for django__django-16560 written to run_instance_swt_logs/patch_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/django__django-16560/test_output.txt
+2025-12-25 22:47:24,001 - INFO - Git diff after:
+diff --git a/django/contrib/postgres/constraints.py b/django/contrib/postgres/constraints.py
+index ad3a5f61f5..c61072b5a5 100644
+--- a/django/contrib/postgres/constraints.py
++++ b/django/contrib/postgres/constraints.py
+@@ -32,6 +32,7 @@ class ExclusionConstraint(BaseConstraint):
+         condition=None,
+         deferrable=None,
+         include=None,
++        violation_error_code=None,
+         violation_error_message=None,
+     ):
+         if index_type and index_type.lower() not in {"gist", "spgist"}:
+@@ -60,7 +61,11 @@ class ExclusionConstraint(BaseConstraint):
+         self.condition = condition
+         self.deferrable = deferrable
+         self.include = tuple(include) if include else ()
+-        super().__init__(name=name, violation_error_message=violation_error_message)
++        super().__init__(
++            name=name,
++            violation_error_code=violation_error_code,
++            violation_error_message=violation_error_message,
++        )
+ 
+     def _get_expressions(self, schema_editor, query):
+         expressions = []
+@@ -149,12 +154,13 @@ class ExclusionConstraint(BaseConstraint):
+                 and self.condition == other.condition
+                 and self.deferrable == other.deferrable
+                 and self.include == other.include
++                and self.violation_error_code == other.violation_error_code
+                 and self.violation_error_message == other.violation_error_message
+             )
+         return super().__eq__(other)
+ 
+     def __repr__(self):
+-        return "<%s: index_type=%s expressions=%s name=%s%s%s%s%s>" % (
++        return "<%s: index_type=%s expressions=%s name=%s%s%s%s%s%s>" % (
+             self.__class__.__qualname__,
+             repr(self.index_type),
+             repr(self.expressions),
+@@ -162,6 +168,11 @@ class ExclusionConstraint(BaseConstraint):
+             "" if self.condition is None else " condition=%s" % self.condition,
+             "" if self.deferrable is None else " deferrable=%r" % self.deferrable,
+             "" if not self.include else " include=%s" % repr(self.include),
++            (
++                ""
++                if self.violation_error_code is None
++                else " violation_error_code=%r" % self.violation_error_code
++            ),
+             (
+                 ""
+                 if self.violation_error_message is None
+@@ -204,9 +215,13 @@ class ExclusionConstraint(BaseConstraint):
+             queryset = queryset.exclude(pk=model_class_pk)
+         if not self.condition:
+             if queryset.exists():
+-                raise ValidationError(self.get_violation_error_message())
++                raise ValidationError(
++                    self.get_violation_error_message(), code=self.violation_error_code
++                )
+         else:
+             if (self.condition & Exists(queryset.filter(self.condition))).check(
+                 replacement_map, using=using
+             ):
+-                raise ValidationError(self.get_violation_error_message())
++                raise ValidationError(
++                    self.get_violation_error_message(), code=self.violation_error_code
++                )
+diff --git a/django/db/models/constraints.py b/django/db/models/constraints.py
+index 075ecee1be..0df0782b6f 100644
+--- a/django/db/models/constraints.py
++++ b/django/db/models/constraints.py
+@@ -18,11 +18,16 @@ __all__ = ["BaseConstraint", "CheckConstraint", "Deferrable", "UniqueConstraint"
+ 
+ class BaseConstraint:
+     default_violation_error_message = _("Constraint “%(name)s” is violated.")
++    violation_error_code = None
+     violation_error_message = None
+ 
+     # RemovedInDjango60Warning: When the deprecation ends, replace with:
+-    # def __init__(self, *, name, violation_error_message=None):
+-    def __init__(self, *args, name=None, violation_error_message=None):
++    # def __init__(
++    #     self, *, name, violation_error_code=None, violation_error_message=None
++    # ):
++    def __init__(
++        self, *args, name=None, violation_error_code=None, violation_error_message=None
++    ):
+         # RemovedInDjango60Warning.
+         if name is None and not args:
+             raise TypeError(
+@@ -30,6 +35,8 @@ class BaseConstraint:
+                 f"argument: 'name'"
+             )
+         self.name = name
++        if violation_error_code is not None:
++            self.violation_error_code = violation_error_code
+         if violation_error_message is not None:
+             self.violation_error_message = violation_error_message
+         else:
+@@ -74,6 +81,8 @@ class BaseConstraint:
+             and self.violation_error_message != self.default_violation_error_message
+         ):
+             kwargs["violation_error_message"] = self.violation_error_message
++        if self.violation_error_code is not None:
++            kwargs["violation_error_code"] = self.violation_error_code
+         return (path, (), kwargs)
+ 
+     def clone(self):
+@@ -82,13 +91,19 @@ class BaseConstraint:
+ 
+ 
+ class CheckConstraint(BaseConstraint):
+-    def __init__(self, *, check, name, violation_error_message=None):
++    def __init__(
++        self, *, check, name, violation_error_code=None, violation_error_message=None
++    ):
+         self.check = check
+         if not getattr(check, "conditional", False):
+             raise TypeError(
+                 "CheckConstraint.check must be a Q instance or boolean expression."
+             )
+-        super().__init__(name=name, violation_error_message=violation_error_message)
++        super().__init__(
++            name=name,
++            violation_error_code=violation_error_code,
++            violation_error_message=violation_error_message,
++        )
+ 
+     def _get_check_sql(self, model, schema_editor):
+         query = Query(model=model, alias_cols=False)
+@@ -112,15 +127,22 @@ class CheckConstraint(BaseConstraint):
+         against = instance._get_field_value_map(meta=model._meta, exclude=exclude)
+         try:
+             if not Q(self.check).check(against, using=using):
+-                raise ValidationError(self.get_violation_error_message())
++                raise ValidationError(
++                    self.get_violation_error_message(), code=self.violation_error_code
++                )
+         except FieldError:
+             pass
+ 
+     def __repr__(self):
+-        return "<%s: check=%s name=%s%s>" % (
++        return "<%s: check=%s name=%s%s%s>" % (
+             self.__class__.__qualname__,
+             self.check,
+             repr(self.name),
++            (
++                ""
++                if self.violation_error_code is None
++                else " violation_error_code=%r" % self.violation_error_code
++            ),
+             (
+                 ""
+                 if self.violation_error_message is None
+@@ -134,6 +156,7 @@ class CheckConstraint(BaseConstraint):
+             return (
+                 self.name == other.name
+                 and self.check == other.check
++                and self.violation_error_code == other.violation_error_code
+                 and self.violation_error_message == other.violation_error_message
+             )
+         return super().__eq__(other)
+@@ -163,6 +186,7 @@ class UniqueConstraint(BaseConstraint):
+         deferrable=None,
+         include=None,
+         opclasses=(),
++        violation_error_code=None,
+         violation_error_message=None,
+     ):
+         if not name:
+@@ -213,7 +237,11 @@ class UniqueConstraint(BaseConstraint):
+             F(expression) if isinstance(expression, str) else expression
+             for expression in expressions
+         )
+-        super().__init__(name=name, violation_error_message=violation_error_message)
++        super().__init__(
++            name=name,
++            violation_error_code=violation_error_code,
++            violation_error_message=violation_error_message,
++        )
+ 
+     @property
+     def contains_expressions(self):
+@@ -293,7 +321,7 @@ class UniqueConstraint(BaseConstraint):
+         )
+ 
+     def __repr__(self):
+-        return "<%s:%s%s%s%s%s%s%s%s>" % (
++        return "<%s:%s%s%s%s%s%s%s%s%s>" % (
+             self.__class__.__qualname__,
+             "" if not self.fields else " fields=%s" % repr(self.fields),
+             "" if not self.expressions else " expressions=%s" % repr(self.expressions),
+@@ -302,6 +330,11 @@ class UniqueConstraint(BaseConstraint):
+             "" if self.deferrable is None else " deferrable=%r" % self.deferrable,
+             "" if not self.include else " include=%s" % repr(self.include),
+             "" if not self.opclasses else " opclasses=%s" % repr(self.opclasses),
++            (
++                ""
++                if self.violation_error_code is None
++                else " violation_error_code=%r" % self.violation_error_code
++            ),
+             (
+                 ""
+                 if self.violation_error_message is None
+@@ -320,6 +353,7 @@ class UniqueConstraint(BaseConstraint):
+                 and self.include == other.include
+                 and self.opclasses == other.opclasses
+                 and self.expressions == other.expressions
++                and self.violation_error_code == other.violation_error_code
+                 and self.violation_error_message == other.violation_error_message
+             )
+         return super().__eq__(other)
+@@ -385,14 +419,17 @@ class UniqueConstraint(BaseConstraint):
+         if not self.condition:
+             if queryset.exists():
+                 if self.expressions:
+-                    raise ValidationError(self.get_violation_error_message())
++                    raise ValidationError(
++                        self.get_violation_error_message(),
++                        code=self.violation_error_code,
++                    )
+                 # When fields are defined, use the unique_error_message() for
+                 # backward compatibility.
+                 for model, constraints in instance.get_constraints():
+                     for constraint in constraints:
+                         if constraint is self:
+                             raise ValidationError(
+-                                instance.unique_error_message(model, self.fields)
++                                instance.unique_error_message(model, self.fields),
+                             )
+         else:
+             against = instance._get_field_value_map(meta=model._meta, exclude=exclude)
+@@ -400,6 +437,9 @@ class UniqueConstraint(BaseConstraint):
+                 if (self.condition & Exists(queryset.filter(self.condition))).check(
+                     against, using=using
+                 ):
+-                    raise ValidationError(self.get_violation_error_message())
++                    raise ValidationError(
++                        self.get_violation_error_message(),
++                        code=self.violation_error_code,
++                    )
+             except FieldError:
+                 pass
+2025-12-25 22:47:24,001 - INFO - Git diff changed after running eval script
+2025-12-25 22:47:24,001 - INFO - Attempting to stop container exec.eval.x86_64.9097b18874f4d0ac315ef2.a8264b0ed5de8993a0021c.129975669675968...
+2025-12-25 22:47:42,182 - INFO - Attempting to remove container exec.eval.x86_64.9097b18874f4d0ac315ef2.a8264b0ed5de8993a0021c.129975669675968...
+2025-12-25 22:47:42,400 - INFO - Container exec.eval.x86_64.9097b18874f4d0ac315ef2.a8264b0ed5de8993a0021c.129975669675968 removed.
+2025-12-25 22:47:42,400 - WARNING - End of eval at 1766702862.400141
+2025-12-26 02:43:32,293 - WARNING - Starting evaluation at 1766717012.2936254
+2025-12-26 02:43:32,318 - WARNING - Starting evaluation at 1766717012.3187888
+2025-12-26 02:43:32,347 - WARNING - Starting evaluation at 1766717012.3471692
+2025-12-26 02:43:32,368 - WARNING - Starting evaluation at 1766717012.3689454
+2025-12-26 02:43:32,387 - WARNING - Starting evaluation at 1766717012.3878236
+2025-12-26 09:38:12,518 - WARNING - Starting evaluation at 1766741892.5184298
+2025-12-26 09:38:12,528 - WARNING - Starting evaluation at 1766741892.5285456
+2025-12-26 09:38:12,539 - WARNING - Starting evaluation at 1766741892.5395103
+2025-12-26 09:38:12,551 - WARNING - Starting evaluation at 1766741892.5510345
+2025-12-26 09:38:12,560 - WARNING - Starting evaluation at 1766741892.5601313
+2025-12-26 09:53:37,391 - WARNING - Starting evaluation at 1766742817.391134
+2025-12-26 09:53:37,400 - WARNING - Starting evaluation at 1766742817.4003737
+2025-12-26 09:53:37,407 - WARNING - Starting evaluation at 1766742817.4079676
+2025-12-26 09:53:37,415 - WARNING - Starting evaluation at 1766742817.4152043
+2025-12-26 09:53:37,422 - WARNING - Starting evaluation at 1766742817.422193
+2025-12-26 10:15:31,498 - WARNING - Starting evaluation at 1766744131.4986112
+2025-12-26 10:15:31,511 - WARNING - Starting evaluation at 1766744131.5119746
+2025-12-26 10:15:31,523 - WARNING - Starting evaluation at 1766744131.5238974
+2025-12-26 10:15:31,535 - WARNING - Starting evaluation at 1766744131.5354767
+2025-12-26 10:15:31,547 - WARNING - Starting evaluation at 1766744131.5478203
+2025-12-26 11:07:39,748 - WARNING - Starting evaluation at 1766747259.748571
+2025-12-26 11:07:39,760 - WARNING - Starting evaluation at 1766747259.7604394
+2025-12-26 11:07:39,770 - WARNING - Starting evaluation at 1766747259.7707803
+2025-12-26 11:07:39,782 - WARNING - Starting evaluation at 1766747259.782113
+2025-12-26 11:07:39,793 - WARNING - Starting evaluation at 1766747259.793782
+2025-12-26 11:07:52,969 - INFO - Grading answer for django__django-16560...
+2025-12-26 11:07:52,979 - INFO - report: {'django__django-16560': {'patch_is_None': False, 'patch_exists': True, 'patch_successfully_applied': True, 'resolved': True, 'coverage_pred': 0.676923076923077, 'coverage_gold': 0.7384615384615385, 'coverage_base': 0.26153846153846155, 'coverage_delta_pred': 0.5846153846153846, 'coverage_delta_gold': 0.6461538461538462, 'added_f2p': 1, 'tests_base': {'FAIL_TO_PASS': [], 'PASS_TO_PASS': [], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_constraints_validation (unittest.loader._FailedTest.test_constraints_validation)']}, 'tests_pred': {'FAIL_TO_PASS': ['test_validate_with_violation_error_code (constraints.test_constraints_validation.CheckConstraintTests.test_validate_with_violation_error_code)'], 'PASS_TO_PASS': ['test_deferrable_with_opclasses (constraints.test_constraints_validation.UniqueConstraintTests.test_deferrable_with_opclasses)', 'test_deconstruction_with_deferrable (constraints.test_constraints_validation.UniqueConstraintTests.test_deconstruction_with_deferrable)', 'test_model_validation_constraint_no_code_error (constraints.test_constraints_validation.UniqueConstraintTests.test_model_validation_constraint_no_code_error)', 'test_validate_expression (constraints.test_constraints_validation.UniqueConstraintTests.test_validate_expression)', 'test_deconstruction_with_include (constraints.test_constraints_validation.UniqueConstraintTests.test_deconstruction_with_include)', 'test_repr (constraints.test_constraints_validation.UniqueConstraintTests.test_repr)', 'test_invalid_include_argument (constraints.test_constraints_validation.UniqueConstraintTests.test_invalid_include_argument)', 'test_repr_with_violation_error_message (constraints.test_constraints_validation.CheckConstraintTests.test_repr_with_violation_error_message)', 'test_opclasses_and_fields_same_length (constraints.test_constraints_validation.UniqueConstraintTests.test_opclasses_and_fields_same_length)', 'test_default_violation_error_message (constraints.test_constraints_validation.BaseConstraintTests.test_default_violation_error_message)', 'test_name (constraints.test_constraints_validation.CheckConstraintTests.test_name)', 'test_condition_must_be_q (constraints.test_constraints_validation.UniqueConstraintTests.test_condition_must_be_q)', 'test_repr_with_include (constraints.test_constraints_validation.UniqueConstraintTests.test_repr_with_include)', 'test_eq_with_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_eq_with_condition)', 'test_validate_nullable_field_with_none (constraints.test_constraints_validation.CheckConstraintTests.test_validate_nullable_field_with_none)', 'test_eq (constraints.test_constraints_validation.UniqueConstraintTests.test_eq)', 'test_requires_field_or_expression (constraints.test_constraints_validation.UniqueConstraintTests.test_requires_field_or_expression)', 'test_validate_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_validate_condition)', 'test_create_sql (constraints.test_constraints_validation.BaseConstraintTests.test_create_sql)', 'test_custom_violation_error_message (constraints.test_constraints_validation.BaseConstraintTests.test_custom_violation_error_message)', 'test_repr_with_opclasses (constraints.test_constraints_validation.UniqueConstraintTests.test_repr_with_opclasses)', 'test_requires_name (constraints.test_constraints_validation.UniqueConstraintTests.test_requires_name)', 'test_expressions_and_fields_mutually_exclusive (constraints.test_constraints_validation.UniqueConstraintTests.test_expressions_and_fields_mutually_exclusive)', 'test_model_validation (constraints.test_constraints_validation.UniqueConstraintTests.test_model_validation)', 'test_repr (constraints.test_constraints_validation.CheckConstraintTests.test_repr)', 'test_deconstruction (constraints.test_constraints_validation.UniqueConstraintTests.test_deconstruction)', 'test_validate (constraints.test_constraints_validation.BaseConstraintTests.test_validate)', 'test_deferrable_with_include (constraints.test_constraints_validation.UniqueConstraintTests.test_deferrable_with_include)', 'test_positional_arguments (constraints.test_constraints_validation.BaseConstraintTests.test_positional_arguments)', 'test_validate_ordered_expression (constraints.test_constraints_validation.UniqueConstraintTests.test_validate_ordered_expression)', 'test_invalid_opclasses_argument (constraints.test_constraints_validation.UniqueConstraintTests.test_invalid_opclasses_argument)', 'test_database_constraint (constraints.test_constraints_validation.UniqueConstraintTests.test_database_constraint)', 'test_validate_expression_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_validate_expression_condition)', 'test_repr_with_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_repr_with_condition)', 'test_deconstruction_with_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_deconstruction_with_condition)', 'test_contains_expressions (constraints.test_constraints_validation.BaseConstraintTests.test_contains_expressions)', 'test_expressions_with_opclasses (constraints.test_constraints_validation.UniqueConstraintTests.test_expressions_with_opclasses)', 'test_name_required (constraints.test_constraints_validation.BaseConstraintTests.test_name_required)', 'test_database_constraint_unicode (constraints.test_constraints_validation.CheckConstraintTests.test_database_constraint_unicode)', 'test_deferrable_with_expressions (constraints.test_constraints_validation.UniqueConstraintTests.test_deferrable_with_expressions)', 'test_eq_with_include (constraints.test_constraints_validation.UniqueConstraintTests.test_eq_with_include)', 'test_repr_with_violation_error_message (constraints.test_constraints_validation.UniqueConstraintTests.test_repr_with_violation_error_message)', 'test_repr_with_deferrable (constraints.test_constraints_validation.UniqueConstraintTests.test_repr_with_deferrable)', 'test_deconstruction_with_expressions (constraints.test_constraints_validation.UniqueConstraintTests.test_deconstruction_with_expressions)', 'test_deferrable_with_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_deferrable_with_condition)', 'test_database_constraint_with_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_database_constraint_with_condition)', 'test_invalid_check_types (constraints.test_constraints_validation.CheckConstraintTests.test_invalid_check_types)', 'test_deconstruction (constraints.test_constraints_validation.BaseConstraintTests.test_deconstruction)', 'test_database_constraint (constraints.test_constraints_validation.CheckConstraintTests.test_database_constraint)', 'test_validate (constraints.test_constraints_validation.CheckConstraintTests.test_validate)', 'test_repr_with_expressions (constraints.test_constraints_validation.UniqueConstraintTests.test_repr_with_expressions)', 'test_custom_violation_error_message_clone (constraints.test_constraints_validation.BaseConstraintTests.test_custom_violation_error_message_clone)', 'test_eq (constraints.test_constraints_validation.CheckConstraintTests.test_eq)', 'test_validate_rawsql_expressions_noop (constraints.test_constraints_validation.CheckConstraintTests.test_validate_rawsql_expressions_noop)', 'test_model_validation_with_condition (constraints.test_constraints_validation.UniqueConstraintTests.test_model_validation_with_condition)', 'test_abstract_name (constraints.test_constraints_validation.CheckConstraintTests.test_abstract_name)', 'test_deconstruction_with_opclasses (constraints.test_constraints_validation.UniqueConstraintTests.test_deconstruction_with_opclasses)', 'test_validate_expression_str (constraints.test_constraints_validation.UniqueConstraintTests.test_validate_expression_str)', 'test_name (constraints.test_constraints_validation.UniqueConstraintTests.test_name)', 'test_eq_with_expressions (constraints.test_constraints_validation.UniqueConstraintTests.test_eq_with_expressions)', 'test_eq_with_opclasses (constraints.test_constraints_validation.UniqueConstraintTests.test_eq_with_opclasses)', 'test_validate_boolean_expressions (constraints.test_constraints_validation.CheckConstraintTests.test_validate_boolean_expressions)', 'test_constraint_sql (constraints.test_constraints_validation.BaseConstraintTests.test_constraint_sql)', 'test_validate (constraints.test_constraints_validation.UniqueConstraintTests.test_validate)', 'test_eq_with_deferrable (constraints.test_constraints_validation.UniqueConstraintTests.test_eq_with_deferrable)', 'test_remove_sql (constraints.test_constraints_validation.BaseConstraintTests.test_remove_sql)', 'test_deconstruction (constraints.test_constraints_validation.CheckConstraintTests.test_deconstruction)', 'test_invalid_defer_argument (constraints.test_constraints_validation.UniqueConstraintTests.test_invalid_defer_argument)', 'test_deprecation (constraints.test_constraints_validation.BaseConstraintTests.test_deprecation)'], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_initially_deferred_database_constraint (constraints.test_constraints_validation.UniqueConstraintTests.test_initially_deferred_database_constraint)', 'test_validate_nullable_field_with_isnull (constraints.test_constraints_validation.CheckConstraintTests.test_validate_nullable_field_with_isnull)', 'test_initially_immediate_database_constraint (constraints.test_constraints_validation.UniqueConstraintTests.test_initially_immediate_database_constraint)', 'test_include_database_constraint (constraints.test_constraints_validation.UniqueConstraintTests.test_include_database_constraint)']}, 'tests_gold': {'FAIL_TO_PASS': ['test_eq (constraints.tests.UniqueConstraintTests.test_eq)', 'test_validate_expression (constraints.tests.UniqueConstraintTests.test_validate_expression)', 'test_eq (constraints.tests.CheckConstraintTests.test_eq)', 'test_validate_custom_error (constraints.tests.CheckConstraintTests.test_validate_custom_error)', 'test_repr_with_violation_error_code (constraints.tests.CheckConstraintTests.test_repr_with_violation_error_code)', 'test_custom_violation_code_message (constraints.tests.BaseConstraintTests.test_custom_violation_code_message)', 'test_deconstruction (constraints.tests.BaseConstraintTests.test_deconstruction)', 'test_repr_with_violation_error_code (constraints.tests.UniqueConstraintTests.test_repr_with_violation_error_code)', 'test_validate_conditon_custom_error (constraints.tests.UniqueConstraintTests.test_validate_conditon_custom_error)'], 'PASS_TO_PASS': ['test_validate_boolean_expressions (constraints.tests.CheckConstraintTests.test_validate_boolean_expressions)', 'test_deconstruction_with_opclasses (constraints.tests.UniqueConstraintTests.test_deconstruction_with_opclasses)', 'test_invalid_opclasses_argument (constraints.tests.UniqueConstraintTests.test_invalid_opclasses_argument)', 'test_database_constraint (constraints.tests.UniqueConstraintTests.test_database_constraint)', 'test_validate_nullable_field_with_none (constraints.tests.CheckConstraintTests.test_validate_nullable_field_with_none)', 'test_expressions_and_fields_mutually_exclusive (constraints.tests.UniqueConstraintTests.test_expressions_and_fields_mutually_exclusive)', 'test_database_constraint (constraints.tests.CheckConstraintTests.test_database_constraint)', 'test_validate (constraints.tests.UniqueConstraintTests.test_validate)', 'test_eq_with_expressions (constraints.tests.UniqueConstraintTests.test_eq_with_expressions)', 'test_eq_with_include (constraints.tests.UniqueConstraintTests.test_eq_with_include)', 'test_custom_violation_error_message (constraints.tests.BaseConstraintTests.test_custom_violation_error_message)', 'test_database_constraint_unicode (constraints.tests.CheckConstraintTests.test_database_constraint_unicode)', 'test_remove_sql (constraints.tests.BaseConstraintTests.test_remove_sql)', 'test_validate_rawsql_expressions_noop (constraints.tests.CheckConstraintTests.test_validate_rawsql_expressions_noop)', 'test_repr_with_include (constraints.tests.UniqueConstraintTests.test_repr_with_include)', 'test_deconstruction_with_deferrable (constraints.tests.UniqueConstraintTests.test_deconstruction_with_deferrable)', 'test_invalid_include_argument (constraints.tests.UniqueConstraintTests.test_invalid_include_argument)', 'test_name (constraints.tests.UniqueConstraintTests.test_name)', 'test_validate_ordered_expression (constraints.tests.UniqueConstraintTests.test_validate_ordered_expression)', 'test_name (constraints.tests.CheckConstraintTests.test_name)', 'test_requires_name (constraints.tests.UniqueConstraintTests.test_requires_name)', 'test_repr (constraints.tests.CheckConstraintTests.test_repr)', 'test_deprecation (constraints.tests.BaseConstraintTests.test_deprecation)', 'test_eq_with_deferrable (constraints.tests.UniqueConstraintTests.test_eq_with_deferrable)', 'test_deferrable_with_include (constraints.tests.UniqueConstraintTests.test_deferrable_with_include)', 'test_positional_arguments (constraints.tests.BaseConstraintTests.test_positional_arguments)', 'test_deferrable_with_expressions (constraints.tests.UniqueConstraintTests.test_deferrable_with_expressions)', 'test_expressions_with_opclasses (constraints.tests.UniqueConstraintTests.test_expressions_with_opclasses)', 'test_invalid_defer_argument (constraints.tests.UniqueConstraintTests.test_invalid_defer_argument)', 'test_repr_with_deferrable (constraints.tests.UniqueConstraintTests.test_repr_with_deferrable)', 'test_custom_violation_error_message_clone (constraints.tests.BaseConstraintTests.test_custom_violation_error_message_clone)', 'test_eq_with_opclasses (constraints.tests.UniqueConstraintTests.test_eq_with_opclasses)', 'test_default_violation_error_message (constraints.tests.BaseConstraintTests.test_default_violation_error_message)', 'test_repr_with_violation_error_message (constraints.tests.CheckConstraintTests.test_repr_with_violation_error_message)', 'test_repr_with_expressions (constraints.tests.UniqueConstraintTests.test_repr_with_expressions)', 'test_condition_must_be_q (constraints.tests.UniqueConstraintTests.test_condition_must_be_q)', 'test_repr (constraints.tests.UniqueConstraintTests.test_repr)', 'test_database_constraint_with_condition (constraints.tests.UniqueConstraintTests.test_database_constraint_with_condition)', 'test_model_validation_constraint_no_code_error (constraints.tests.UniqueConstraintTests.test_model_validation_constraint_no_code_error)', 'test_eq_with_condition (constraints.tests.UniqueConstraintTests.test_eq_with_condition)', 'test_opclasses_and_fields_same_length (constraints.tests.UniqueConstraintTests.test_opclasses_and_fields_same_length)', 'test_deconstruction (constraints.tests.CheckConstraintTests.test_deconstruction)', 'test_model_validation (constraints.tests.UniqueConstraintTests.test_model_validation)', 'test_deconstruction_with_condition (constraints.tests.UniqueConstraintTests.test_deconstruction_with_condition)', 'test_repr_with_violation_error_message (constraints.tests.UniqueConstraintTests.test_repr_with_violation_error_message)', 'test_validate_condition (constraints.tests.UniqueConstraintTests.test_validate_condition)', 'test_abstract_name (constraints.tests.CheckConstraintTests.test_abstract_name)', 'test_repr_with_opclasses (constraints.tests.UniqueConstraintTests.test_repr_with_opclasses)', 'test_name_required (constraints.tests.BaseConstraintTests.test_name_required)', 'test_create_sql (constraints.tests.BaseConstraintTests.test_create_sql)', 'test_validate_expression_str (constraints.tests.UniqueConstraintTests.test_validate_expression_str)', 'test_deconstruction_with_include (constraints.tests.UniqueConstraintTests.test_deconstruction_with_include)', 'test_requires_field_or_expression (constraints.tests.UniqueConstraintTests.test_requires_field_or_expression)', 'test_deconstruction (constraints.tests.UniqueConstraintTests.test_deconstruction)', 'test_model_validation_with_condition (constraints.tests.UniqueConstraintTests.test_model_validation_with_condition)', 'test_deconstruction_with_expressions (constraints.tests.UniqueConstraintTests.test_deconstruction_with_expressions)', 'test_deferrable_with_opclasses (constraints.tests.UniqueConstraintTests.test_deferrable_with_opclasses)', 'test_repr_with_condition (constraints.tests.UniqueConstraintTests.test_repr_with_condition)', 'test_validate_expression_condition (constraints.tests.UniqueConstraintTests.test_validate_expression_condition)', 'test_invalid_check_types (constraints.tests.CheckConstraintTests.test_invalid_check_types)', 'test_deferrable_with_condition (constraints.tests.UniqueConstraintTests.test_deferrable_with_condition)', 'test_contains_expressions (constraints.tests.BaseConstraintTests.test_contains_expressions)', 'test_validate (constraints.tests.BaseConstraintTests.test_validate)', 'test_constraint_sql (constraints.tests.BaseConstraintTests.test_constraint_sql)', 'test_validate (constraints.tests.CheckConstraintTests.test_validate)'], 'FAIL_TO_FAIL': [], 'PASS_TO_FAIL': [], 'UNMATCHED': ['test_range_adjacent_spgist_include_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_spgist_include_condition)', 'test_index_transform (postgres_tests.test_constraints.ExclusionConstraintTests.test_index_transform)', 'test_range_adjacent_opclass_deferrable (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_opclass_deferrable)', 'test_initially_immediate_database_constraint (constraints.tests.UniqueConstraintTests.test_initially_immediate_database_constraint)', 'test_deconstruct_index_type (postgres_tests.test_constraints.ExclusionConstraintTests.test_deconstruct_index_type)', 'test_opclass (postgres_tests.test_constraints.SchemaTests.test_opclass)', 'test_check_constraint_datetimerange_contains (postgres_tests.test_constraints.SchemaTests.test_check_constraint_datetimerange_contains)', 'test_range_equal_cast (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_equal_cast)', 'test_opclass_func (postgres_tests.test_constraints.SchemaTests.test_opclass_func)', 'test_initially_deferred_database_constraint (constraints.tests.UniqueConstraintTests.test_initially_deferred_database_constraint)', 'test_range_adjacent_initially_deferred_with_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_initially_deferred_with_condition)', 'test_range_adjacent_opclass (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_opclass)', 'test_table_create (postgres_tests.test_constraints.ExclusionConstraintTests.test_table_create)', 'test_validate_with_custom_code_and_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_validate_with_custom_code_and_condition)', 'test_range_adjacent (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent)', 'test_deconstruct_deferrable (postgres_tests.test_constraints.ExclusionConstraintTests.test_deconstruct_deferrable)', 'test_check_constraint_range_contains (postgres_tests.test_constraints.SchemaTests.test_check_constraint_range_contains)', 'test_check_constraint_array_contains (postgres_tests.test_constraints.SchemaTests.test_check_constraint_array_contains)', 'test_range_adjacent_opclass_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_opclass_condition)', 'test_range_adjacent_spgist_include_deferrable (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_spgist_include_deferrable)', 'test_range_adjacent_gist_include_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_gist_include_condition)', 'test_range_overlaps_custom (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_overlaps_custom)', 'test_empty_expressions (postgres_tests.test_constraints.ExclusionConstraintTests.test_empty_expressions)', 'test_expressions_with_key_transform (postgres_tests.test_constraints.ExclusionConstraintTests.test_expressions_with_key_transform)', 'test_range_overlaps (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_overlaps)', 'test_invalid_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_invalid_condition)', 'test_spgist_include_not_supported (postgres_tests.test_constraints.ExclusionConstraintTests.test_spgist_include_not_supported)', 'test_invalid_deferrable (postgres_tests.test_constraints.ExclusionConstraintTests.test_invalid_deferrable)', 'test_check_constraint_range_value (postgres_tests.test_constraints.SchemaTests.test_check_constraint_range_value)', 'test_include_database_constraint (constraints.tests.UniqueConstraintTests.test_include_database_constraint)', 'test_opclass_include (postgres_tests.test_constraints.SchemaTests.test_opclass_include)', 'test_range_adjacent_spgist_opclass_include (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_spgist_opclass_include)', 'test_deconstruct (postgres_tests.test_constraints.ExclusionConstraintTests.test_deconstruct)', 'test_deconstruct_include (postgres_tests.test_constraints.ExclusionConstraintTests.test_deconstruct_include)', 'test_validate_nullable_field_with_isnull (constraints.tests.CheckConstraintTests.test_validate_nullable_field_with_isnull)', 'test_range_adjacent_gist_opclass_include (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_gist_opclass_include)', 'test_opclass_partial (postgres_tests.test_constraints.SchemaTests.test_opclass_partial)', 'test_range_adjacent_gist_include (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_gist_include)', 'test_validate_range_adjacent (postgres_tests.test_constraints.ExclusionConstraintTests.test_validate_range_adjacent)', 'test_invalid_expressions (postgres_tests.test_constraints.ExclusionConstraintTests.test_invalid_expressions)', 'test_invalid_index_type (postgres_tests.test_constraints.ExclusionConstraintTests.test_invalid_index_type)', 'test_invalid_include_type (postgres_tests.test_constraints.ExclusionConstraintTests.test_invalid_include_type)', 'test_check_constraint_daterange_contains (postgres_tests.test_constraints.SchemaTests.test_check_constraint_daterange_contains)', 'test_eq (postgres_tests.test_constraints.ExclusionConstraintTests.test_eq)', 'test_repr (postgres_tests.test_constraints.ExclusionConstraintTests.test_repr)', 'test_opclass_multiple_columns (postgres_tests.test_constraints.SchemaTests.test_opclass_multiple_columns)', 'test_range_adjacent_spgist_include (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_spgist_include)', 'test_check_constraint_array_length (postgres_tests.test_constraints.SchemaTests.test_check_constraint_array_length)', 'test_check_constraint_range_lower_upper (postgres_tests.test_constraints.SchemaTests.test_check_constraint_range_lower_upper)', 'test_range_adjacent_gist_include_deferrable (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_gist_include_deferrable)', 'test_range_adjacent_initially_deferred (postgres_tests.test_constraints.ExclusionConstraintTests.test_range_adjacent_initially_deferred)', 'test_expressions_with_params (postgres_tests.test_constraints.ExclusionConstraintTests.test_expressions_with_params)', 'test_deconstruct_condition (postgres_tests.test_constraints.ExclusionConstraintTests.test_deconstruct_condition)', 'test_check_constraint_range_lower_with_nulls (postgres_tests.test_constraints.SchemaTests.test_check_constraint_range_lower_with_nulls)']}}}
+Result for django__django-16560: resolved: True

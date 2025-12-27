@@ -1,0 +1,41 @@
+diff --git a/tests/check_framework/test_m2m_through_fields.py b/tests/check_framework/test_m2m_through_fields.py
+new file mode 100644
+index 0000000000..f2819cd1a0
+--- /dev/null
++++ b/tests/check_framework/test_m2m_through_fields.py
+@@ -0,0 +1,35 @@
++from django.core import checks
++from django.db import models
++from django.test import SimpleTestCase
++from django.test.utils import isolate_apps
++
++
++@isolate_apps('check_framework', attr_name='apps')
++class ManyToManyRelThroughFieldsCheckTests(SimpleTestCase):
++    def test_m2m_through_fields_list_hashable(self):
++        class Parent(models.Model):
++            name = models.CharField(max_length=256)
++
++        class Child(models.Model):
++            parent = models.ForeignKey(Parent, on_delete=models.CASCADE)
++            many_to_many_field = models.ManyToManyField(
++                to=Parent,
++                through='ManyToManyModel',
++                through_fields=['child', 'parent'],
++                related_name='something',
++            )
++
++        class ManyToManyModel(models.Model):
++            parent = models.ForeignKey(Parent, on_delete=models.CASCADE, related_name='+')
++            child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name='+')
++            second_child = models.ForeignKey(
++                Child, on_delete=models.CASCADE, null=True, default=None,
++            )
++
++        class ProxyParent(Parent):
++            class Meta:
++                proxy = True
++
++        # Before the fix, this raises TypeError: unhashable type: 'list'.
++        # After the fix, it should return no errors.
++        self.assertEqual(ProxyParent.check(), [])
