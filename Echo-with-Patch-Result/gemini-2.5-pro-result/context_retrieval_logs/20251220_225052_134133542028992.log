@@ -1,0 +1,4458 @@
+2025-12-20 22:50:52,307 - thread-134133542028992.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: 5.1.2 ImportError while loading conftest (windows import folder casing issues)
+
+Description: 5.1.1 works fine. after upgrade to 5.1.2, the path was converted to lower case
+```
+Installing collected packages: pytest
+  Found existing installation: pytest 5.1.1
+    Uninstalling pytest-5.1.1:
+      Successfully uninstalled pytest-5.1.1
+Successfully installed pytest-5.1.2
+PS C:\Azure\KMS\ComponentTest\Python> pytest --collect-only .\PIsys -m smoke
+ImportError while loading conftest 'c:\azure\kms\componenttest\python\pisys\conftest.py'.
+ModuleNotFoundError: No module named 'python'
+PS C:\Azure\KMS\ComponentTest\Python>
+```
+
+
+
+Patch information:
+diff --git a/src/_pytest/config/__init__.py b/src/_pytest/config/__init__.py
+index 3a0eca546..3e0151b50 100644
+--- a/src/_pytest/config/__init__.py
++++ b/src/_pytest/config/__init__.py
+@@ -406,20 +406,22 @@ class PytestPluginManager(PluginManager):
+         else:
+             directory = path
+ 
+-        directory = unique_path(directory)
++        # Keep original-case directory for import operations; use a normalized key for mappings.
++        directory_key = unique_path(directory)
+ 
+         # XXX these days we may rather want to use config.rootdir
+         # and allow users to opt into looking into the rootdir parent
+         # directories instead of requiring to specify confcutdir
+         clist = []
+         for parent in directory.parts():
+-            if self._confcutdir and self._confcutdir.relto(parent):
++            parent_key = unique_path(parent)
++            if self._confcutdir and self._confcutdir.relto(parent_key):
+                 continue
+             conftestpath = parent.join("conftest.py")
+             if conftestpath.isfile():
+                 mod = self._importconftest(conftestpath)
+                 clist.append(mod)
+-        self._dirpath2confmods[directory] = clist
++        self._dirpath2confmods[directory_key] = clist
+         return clist
+ 
+     def _rget_with_confmod(self, name, path):
+@@ -435,9 +437,9 @@ class PytestPluginManager(PluginManager):
+         # Use realpath to avoid loading the same conftest twice
+         # with build systems that create build directories containing
+         # symlinks to actual files.
+-        conftestpath = unique_path(conftestpath)
++        keypath = unique_path(conftestpath)
+         try:
+-            return self._conftestpath2mod[conftestpath]
++            return self._conftestpath2mod[keypath]
+         except KeyError:
+             pkgpath = conftestpath.pypkgpath()
+             if pkgpath is None:
+@@ -454,11 +456,11 @@ class PytestPluginManager(PluginManager):
+                 raise ConftestImportFailure(conftestpath, sys.exc_info())
+ 
+             self._conftest_plugins.add(mod)
+-            self._conftestpath2mod[conftestpath] = mod
+-            dirpath = conftestpath.dirpath()
+-            if dirpath in self._dirpath2confmods:
++            self._conftestpath2mod[keypath] = mod
++            dirpath_key = unique_path(conftestpath.dirpath())
++            if dirpath_key in self._dirpath2confmods:
+                 for path, mods in self._dirpath2confmods.items():
+-                    if path and path.relto(dirpath) or path == dirpath:
++                    if path and path.relto(dirpath_key) or path == dirpath_key:
+                         assert mod not in mods
+                         mods.append(mod)
+             self.trace("loaded conftestmodule %r" % (mod))
+diff --git a/src/_pytest/pathlib.py b/src/_pytest/pathlib.py
+index 0403b6947..b4d399bdb 100644
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -338,9 +338,16 @@ def parts(s):
+ 
+ 
+ def unique_path(path):
+-    """Returns a unique path in case-insensitive (but case-preserving) file
+-    systems such as Windows.
++    """Returns a unique path representation for case-insensitive (but case-preserving)
++    file systems such as Windows.
++
++    Note:
++    - This should be used for comparisons, deduplication and dictionary keys only.
++    - Do not use the normalized path to derive importable module names, as it may
++      change the case of path segments and break imports on case-sensitive import
++      systems.
+ 
+     This is needed only for ``py.path.local``; ``pathlib.Path`` handles this
+-    natively with ``resolve()``."""
++    natively with ``resolve()``.
++    """
+     return type(path)(normcase(str(path.realpath())))
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-20 22:50:52,359 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── config.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── HOWTORELEASE.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── TIDELIFT.rst
+├── azure-pipelines.yml
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 5807.bugfix.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   └── sidebarintro.html
+|       ├── _themes
+|       |   ├── flask
+|       |   |   ├── layout.html
+|       |   |   ├── relations.html
+|       |   |   ├── slim_searchbox.html
+|       |   |   └── static
+|       |   └── flask_theme_support.py
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── costlysetup
+|       |   |   ├── conftest.py
+|       |   |   ├── sub_a
+|       |   |   └── sub_b
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── py2py3
+|       |   |   ├── conftest.py
+|       |   |   ├── test_py2.py
+|       |   |   └── test_py3.py
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── publish_gh_release_notes.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   └── report-coverage.sh
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   └── saferepr.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── legacy.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   └── test_setup_skip_module.py
+    |   └── warnings
+    |       └── test_group_warnings_by_message.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   └── test_saferepr.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   ├── setup_only.py
+    |   ├── setup_plan.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_mark.py
+    ├── test_modimport.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pdb.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: 5.1.2 ImportError while loading conftest (windows import folder casing issues)
+
+Description: 5.1.1 works fine. after upgrade to 5.1.2, the path was converted to lower case
+```
+Installing collected packages: pytest
+  Found existing installation: pytest 5.1.1
+    Uninstalling pytest-5.1.1:
+      Successfully uninstalled pytest-5.1.1
+Successfully installed pytest-5.1.2
+PS C:\Azure\KMS\ComponentTest\Python> pytest --collect-only .\PIsys -m smoke
+ImportError while loading conftest 'c:\azure\kms\componenttest\python\pisys\conftest.py'.
+ModuleNotFoundError: No module named 'python'
+PS C:\Azure\KMS\ComponentTest\Python>
+```
+
+
+
+Patch information:
+diff --git a/src/_pytest/config/__init__.py b/src/_pytest/config/__init__.py
+index 3a0eca546..3e0151b50 100644
+--- a/src/_pytest/config/__init__.py
++++ b/src/_pytest/config/__init__.py
+@@ -406,20 +406,22 @@ class PytestPluginManager(PluginManager):
+         else:
+             directory = path
+ 
+-        directory = unique_path(directory)
++        # Keep original-case directory for import operations; use a normalized key for mappings.
++        directory_key = unique_path(directory)
+ 
+         # XXX these days we may rather want to use config.rootdir
+         # and allow users to opt into looking into the rootdir parent
+         # directories instead of requiring to specify confcutdir
+         clist = []
+         for parent in directory.parts():
+-            if self._confcutdir and self._confcutdir.relto(parent):
++            parent_key = unique_path(parent)
++            if self._confcutdir and self._confcutdir.relto(parent_key):
+                 continue
+             conftestpath = parent.join("conftest.py")
+             if conftestpath.isfile():
+                 mod = self._importconftest(conftestpath)
+                 clist.append(mod)
+-        self._dirpath2confmods[directory] = clist
++        self._dirpath2confmods[directory_key] = clist
+         return clist
+ 
+     def _rget_with_confmod(self, name, path):
+@@ -435,9 +437,9 @@ class PytestPluginManager(PluginManager):
+         # Use realpath to avoid loading the same conftest twice
+         # with build systems that create build directories containing
+         # symlinks to actual files.
+-        conftestpath = unique_path(conftestpath)
++        keypath = unique_path(conftestpath)
+         try:
+-            return self._conftestpath2mod[conftestpath]
++            return self._conftestpath2mod[keypath]
+         except KeyError:
+             pkgpath = conftestpath.pypkgpath()
+             if pkgpath is None:
+@@ -454,11 +456,11 @@ class PytestPluginManager(PluginManager):
+                 raise ConftestImportFailure(conftestpath, sys.exc_info())
+ 
+             self._conftest_plugins.add(mod)
+-            self._conftestpath2mod[conftestpath] = mod
+-            dirpath = conftestpath.dirpath()
+-            if dirpath in self._dirpath2confmods:
++            self._conftestpath2mod[keypath] = mod
++            dirpath_key = unique_path(conftestpath.dirpath())
++            if dirpath_key in self._dirpath2confmods:
+                 for path, mods in self._dirpath2confmods.items():
+-                    if path and path.relto(dirpath) or path == dirpath:
++                    if path and path.relto(dirpath_key) or path == dirpath_key:
+                         assert mod not in mods
+                         mods.append(mod)
+             self.trace("loaded conftestmodule %r" % (mod))
+diff --git a/src/_pytest/pathlib.py b/src/_pytest/pathlib.py
+index 0403b6947..b4d399bdb 100644
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -338,9 +338,16 @@ def parts(s):
+ 
+ 
+ def unique_path(path):
+-    """Returns a unique path in case-insensitive (but case-preserving) file
+-    systems such as Windows.
++    """Returns a unique path representation for case-insensitive (but case-preserving)
++    file systems such as Windows.
++
++    Note:
++    - This should be used for comparisons, deduplication and dictionary keys only.
++    - Do not use the normalized path to derive importable module names, as it may
++      change the case of path segments and break imports on case-sensitive import
++      systems.
+ 
+     This is needed only for ``py.path.local``; ``pathlib.Path`` handles this
+-    natively with ``resolve()``."""
++    natively with ``resolve()``.
++    """
+     return type(path)(normcase(str(path.realpath())))
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 22:51:08,213 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user is reporting an issue with `conftest.py` loading on Windows due to path casing. The provided patch points to changes in `_pytest/config/__init__.py` and `_pytest/pathlib.py`. To find relevant test cases, I need to investigate how pytest tests `conftest.py` loading and path handling. The most relevant file to start with is `testing/test_conftest.py`, as it should contain tests specifically for `conftest.py` functionality. If this file does not yield enough relevant tests, I will proceed to request `testing/test_config.py` and `testing/test_pathlib.py`.' query='Please provide the full content of the file `testing/test_conftest.py`.' extra_requirements='' purpose="I need to analyze the tests for `conftest.py` to find cases that cover path handling and loading, which is central to the user's bug report."
+2025-12-20 22:51:08,214 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file `testing/test_conftest.py`.
+2025-12-20 22:51:08,214 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-20 22:51:08,215 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-20 22:51:08,216 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-20 22:51:08,216 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file `testing/test_conftest.py`.
+Purpose: I need to analyze the tests for `conftest.py` to find cases that cover path handling and loading, which is central to the user's bug report.
+2025-12-20 22:51:10,145 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/test_conftest.py"}'}, '__gemini_function_call_thought_signatures__': {'6b3ac895-2997-4bac-87a7-fd4c4f7ea15a': 'Cu0EAY89a181MUglmOtWpsoXUxkpMlRy+rOX758/myMBk8H6zZ5tH7hFivg5+8P5YL+eghnxz7XGkOs84763lD0Jo/zinMphiypzXkklqJNr+a4NmFsYw4v+uiPDh3naZs7xoaY66tUrQMEDWb2+FP+pD5u9HDeY8rxYaY97+rHLQHY5B8vrcORBRQ4bdtXsUujIUSuYBTE2evrOC/F32Nauj+eX9MJnaZC0f8eiFpc9YlqxWzG0Wk1SN68WHAbVZkbYNuTQpvxCJ+nS5DaeHwDwAq6+5aoMNWvBaTzlD5RpOWbZABoTKC9BRgHMzh4v3GFNTJxasRQ7cJFLLp5RX7sfGVBGzRRvRPG+ixCSrIiSR2mJ4R3nyAqskDCkE4NlS7yjC/FNA3kvupJAiWOnJffUFExHwKf0WRpuKBOAUFOYP6worXCYuOv7yfuZNk1XAqstajIVyb0m06xT7duUV/uctd86NjoRnu0KkyAkKl+/ZxOAGJYQX+2qIA3TlSC3luOImSpoZuj/SQkimAOexYMd2Khs/nk0Z/Q6bkz234QbHtttX4P0qbx2Mm6OXOinQhH+cK3QmD7MJuKOCyQreclEmg76/7lwNQhNl3L+yemCtFvEbi0r94ezJ5Qi8FkaTrhiYzC/Ma/UjWlIfMTBA1cDUSwA1JQ9RUQiUPJhdyxdWTrW7PPkIMtcRCnjCkGhNHPd88CfBvnuLXMPFJMlUiR+tDUu1T7Gf1UjIwC0nW/OyM878mM/JmRKK3F0LNPqTJW4/8mQ2TDfPTPGtk3UuKo8rwk2QzyaSCE0tepcnHZxYVJHK0gZlwfKheltRk+N'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2055, 'candidates_token_count': 22, 'total_token_count': 2219, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2055}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 22}], 'thoughts_token_count': 142, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.38553138212724164, 'model_name': 'gemini-2.5-pro'} id='run--666015cb-4a41-495c-aff3-da0afa3c8861-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/test_conftest.py'}, 'id': '6b3ac895-2997-4bac-87a7-fd4c4f7ea15a', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2055, 'output_tokens': 22, 'total_tokens': 2219, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 142}}
+2025-12-20 22:51:12,618 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have read the beginning of `testing/test_conftest.py` and will now read the rest of the file to provide the full content as requested.' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"end_line": 1000.0, "start_line": 501.0, "relative_path": "testing/test_conftest.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 9350, 'candidates_token_count': 61, 'total_token_count': 9541, 'cached_content_token_count': 1805, 'prompt_tokens_details': [{'modality': 1, 'token_count': 9492}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1805}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 61}], 'thoughts_token_count': 130}, 'finish_reason': 'STOP', 'avg_logprobs': -0.31528816848504737, 'model_name': 'gemini-2.5-pro'} id='run--3682dc9d-8131-41d5-ac0a-88d0a12f379a-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'end_line': 1000.0, 'start_line': 501.0, 'relative_path': 'testing/test_conftest.py'}, 'id': '8a516cc0-2565-423b-8df4-eef4e487f208', 'type': 'tool_call'}] usage_metadata={'input_tokens': 9350, 'output_tokens': 61, 'total_tokens': 9541, 'input_token_details': {'cache_read': 1805}, 'output_token_details': {'reasoning': 130}}
+2025-12-20 22:51:13,870 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have successfully retrieved the full content of the file `testing/test_conftest.py` by reading it in two parts. The first part contained the first 500 lines, and the second part contained the remaining lines up to the end of the file. I can now provide the complete file content to the user.\n' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 11376, 'candidates_token_count': 68, 'total_token_count': 11444, 'cached_content_token_count': 9096, 'prompt_tokens_details': [{'modality': 1, 'token_count': 11518}], 'cache_tokens_details': [{'modality': 1, 'token_count': 9096}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 68}], 'thoughts_token_count': 0}, 'finish_reason': 'STOP', 'avg_logprobs': -0.09250111439648796, 'model_name': 'gemini-2.5-pro'} id='run--a3ddbc6e-f38c-4238-a836-a33c4e8c3ae3-0' usage_metadata={'input_tokens': 11376, 'output_tokens': 68, 'total_tokens': 11444, 'input_token_details': {'cache_read': 9096}}
+2025-12-20 22:51:13,871 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file `testing/test_conftest.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to analyze the tests for `conftest.py` to find cases that cover path handling and loading, which is central to the user's bug report.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/test_conftest.py
+Line number range: 1 - 500
+Content:
+1. import os.path
+2. import textwrap
+3. 
+4. import py
+5. 
+6. import pytest
+7. from _pytest.config import PytestPluginManager
+8. from _pytest.main import ExitCode
+9. from _pytest.pathlib import unique_path
+10. 
+11. 
+12. def ConftestWithSetinitial(path):
+13.     conftest = PytestPluginManager()
+14.     conftest_setinitial(conftest, [path])
+15.     return conftest
+16. 
+17. 
+18. def conftest_setinitial(conftest, args, confcutdir=None):
+19.     class Namespace:
+20.         def __init__(self):
+21.             self.file_or_dir = args
+22.             self.confcutdir = str(confcutdir)
+23.             self.noconftest = False
+24.             self.pyargs = False
+25. 
+26.     conftest._set_initial_conftests(Namespace())
+27. 
+28. 
+29. @pytest.mark.usefixtures("_sys_snapshot")
+30. class TestConftestValueAccessGlobal:
+31.     @pytest.fixture(scope="module", params=["global", "inpackage"])
+32.     def basedir(self, request, tmpdir_factory):
+33.         tmpdir = tmpdir_factory.mktemp("basedir", numbered=True)
+34.         tmpdir.ensure("adir/conftest.py").write("a=1 ; Directory = 3")
+35.         tmpdir.ensure("adir/b/conftest.py").write("b=2 ; a = 1.5")
+36.         if request.param == "inpackage":
+37.             tmpdir.ensure("adir/__init__.py")
+38.             tmpdir.ensure("adir/b/__init__.py")
+39. 
+40.         yield tmpdir
+41. 
+42.     def test_basic_init(self, basedir):
+43.         conftest = PytestPluginManager()
+44.         p = basedir.join("adir")
+45.         assert conftest._rget_with_confmod("a", p)[1] == 1
+46. 
+47.     def test_immediate_initialiation_and_incremental_are_the_same(self, basedir):
+48.         conftest = PytestPluginManager()
+49.         assert not len(conftest._dirpath2confmods)
+50.         conftest._getconftestmodules(basedir)
+51.         snap1 = len(conftest._dirpath2confmods)
+52.         assert snap1 == 1
+53.         conftest._getconftestmodules(basedir.join("adir"))
+54.         assert len(conftest._dirpath2confmods) == snap1 + 1
+55.         conftest._getconftestmodules(basedir.join("b"))
+56.         assert len(conftest._dirpath2confmods) == snap1 + 2
+57. 
+58.     def test_value_access_not_existing(self, basedir):
+59.         conftest = ConftestWithSetinitial(basedir)
+60.         with pytest.raises(KeyError):
+61.             conftest._rget_with_confmod("a", basedir)
+62. 
+63.     def test_value_access_by_path(self, basedir):
+64.         conftest = ConftestWithSetinitial(basedir)
+65.         adir = basedir.join("adir")
+66.         assert conftest._rget_with_confmod("a", adir)[1] == 1
+67.         assert conftest._rget_with_confmod("a", adir.join("b"))[1] == 1.5
+68. 
+69.     def test_value_access_with_confmod(self, basedir):
+70.         startdir = basedir.join("adir", "b")
+71.         startdir.ensure("xx", dir=True)
+72.         conftest = ConftestWithSetinitial(startdir)
+73.         mod, value = conftest._rget_with_confmod("a", startdir)
+74.         assert value == 1.5
+75.         path = py.path.local(mod.__file__)
+76.         assert path.dirpath() == basedir.join("adir", "b")
+77.         assert path.purebasename.startswith("conftest")
+78. 
+79. 
+80. def test_conftest_in_nonpkg_with_init(tmpdir, _sys_snapshot):
+81.     tmpdir.ensure("adir-1.0/conftest.py").write("a=1 ; Directory = 3")
+82.     tmpdir.ensure("adir-1.0/b/conftest.py").write("b=2 ; a = 1.5")
+83.     tmpdir.ensure("adir-1.0/b/__init__.py")
+84.     tmpdir.ensure("adir-1.0/__init__.py")
+85.     ConftestWithSetinitial(tmpdir.join("adir-1.0", "b"))
+86. 
+87. 
+88. def test_doubledash_considered(testdir):
+89.     conf = testdir.mkdir("--option")
+90.     conf.ensure("conftest.py")
+91.     conftest = PytestPluginManager()
+92.     conftest_setinitial(conftest, [conf.basename, conf.basename])
+93.     values = conftest._getconftestmodules(conf)
+94.     assert len(values) == 1
+95. 
+96. 
+97. def test_issue151_load_all_conftests(testdir):
+98.     names = "code proj src".split()
+99.     for name in names:
+100.         p = testdir.mkdir(name)
+101.         p.ensure("conftest.py")
+102. 
+103.     conftest = PytestPluginManager()
+104.     conftest_setinitial(conftest, names)
+105.     d = list(conftest._conftestpath2mod.values())
+106.     assert len(d) == len(names)
+107. 
+108. 
+109. def test_conftest_global_import(testdir):
+110.     testdir.makeconftest("x=3")
+111.     p = testdir.makepyfile(
+112.         """
+113.         import py, pytest
+114.         from _pytest.config import PytestPluginManager
+115.         conf = PytestPluginManager()
+116.         mod = conf._importconftest(py.path.local("conftest.py"))
+117.         assert mod.x == 3
+118.         import conftest
+119.         assert conftest is mod, (conftest, mod)
+120.         subconf = py.path.local().ensure("sub", "conftest.py")
+121.         subconf.write("y=4")
+122.         mod2 = conf._importconftest(subconf)
+123.         assert mod != mod2
+124.         assert mod2.y == 4
+125.         import conftest
+126.         assert conftest is mod2, (conftest, mod)
+127.     """
+128.     )
+129.     res = testdir.runpython(p)
+130.     assert res.ret == 0
+131. 
+132. 
+133. def test_conftestcutdir(testdir):
+134.     conf = testdir.makeconftest("")
+135.     p = testdir.mkdir("x")
+136.     conftest = PytestPluginManager()
+137.     conftest_setinitial(conftest, [testdir.tmpdir], confcutdir=p)
+138.     values = conftest._getconftestmodules(p)
+139.     assert len(values) == 0
+140.     values = conftest._getconftestmodules(conf.dirpath())
+141.     assert len(values) == 0
+142.     assert conf not in conftest._conftestpath2mod
+143.     # but we can still import a conftest directly
+144.     conftest._importconftest(conf)
+145.     values = conftest._getconftestmodules(conf.dirpath())
+146.     assert values[0].__file__.startswith(str(unique_path(conf)))
+147.     # and all sub paths get updated properly
+148.     values = conftest._getconftestmodules(p)
+149.     assert len(values) == 1
+150.     assert values[0].__file__.startswith(str(unique_path(conf)))
+151. 
+152. 
+153. def test_conftestcutdir_inplace_considered(testdir):
+154.     conf = testdir.makeconftest("")
+155.     conftest = PytestPluginManager()
+156.     conftest_setinitial(conftest, [conf.dirpath()], confcutdir=conf.dirpath())
+157.     values = conftest._getconftestmodules(conf.dirpath())
+158.     assert len(values) == 1
+159.     assert values[0].__file__.startswith(str(unique_path(conf)))
+160. 
+161. 
+162. @pytest.mark.parametrize("name", "test tests whatever .dotdir".split())
+163. def test_setinitial_conftest_subdirs(testdir, name):
+164.     sub = testdir.mkdir(name)
+165.     subconftest = sub.ensure("conftest.py")
+166.     conftest = PytestPluginManager()
+167.     conftest_setinitial(conftest, [sub.dirpath()], confcutdir=testdir.tmpdir)
+168.     if name not in ("whatever", ".dotdir"):
+169.         assert unique_path(subconftest) in conftest._conftestpath2mod
+170.         assert len(conftest._conftestpath2mod) == 1
+171.     else:
+172.         assert subconftest not in conftest._conftestpath2mod
+173.         assert len(conftest._conftestpath2mod) == 0
+174. 
+175. 
+176. def test_conftest_confcutdir(testdir):
+177.     testdir.makeconftest("assert 0")
+178.     x = testdir.mkdir("x")
+179.     x.join("conftest.py").write(
+180.         textwrap.dedent(
+181.             """\
+182.             def pytest_addoption(parser):
+183.                 parser.addoption("--xyz", action="store_true")
+184.             """
+185.         )
+186.     )
+187.     result = testdir.runpytest("-h", "--confcutdir=%s" % x, x)
+188.     result.stdout.fnmatch_lines(["*--xyz*"])
+189.     assert "warning: could not load initial" not in result.stdout.str()
+190. 
+191. 
+192. @pytest.mark.skipif(
+193.     not hasattr(py.path.local, "mksymlinkto"),
+194.     reason="symlink not available on this platform",
+195. )
+196. def test_conftest_symlink(testdir):
+197.     """Ensure that conftest.py is used for resolved symlinks."""
+198.     real = testdir.tmpdir.mkdir("real")
+199.     realtests = real.mkdir("app").mkdir("tests")
+200.     testdir.tmpdir.join("symlinktests").mksymlinkto(realtests)
+201.     testdir.tmpdir.join("symlink").mksymlinkto(real)
+202.     testdir.makepyfile(
+203.         **{
+204.             "real/app/tests/test_foo.py": "def test1(fixture): pass",
+205.             "real/conftest.py": textwrap.dedent(
+206.                 """
+207.                 import pytest
+208. 
+209.                 print("conftest_loaded")
+210. 
+211.                 @pytest.fixture
+212.                 def fixture():
+213.                     print("fixture_used")
+214.                 """
+215.             ),
+216.         }
+217.     )
+218.     result = testdir.runpytest("-vs", "symlinktests")
+219.     result.stdout.fnmatch_lines(
+220.         [
+221.             "*conftest_loaded*",
+222.             "real/app/tests/test_foo.py::test1 fixture_used",
+223.             "PASSED",
+224.         ]
+225.     )
+226.     assert result.ret == ExitCode.OK
+227. 
+228.     # Should not cause "ValueError: Plugin already registered" (#4174).
+229.     result = testdir.runpytest("-vs", "symlink")
+230.     assert result.ret == ExitCode.OK
+231. 
+232.     realtests.ensure("__init__.py")
+233.     result = testdir.runpytest("-vs", "symlinktests/test_foo.py::test1")
+234.     result.stdout.fnmatch_lines(
+235.         [
+236.             "*conftest_loaded*",
+237.             "real/app/tests/test_foo.py::test1 fixture_used",
+238.             "PASSED",
+239.         ]
+240.     )
+241.     assert result.ret == ExitCode.OK
+242. 
+243. 
+244. @pytest.mark.skipif(
+245.     not hasattr(py.path.local, "mksymlinkto"),
+246.     reason="symlink not available on this platform",
+247. )
+248. def test_conftest_symlink_files(testdir):
+249.     """Check conftest.py loading when running in directory with symlinks."""
+250.     real = testdir.tmpdir.mkdir("real")
+251.     source = {
+252.         "app/test_foo.py": "def test1(fixture): pass",
+253.         "app/__init__.py": "",
+254.         "app/conftest.py": textwrap.dedent(
+255.             """
+256.             import pytest
+257. 
+258.             print("conftest_loaded")
+259. 
+260.             @pytest.fixture
+261.             def fixture():
+262.                 print("fixture_used")
+263.             """
+264.         ),
+265.     }
+266.     testdir.makepyfile(**{"real/%s" % k: v for k, v in source.items()})
+267. 
+268.     # Create a build directory that contains symlinks to actual files
+269.     # but doesn't symlink actual directories.
+270.     build = testdir.tmpdir.mkdir("build")
+271.     build.mkdir("app")
+272.     for f in source:
+273.         build.join(f).mksymlinkto(real.join(f))
+274.     build.chdir()
+275.     result = testdir.runpytest("-vs", "app/test_foo.py")
+276.     result.stdout.fnmatch_lines(["*conftest_loaded*", "PASSED"])
+277.     assert result.ret == ExitCode.OK
+278. 
+279. 
+280. @pytest.mark.skipif(
+281.     os.path.normcase("x") != os.path.normcase("X"),
+282.     reason="only relevant for case insensitive file systems",
+283. )
+284. def test_conftest_badcase(testdir):
+285.     """Check conftest.py loading when directory casing is wrong."""
+286.     testdir.tmpdir.mkdir("JenkinsRoot").mkdir("test")
+287.     source = {"setup.py": "", "test/__init__.py": "", "test/conftest.py": ""}
+288.     testdir.makepyfile(**{"JenkinsRoot/%s" % k: v for k, v in source.items()})
+289. 
+290.     testdir.tmpdir.join("jenkinsroot/test").chdir()
+291.     result = testdir.runpytest()
+292.     assert result.ret == ExitCode.NO_TESTS_COLLECTED
+293. 
+294. 
+295. def test_no_conftest(testdir):
+296.     testdir.makeconftest("assert 0")
+297.     result = testdir.runpytest("--noconftest")
+298.     assert result.ret == ExitCode.NO_TESTS_COLLECTED
+299. 
+300.     result = testdir.runpytest()
+301.     assert result.ret == ExitCode.USAGE_ERROR
+302. 
+303. 
+304. def test_conftest_existing_resultlog(testdir):
+305.     x = testdir.mkdir("tests")
+306.     x.join("conftest.py").write(
+307.         textwrap.dedent(
+308.             """\
+309.             def pytest_addoption(parser):
+310.                 parser.addoption("--xyz", action="store_true")
+311.             """
+312.         )
+313.     )
+314.     testdir.makefile(ext=".log", result="")  # Writes result.log
+315.     result = testdir.runpytest("-h", "--resultlog", "result.log")
+316.     result.stdout.fnmatch_lines(["*--xyz*"])
+317. 
+318. 
+319. def test_conftest_existing_junitxml(testdir):
+320.     x = testdir.mkdir("tests")
+321.     x.join("conftest.py").write(
+322.         textwrap.dedent(
+323.             """\
+324.             def pytest_addoption(parser):
+325.                 parser.addoption("--xyz", action="store_true")
+326.             """
+327.         )
+328.     )
+329.     testdir.makefile(ext=".xml", junit="")  # Writes junit.xml
+330.     result = testdir.runpytest("-h", "--junitxml", "junit.xml")
+331.     result.stdout.fnmatch_lines(["*--xyz*"])
+332. 
+333. 
+334. def test_conftest_import_order(testdir, monkeypatch):
+335.     ct1 = testdir.makeconftest("")
+336.     sub = testdir.mkdir("sub")
+337.     ct2 = sub.join("conftest.py")
+338.     ct2.write("")
+339. 
+340.     def impct(p):
+341.         return p
+342. 
+343.     conftest = PytestPluginManager()
+344.     conftest._confcutdir = testdir.tmpdir
+345.     monkeypatch.setattr(conftest, "_importconftest", impct)
+346.     assert conftest._getconftestmodules(sub) == [ct1, ct2]
+347. 
+348. 
+349. def test_fixture_dependency(testdir, monkeypatch):
+350.     ct1 = testdir.makeconftest("")
+351.     ct1 = testdir.makepyfile("__init__.py")
+352.     ct1.write("")
+353.     sub = testdir.mkdir("sub")
+354.     sub.join("__init__.py").write("")
+355.     sub.join("conftest.py").write(
+356.         textwrap.dedent(
+357.             """\
+358.             import pytest
+359. 
+360.             @pytest.fixture
+361.             def not_needed():
+362.                 assert False, "Should not be called!"
+363. 
+364.             @pytest.fixture
+365.             def foo():
+366.                 assert False, "Should not be called!"
+367. 
+368.             @pytest.fixture
+369.             def bar(foo):
+370.                 return 'bar'
+371.             """
+372.         )
+373.     )
+374.     subsub = sub.mkdir("subsub")
+375.     subsub.join("__init__.py").write("")
+376.     subsub.join("test_bar.py").write(
+377.         textwrap.dedent(
+378.             """\
+379.             import pytest
+380. 
+381.             @pytest.fixture
+382.             def bar():
+383.                 return 'sub bar'
+384. 
+385.             def test_event_fixture(bar):
+386.                 assert bar == 'sub bar'
+387.             """
+388.         )
+389.     )
+390.     result = testdir.runpytest("sub")
+391.     result.stdout.fnmatch_lines(["*1 passed*"])
+392. 
+393. 
+394. def test_conftest_found_with_double_dash(testdir):
+395.     sub = testdir.mkdir("sub")
+396.     sub.join("conftest.py").write(
+397.         textwrap.dedent(
+398.             """\
+399.             def pytest_addoption(parser):
+400.                 parser.addoption("--hello-world", action="store_true")
+401.             """
+402.         )
+403.     )
+404.     p = sub.join("test_hello.py")
+405.     p.write("def test_hello(): pass")
+406.     result = testdir.runpytest(str(p) + "::test_hello", "-h")
+407.     result.stdout.fnmatch_lines(
+408.         """
+409.         *--hello-world*
+410.     """
+411.     )
+412. 
+413. 
+414. class TestConftestVisibility:
+415.     def _setup_tree(self, testdir):  # for issue616
+416.         # example mostly taken from:
+417.         # https://mail.python.org/pipermail/pytest-dev/2014-September/002617.html
+418.         runner = testdir.mkdir("empty")
+419.         package = testdir.mkdir("package")
+420. 
+421.         package.join("conftest.py").write(
+422.             textwrap.dedent(
+423.                 """\
+424.                 import pytest
+425.                 @pytest.fixture
+426.                 def fxtr():
+427.                     return "from-package"
+428.                 """
+429.             )
+430.         )
+431.         package.join("test_pkgroot.py").write(
+432.             textwrap.dedent(
+433.                 """\
+434.                 def test_pkgroot(fxtr):
+435.                     assert fxtr == "from-package"
+436.                 """
+437.             )
+438.         )
+439. 
+440.         swc = package.mkdir("swc")
+441.         swc.join("__init__.py").ensure()
+442.         swc.join("conftest.py").write(
+443.             textwrap.dedent(
+444.                 """\
+445.                 import pytest
+446.                 @pytest.fixture
+447.                 def fxtr():
+448.                     return "from-swc"
+449.                 """
+450.             )
+451.         )
+452.         swc.join("test_with_conftest.py").write(
+453.             textwrap.dedent(
+454.                 """\
+455.                 def test_with_conftest(fxtr):
+456.                     assert fxtr == "from-swc"
+457.                 """
+458.             )
+459.         )
+460. 
+461.         snc = package.mkdir("snc")
+462.         snc.join("__init__.py").ensure()
+463.         snc.join("test_no_conftest.py").write(
+464.             textwrap.dedent(
+465.                 """\
+466.                 def test_no_conftest(fxtr):
+467.                     assert fxtr == "from-package"   # No local conftest.py, so should
+468.                                                     # use value from parent dir's
+469.                 """
+470.             )
+471.         )
+472.         print("created directory structure:")
+473.         for x in testdir.tmpdir.visit():
+474.             print("   " + x.relto(testdir.tmpdir))
+475. 
+476.         return {"runner": runner, "package": package, "swc": swc, "snc": snc}
+477. 
+478.     # N.B.: "swc" stands for "subdir with conftest.py"
+479.     #       "snc" stands for "subdir no [i.e. without] conftest.py"
+480.     @pytest.mark.parametrize(
+481.         "chdir,testarg,expect_ntests_passed",
+482.         [
+483.             # Effective target: package/..
+484.             ("runner", "..", 3),
+485.             ("package", "..", 3),
+486.             ("swc", "../..", 3),
+487.             ("snc", "../..", 3),
+488.             # Effective target: package
+489.             ("runner", "../package", 3),
+490.             ("package", ".", 3),
+491.             ("swc", "..", 3),
+492.             ("snc", "..", 3),
+493.             # Effective target: package/swc
+494.             ("runner", "../package/swc", 1),
+495.             ("package", "./swc", 1),
+496.             ("swc", ".", 1),
+497.             ("snc", "../swc", 1),
+498.             # Effective target: package/snc
+499.             ("runner", "../package/snc", 1),
+500.             ("package", "./snc", 1),
+
+
+File: testing/test_conftest.py
+Line number range: 501 - 1000
+Content:
+501.             ("swc", "../snc", 1),
+502.             ("snc", ".", 1),
+503.         ],
+504.     )
+505.     def test_parsefactories_relative_node_ids(
+506.         self, testdir, chdir, testarg, expect_ntests_passed
+507.     ):
+508.         """#616"""
+509.         dirs = self._setup_tree(testdir)
+510.         print("pytest run in cwd: %s" % (dirs[chdir].relto(testdir.tmpdir)))
+511.         print("pytestarg        : %s" % (testarg))
+512.         print("expected pass    : %s" % (expect_ntests_passed))
+513.         with dirs[chdir].as_cwd():
+514.             reprec = testdir.inline_run(testarg, "-q", "--traceconfig")
+515.             reprec.assertoutcome(passed=expect_ntests_passed)
+516. 
+517. 
+518. @pytest.mark.parametrize(
+519.     "confcutdir,passed,error", [(".", 2, 0), ("src", 1, 1), (None, 1, 1)]
+520. )
+521. def test_search_conftest_up_to_inifile(testdir, confcutdir, passed, error):
+522.     """Test that conftest files are detected only up to an ini file, unless
+523.     an explicit --confcutdir option is given.
+524.     """
+525.     root = testdir.tmpdir
+526.     src = root.join("src").ensure(dir=1)
+527.     src.join("pytest.ini").write("[pytest]")
+528.     src.join("conftest.py").write(
+529.         textwrap.dedent(
+530.             """\
+531.             import pytest
+532.             @pytest.fixture
+533.             def fix1(): pass
+534.             """
+535.         )
+536.     )
+537.     src.join("test_foo.py").write(
+538.         textwrap.dedent(
+539.             """\
+540.             def test_1(fix1):
+541.                 pass
+542.             def test_2(out_of_reach):
+543.                 pass
+544.             """
+545.         )
+546.     )
+547.     root.join("conftest.py").write(
+548.         textwrap.dedent(
+549.             """\
+550.             import pytest
+551.             @pytest.fixture
+552.             def out_of_reach(): pass
+553.             """
+554.         )
+555.     )
+556. 
+557.     args = [str(src)]
+558.     if confcutdir:
+559.         args = ["--confcutdir=%s" % root.join(confcutdir)]
+560.     result = testdir.runpytest(*args)
+561.     match = ""
+562.     if passed:
+563.         match += "*%d passed*" % passed
+564.     if error:
+565.         match += "*%d error*" % error
+566.     result.stdout.fnmatch_lines(match)
+567. 
+568. 
+569. def test_issue1073_conftest_special_objects(testdir):
+570.     testdir.makeconftest(
+571.         """\
+572.         class DontTouchMe(object):
+573.             def __getattr__(self, x):
+574.                 raise Exception('cant touch me')
+575. 
+576.         x = DontTouchMe()
+577.         """
+578.     )
+579.     testdir.makepyfile(
+580.         """\
+581.         def test_some():
+582.             pass
+583.         """
+584.     )
+585.     res = testdir.runpytest()
+586.     assert res.ret == 0
+587. 
+588. 
+589. def test_conftest_exception_handling(testdir):
+590.     testdir.makeconftest(
+591.         """\
+592.         raise ValueError()
+593.         """
+594.     )
+595.     testdir.makepyfile(
+596.         """\
+597.         def test_some():
+598.             pass
+599.         """
+600.     )
+601.     res = testdir.runpytest()
+602.     assert res.ret == 4
+603.     assert "raise ValueError()" in [line.strip() for line in res.errlines]
+604. 
+605. 
+606. def test_hook_proxy(testdir):
+607.     """Session's gethookproxy() would cache conftests incorrectly (#2016).
+608.     It was decided to remove the cache altogether.
+609.     """
+610.     testdir.makepyfile(
+611.         **{
+612.             "root/demo-0/test_foo1.py": "def test1(): pass",
+613.             "root/demo-a/test_foo2.py": "def test1(): pass",
+614.             "root/demo-a/conftest.py": """\
+615.             def pytest_ignore_collect(path, config):
+616.                 return True
+617.             """,
+618.             "root/demo-b/test_foo3.py": "def test1(): pass",
+619.             "root/demo-c/test_foo4.py": "def test1(): pass",
+620.         }
+621.     )
+622.     result = testdir.runpytest()
+623.     result.stdout.fnmatch_lines(
+624.         ["*test_foo1.py*", "*test_foo3.py*", "*test_foo4.py*", "*3 passed*"]
+625.     )
+626. 
+627. 
+628. def test_required_option_help(testdir):
+629.     testdir.makeconftest("assert 0")
+630.     x = testdir.mkdir("x")
+631.     x.join("conftest.py").write(
+632.         textwrap.dedent(
+633.             """\
+634.             def pytest_addoption(parser):
+635.                 parser.addoption("--xyz", action="store_true", required=True)
+636.             """
+637.         )
+638.     )
+639.     result = testdir.runpytest("-h", x)
+640.     assert "argument --xyz is required" not in result.stdout.str()
+641.     assert "general:" in result.stdout.str()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-20 22:51:19,010 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user query specifically asks for the full content of the file `testing/test_conftest.py`.\n   - The provided context contains the entire content of this file.\n2. Extended relevance:\n   - No extended relevance is needed as the query is a direct request for a whole file's content.", relative_path='testing/test_conftest.py', start_line=1, end_line=641)]
+2025-12-20 22:51:19,012 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the file `testing/test_conftest.py`.
+2025-12-20 22:51:19,012 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-20 22:51:19,012 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-20 22:51:19,012 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-20 22:51:19,012 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-20 22:51:19,013 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── config.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── HOWTORELEASE.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── TIDELIFT.rst
+├── azure-pipelines.yml
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 5807.bugfix.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   └── sidebarintro.html
+|       ├── _themes
+|       |   ├── flask
+|       |   |   ├── layout.html
+|       |   |   ├── relations.html
+|       |   |   ├── slim_searchbox.html
+|       |   |   └── static
+|       |   └── flask_theme_support.py
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── costlysetup
+|       |   |   ├── conftest.py
+|       |   |   ├── sub_a
+|       |   |   └── sub_b
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── py2py3
+|       |   |   ├── conftest.py
+|       |   |   ├── test_py2.py
+|       |   |   └── test_py3.py
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── publish_gh_release_notes.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   └── report-coverage.sh
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   └── saferepr.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── legacy.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   └── test_setup_skip_module.py
+    |   └── warnings
+    |       └── test_group_warnings_by_message.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   └── test_saferepr.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   ├── setup_only.py
+    |   ├── setup_plan.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_mark.py
+    ├── test_modimport.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pdb.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: 5.1.2 ImportError while loading conftest (windows import folder casing issues)
+
+Description: 5.1.1 works fine. after upgrade to 5.1.2, the path was converted to lower case
+```
+Installing collected packages: pytest
+  Found existing installation: pytest 5.1.1
+    Uninstalling pytest-5.1.1:
+      Successfully uninstalled pytest-5.1.1
+Successfully installed pytest-5.1.2
+PS C:\Azure\KMS\ComponentTest\Python> pytest --collect-only .\PIsys -m smoke
+ImportError while loading conftest 'c:\azure\kms\componenttest\python\pisys\conftest.py'.
+ModuleNotFoundError: No module named 'python'
+PS C:\Azure\KMS\ComponentTest\Python>
+```
+
+
+
+Patch information:
+diff --git a/src/_pytest/config/__init__.py b/src/_pytest/config/__init__.py
+index 3a0eca546..3e0151b50 100644
+--- a/src/_pytest/config/__init__.py
++++ b/src/_pytest/config/__init__.py
+@@ -406,20 +406,22 @@ class PytestPluginManager(PluginManager):
+         else:
+             directory = path
+ 
+-        directory = unique_path(directory)
++        # Keep original-case directory for import operations; use a normalized key for mappings.
++        directory_key = unique_path(directory)
+ 
+         # XXX these days we may rather want to use config.rootdir
+         # and allow users to opt into looking into the rootdir parent
+         # directories instead of requiring to specify confcutdir
+         clist = []
+         for parent in directory.parts():
+-            if self._confcutdir and self._confcutdir.relto(parent):
++            parent_key = unique_path(parent)
++            if self._confcutdir and self._confcutdir.relto(parent_key):
+                 continue
+             conftestpath = parent.join("conftest.py")
+             if conftestpath.isfile():
+                 mod = self._importconftest(conftestpath)
+                 clist.append(mod)
+-        self._dirpath2confmods[directory] = clist
++        self._dirpath2confmods[directory_key] = clist
+         return clist
+ 
+     def _rget_with_confmod(self, name, path):
+@@ -435,9 +437,9 @@ class PytestPluginManager(PluginManager):
+         # Use realpath to avoid loading the same conftest twice
+         # with build systems that create build directories containing
+         # symlinks to actual files.
+-        conftestpath = unique_path(conftestpath)
++        keypath = unique_path(conftestpath)
+         try:
+-            return self._conftestpath2mod[conftestpath]
++            return self._conftestpath2mod[keypath]
+         except KeyError:
+             pkgpath = conftestpath.pypkgpath()
+             if pkgpath is None:
+@@ -454,11 +456,11 @@ class PytestPluginManager(PluginManager):
+                 raise ConftestImportFailure(conftestpath, sys.exc_info())
+ 
+             self._conftest_plugins.add(mod)
+-            self._conftestpath2mod[conftestpath] = mod
+-            dirpath = conftestpath.dirpath()
+-            if dirpath in self._dirpath2confmods:
++            self._conftestpath2mod[keypath] = mod
++            dirpath_key = unique_path(conftestpath.dirpath())
++            if dirpath_key in self._dirpath2confmods:
+                 for path, mods in self._dirpath2confmods.items():
+-                    if path and path.relto(dirpath) or path == dirpath:
++                    if path and path.relto(dirpath_key) or path == dirpath_key:
+                         assert mod not in mods
+                         mods.append(mod)
+             self.trace("loaded conftestmodule %r" % (mod))
+diff --git a/src/_pytest/pathlib.py b/src/_pytest/pathlib.py
+index 0403b6947..b4d399bdb 100644
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -338,9 +338,16 @@ def parts(s):
+ 
+ 
+ def unique_path(path):
+-    """Returns a unique path in case-insensitive (but case-preserving) file
+-    systems such as Windows.
++    """Returns a unique path representation for case-insensitive (but case-preserving)
++    file systems such as Windows.
++
++    Note:
++    - This should be used for comparisons, deduplication and dictionary keys only.
++    - Do not use the normalized path to derive importable module names, as it may
++      change the case of path segments and break imports on case-sensitive import
++      systems.
+ 
+     This is needed only for ``py.path.local``; ``pathlib.Path`` handles this
+-    natively with ``resolve()``."""
++    natively with ``resolve()``.
++    """
+     return type(path)(normcase(str(path.realpath())))
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file `testing/test_conftest.py`.
+Extra Requirements: 
+Purpose: I need to analyze the tests for `conftest.py` to find cases that cover path handling and loading, which is central to the user's bug report.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/test_conftest.py
+Line number range: 1 - 641
+Content:
+1. import os.path
+2. import textwrap
+3. 
+4. import py
+5. 
+6. import pytest
+7. from _pytest.config import PytestPluginManager
+8. from _pytest.main import ExitCode
+9. from _pytest.pathlib import unique_path
+10. 
+11. 
+12. def ConftestWithSetinitial(path):
+13.     conftest = PytestPluginManager()
+14.     conftest_setinitial(conftest, [path])
+15.     return conftest
+16. 
+17. 
+18. def conftest_setinitial(conftest, args, confcutdir=None):
+19.     class Namespace:
+20.         def __init__(self):
+21.             self.file_or_dir = args
+22.             self.confcutdir = str(confcutdir)
+23.             self.noconftest = False
+24.             self.pyargs = False
+25. 
+26.     conftest._set_initial_conftests(Namespace())
+27. 
+28. 
+29. @pytest.mark.usefixtures("_sys_snapshot")
+30. class TestConftestValueAccessGlobal:
+31.     @pytest.fixture(scope="module", params=["global", "inpackage"])
+32.     def basedir(self, request, tmpdir_factory):
+33.         tmpdir = tmpdir_factory.mktemp("basedir", numbered=True)
+34.         tmpdir.ensure("adir/conftest.py").write("a=1 ; Directory = 3")
+35.         tmpdir.ensure("adir/b/conftest.py").write("b=2 ; a = 1.5")
+36.         if request.param == "inpackage":
+37.             tmpdir.ensure("adir/__init__.py")
+38.             tmpdir.ensure("adir/b/__init__.py")
+39. 
+40.         yield tmpdir
+41. 
+42.     def test_basic_init(self, basedir):
+43.         conftest = PytestPluginManager()
+44.         p = basedir.join("adir")
+45.         assert conftest._rget_with_confmod("a", p)[1] == 1
+46. 
+47.     def test_immediate_initialiation_and_incremental_are_the_same(self, basedir):
+48.         conftest = PytestPluginManager()
+49.         assert not len(conftest._dirpath2confmods)
+50.         conftest._getconftestmodules(basedir)
+51.         snap1 = len(conftest._dirpath2confmods)
+52.         assert snap1 == 1
+53.         conftest._getconftestmodules(basedir.join("adir"))
+54.         assert len(conftest._dirpath2confmods) == snap1 + 1
+55.         conftest._getconftestmodules(basedir.join("b"))
+56.         assert len(conftest._dirpath2confmods) == snap1 + 2
+57. 
+58.     def test_value_access_not_existing(self, basedir):
+59.         conftest = ConftestWithSetinitial(basedir)
+60.         with pytest.raises(KeyError):
+61.             conftest._rget_with_confmod("a", basedir)
+62. 
+63.     def test_value_access_by_path(self, basedir):
+64.         conftest = ConftestWithSetinitial(basedir)
+65.         adir = basedir.join("adir")
+66.         assert conftest._rget_with_confmod("a", adir)[1] == 1
+67.         assert conftest._rget_with_confmod("a", adir.join("b"))[1] == 1.5
+68. 
+69.     def test_value_access_with_confmod(self, basedir):
+70.         startdir = basedir.join("adir", "b")
+71.         startdir.ensure("xx", dir=True)
+72.         conftest = ConftestWithSetinitial(startdir)
+73.         mod, value = conftest._rget_with_confmod("a", startdir)
+74.         assert value == 1.5
+75.         path = py.path.local(mod.__file__)
+76.         assert path.dirpath() == basedir.join("adir", "b")
+77.         assert path.purebasename.startswith("conftest")
+78. 
+79. 
+80. def test_conftest_in_nonpkg_with_init(tmpdir, _sys_snapshot):
+81.     tmpdir.ensure("adir-1.0/conftest.py").write("a=1 ; Directory = 3")
+82.     tmpdir.ensure("adir-1.0/b/conftest.py").write("b=2 ; a = 1.5")
+83.     tmpdir.ensure("adir-1.0/b/__init__.py")
+84.     tmpdir.ensure("adir-1.0/__init__.py")
+85.     ConftestWithSetinitial(tmpdir.join("adir-1.0", "b"))
+86. 
+87. 
+88. def test_doubledash_considered(testdir):
+89.     conf = testdir.mkdir("--option")
+90.     conf.ensure("conftest.py")
+91.     conftest = PytestPluginManager()
+92.     conftest_setinitial(conftest, [conf.basename, conf.basename])
+93.     values = conftest._getconftestmodules(conf)
+94.     assert len(values) == 1
+95. 
+96. 
+97. def test_issue151_load_all_conftests(testdir):
+98.     names = "code proj src".split()
+99.     for name in names:
+100.         p = testdir.mkdir(name)
+101.         p.ensure("conftest.py")
+102. 
+103.     conftest = PytestPluginManager()
+104.     conftest_setinitial(conftest, names)
+105.     d = list(conftest._conftestpath2mod.values())
+106.     assert len(d) == len(names)
+107. 
+108. 
+109. def test_conftest_global_import(testdir):
+110.     testdir.makeconftest("x=3")
+111.     p = testdir.makepyfile(
+112.         """
+113.         import py, pytest
+114.         from _pytest.config import PytestPluginManager
+115.         conf = PytestPluginManager()
+116.         mod = conf._importconftest(py.path.local("conftest.py"))
+117.         assert mod.x == 3
+118.         import conftest
+119.         assert conftest is mod, (conftest, mod)
+120.         subconf = py.path.local().ensure("sub", "conftest.py")
+121.         subconf.write("y=4")
+122.         mod2 = conf._importconftest(subconf)
+123.         assert mod != mod2
+124.         assert mod2.y == 4
+125.         import conftest
+126.         assert conftest is mod2, (conftest, mod)
+127.     """
+128.     )
+129.     res = testdir.runpython(p)
+130.     assert res.ret == 0
+131. 
+132. 
+133. def test_conftestcutdir(testdir):
+134.     conf = testdir.makeconftest("")
+135.     p = testdir.mkdir("x")
+136.     conftest = PytestPluginManager()
+137.     conftest_setinitial(conftest, [testdir.tmpdir], confcutdir=p)
+138.     values = conftest._getconftestmodules(p)
+139.     assert len(values) == 0
+140.     values = conftest._getconftestmodules(conf.dirpath())
+141.     assert len(values) == 0
+142.     assert conf not in conftest._conftestpath2mod
+143.     # but we can still import a conftest directly
+144.     conftest._importconftest(conf)
+145.     values = conftest._getconftestmodules(conf.dirpath())
+146.     assert values[0].__file__.startswith(str(unique_path(conf)))
+147.     # and all sub paths get updated properly
+148.     values = conftest._getconftestmodules(p)
+149.     assert len(values) == 1
+150.     assert values[0].__file__.startswith(str(unique_path(conf)))
+151. 
+152. 
+153. def test_conftestcutdir_inplace_considered(testdir):
+154.     conf = testdir.makeconftest("")
+155.     conftest = PytestPluginManager()
+156.     conftest_setinitial(conftest, [conf.dirpath()], confcutdir=conf.dirpath())
+157.     values = conftest._getconftestmodules(conf.dirpath())
+158.     assert len(values) == 1
+159.     assert values[0].__file__.startswith(str(unique_path(conf)))
+160. 
+161. 
+162. @pytest.mark.parametrize("name", "test tests whatever .dotdir".split())
+163. def test_setinitial_conftest_subdirs(testdir, name):
+164.     sub = testdir.mkdir(name)
+165.     subconftest = sub.ensure("conftest.py")
+166.     conftest = PytestPluginManager()
+167.     conftest_setinitial(conftest, [sub.dirpath()], confcutdir=testdir.tmpdir)
+168.     if name not in ("whatever", ".dotdir"):
+169.         assert unique_path(subconftest) in conftest._conftestpath2mod
+170.         assert len(conftest._conftestpath2mod) == 1
+171.     else:
+172.         assert subconftest not in conftest._conftestpath2mod
+173.         assert len(conftest._conftestpath2mod) == 0
+174. 
+175. 
+176. def test_conftest_confcutdir(testdir):
+177.     testdir.makeconftest("assert 0")
+178.     x = testdir.mkdir("x")
+179.     x.join("conftest.py").write(
+180.         textwrap.dedent(
+181.             """\
+182.             def pytest_addoption(parser):
+183.                 parser.addoption("--xyz", action="store_true")
+184.             """
+185.         )
+186.     )
+187.     result = testdir.runpytest("-h", "--confcutdir=%s" % x, x)
+188.     result.stdout.fnmatch_lines(["*--xyz*"])
+189.     assert "warning: could not load initial" not in result.stdout.str()
+190. 
+191. 
+192. @pytest.mark.skipif(
+193.     not hasattr(py.path.local, "mksymlinkto"),
+194.     reason="symlink not available on this platform",
+195. )
+196. def test_conftest_symlink(testdir):
+197.     """Ensure that conftest.py is used for resolved symlinks."""
+198.     real = testdir.tmpdir.mkdir("real")
+199.     realtests = real.mkdir("app").mkdir("tests")
+200.     testdir.tmpdir.join("symlinktests").mksymlinkto(realtests)
+201.     testdir.tmpdir.join("symlink").mksymlinkto(real)
+202.     testdir.makepyfile(
+203.         **{
+204.             "real/app/tests/test_foo.py": "def test1(fixture): pass",
+205.             "real/conftest.py": textwrap.dedent(
+206.                 """
+207.                 import pytest
+208. 
+209.                 print("conftest_loaded")
+210. 
+211.                 @pytest.fixture
+212.                 def fixture():
+213.                     print("fixture_used")
+214.                 """
+215.             ),
+216.         }
+217.     )
+218.     result = testdir.runpytest("-vs", "symlinktests")
+219.     result.stdout.fnmatch_lines(
+220.         [
+221.             "*conftest_loaded*",
+222.             "real/app/tests/test_foo.py::test1 fixture_used",
+223.             "PASSED",
+224.         ]
+225.     )
+226.     assert result.ret == ExitCode.OK
+227. 
+228.     # Should not cause "ValueError: Plugin already registered" (#4174).
+229.     result = testdir.runpytest("-vs", "symlink")
+230.     assert result.ret == ExitCode.OK
+231. 
+232.     realtests.ensure("__init__.py")
+233.     result = testdir.runpytest("-vs", "symlinktests/test_foo.py::test1")
+234.     result.stdout.fnmatch_lines(
+235.         [
+236.             "*conftest_loaded*",
+237.             "real/app/tests/test_foo.py::test1 fixture_used",
+238.             "PASSED",
+239.         ]
+240.     )
+241.     assert result.ret == ExitCode.OK
+242. 
+243. 
+244. @pytest.mark.skipif(
+245.     not hasattr(py.path.local, "mksymlinkto"),
+246.     reason="symlink not available on this platform",
+247. )
+248. def test_conftest_symlink_files(testdir):
+249.     """Check conftest.py loading when running in directory with symlinks."""
+250.     real = testdir.tmpdir.mkdir("real")
+251.     source = {
+252.         "app/test_foo.py": "def test1(fixture): pass",
+253.         "app/__init__.py": "",
+254.         "app/conftest.py": textwrap.dedent(
+255.             """
+256.             import pytest
+257. 
+258.             print("conftest_loaded")
+259. 
+260.             @pytest.fixture
+261.             def fixture():
+262.                 print("fixture_used")
+263.             """
+264.         ),
+265.     }
+266.     testdir.makepyfile(**{"real/%s" % k: v for k, v in source.items()})
+267. 
+268.     # Create a build directory that contains symlinks to actual files
+269.     # but doesn't symlink actual directories.
+270.     build = testdir.tmpdir.mkdir("build")
+271.     build.mkdir("app")
+272.     for f in source:
+273.         build.join(f).mksymlinkto(real.join(f))
+274.     build.chdir()
+275.     result = testdir.runpytest("-vs", "app/test_foo.py")
+276.     result.stdout.fnmatch_lines(["*conftest_loaded*", "PASSED"])
+277.     assert result.ret == ExitCode.OK
+278. 
+279. 
+280. @pytest.mark.skipif(
+281.     os.path.normcase("x") != os.path.normcase("X"),
+282.     reason="only relevant for case insensitive file systems",
+283. )
+284. def test_conftest_badcase(testdir):
+285.     """Check conftest.py loading when directory casing is wrong."""
+286.     testdir.tmpdir.mkdir("JenkinsRoot").mkdir("test")
+287.     source = {"setup.py": "", "test/__init__.py": "", "test/conftest.py": ""}
+288.     testdir.makepyfile(**{"JenkinsRoot/%s" % k: v for k, v in source.items()})
+289. 
+290.     testdir.tmpdir.join("jenkinsroot/test").chdir()
+291.     result = testdir.runpytest()
+292.     assert result.ret == ExitCode.NO_TESTS_COLLECTED
+293. 
+294. 
+295. def test_no_conftest(testdir):
+296.     testdir.makeconftest("assert 0")
+297.     result = testdir.runpytest("--noconftest")
+298.     assert result.ret == ExitCode.NO_TESTS_COLLECTED
+299. 
+300.     result = testdir.runpytest()
+301.     assert result.ret == ExitCode.USAGE_ERROR
+302. 
+303. 
+304. def test_conftest_existing_resultlog(testdir):
+305.     x = testdir.mkdir("tests")
+306.     x.join("conftest.py").write(
+307.         textwrap.dedent(
+308.             """\
+309.             def pytest_addoption(parser):
+310.                 parser.addoption("--xyz", action="store_true")
+311.             """
+312.         )
+313.     )
+314.     testdir.makefile(ext=".log", result="")  # Writes result.log
+315.     result = testdir.runpytest("-h", "--resultlog", "result.log")
+316.     result.stdout.fnmatch_lines(["*--xyz*"])
+317. 
+318. 
+319. def test_conftest_existing_junitxml(testdir):
+320.     x = testdir.mkdir("tests")
+321.     x.join("conftest.py").write(
+322.         textwrap.dedent(
+323.             """\
+324.             def pytest_addoption(parser):
+325.                 parser.addoption("--xyz", action="store_true")
+326.             """
+327.         )
+328.     )
+329.     testdir.makefile(ext=".xml", junit="")  # Writes junit.xml
+330.     result = testdir.runpytest("-h", "--junitxml", "junit.xml")
+331.     result.stdout.fnmatch_lines(["*--xyz*"])
+332. 
+333. 
+334. def test_conftest_import_order(testdir, monkeypatch):
+335.     ct1 = testdir.makeconftest("")
+336.     sub = testdir.mkdir("sub")
+337.     ct2 = sub.join("conftest.py")
+338.     ct2.write("")
+339. 
+340.     def impct(p):
+341.         return p
+342. 
+343.     conftest = PytestPluginManager()
+344.     conftest._confcutdir = testdir.tmpdir
+345.     monkeypatch.setattr(conftest, "_importconftest", impct)
+346.     assert conftest._getconftestmodules(sub) == [ct1, ct2]
+347. 
+348. 
+349. def test_fixture_dependency(testdir, monkeypatch):
+350.     ct1 = testdir.makeconftest("")
+351.     ct1 = testdir.makepyfile("__init__.py")
+352.     ct1.write("")
+353.     sub = testdir.mkdir("sub")
+354.     sub.join("__init__.py").write("")
+355.     sub.join("conftest.py").write(
+356.         textwrap.dedent(
+357.             """\
+358.             import pytest
+359. 
+360.             @pytest.fixture
+361.             def not_needed():
+362.                 assert False, "Should not be called!"
+363. 
+364.             @pytest.fixture
+365.             def foo():
+366.                 assert False, "Should not be called!"
+367. 
+368.             @pytest.fixture
+369.             def bar(foo):
+370.                 return 'bar'
+371.             """
+372.         )
+373.     )
+374.     subsub = sub.mkdir("subsub")
+375.     subsub.join("__init__.py").write("")
+376.     subsub.join("test_bar.py").write(
+377.         textwrap.dedent(
+378.             """\
+379.             import pytest
+380. 
+381.             @pytest.fixture
+382.             def bar():
+383.                 return 'sub bar'
+384. 
+385.             def test_event_fixture(bar):
+386.                 assert bar == 'sub bar'
+387.             """
+388.         )
+389.     )
+390.     result = testdir.runpytest("sub")
+391.     result.stdout.fnmatch_lines(["*1 passed*"])
+392. 
+393. 
+394. def test_conftest_found_with_double_dash(testdir):
+395.     sub = testdir.mkdir("sub")
+396.     sub.join("conftest.py").write(
+397.         textwrap.dedent(
+398.             """\
+399.             def pytest_addoption(parser):
+400.                 parser.addoption("--hello-world", action="store_true")
+401.             """
+402.         )
+403.     )
+404.     p = sub.join("test_hello.py")
+405.     p.write("def test_hello(): pass")
+406.     result = testdir.runpytest(str(p) + "::test_hello", "-h")
+407.     result.stdout.fnmatch_lines(
+408.         """
+409.         *--hello-world*
+410.     """
+411.     )
+412. 
+413. 
+414. class TestConftestVisibility:
+415.     def _setup_tree(self, testdir):  # for issue616
+416.         # example mostly taken from:
+417.         # https://mail.python.org/pipermail/pytest-dev/2014-September/002617.html
+418.         runner = testdir.mkdir("empty")
+419.         package = testdir.mkdir("package")
+420. 
+421.         package.join("conftest.py").write(
+422.             textwrap.dedent(
+423.                 """\
+424.                 import pytest
+425.                 @pytest.fixture
+426.                 def fxtr():
+427.                     return "from-package"
+428.                 """
+429.             )
+430.         )
+431.         package.join("test_pkgroot.py").write(
+432.             textwrap.dedent(
+433.                 """\
+434.                 def test_pkgroot(fxtr):
+435.                     assert fxtr == "from-package"
+436.                 """
+437.             )
+438.         )
+439. 
+440.         swc = package.mkdir("swc")
+441.         swc.join("__init__.py").ensure()
+442.         swc.join("conftest.py").write(
+443.             textwrap.dedent(
+444.                 """\
+445.                 import pytest
+446.                 @pytest.fixture
+447.                 def fxtr():
+448.                     return "from-swc"
+449.                 """
+450.             )
+451.         )
+452.         swc.join("test_with_conftest.py").write(
+453.             textwrap.dedent(
+454.                 """\
+455.                 def test_with_conftest(fxtr):
+456.                     assert fxtr == "from-swc"
+457.                 """
+458.             )
+459.         )
+460. 
+461.         snc = package.mkdir("snc")
+462.         snc.join("__init__.py").ensure()
+463.         snc.join("test_no_conftest.py").write(
+464.             textwrap.dedent(
+465.                 """\
+466.                 def test_no_conftest(fxtr):
+467.                     assert fxtr == "from-package"   # No local conftest.py, so should
+468.                                                     # use value from parent dir's
+469.                 """
+470.             )
+471.         )
+472.         print("created directory structure:")
+473.         for x in testdir.tmpdir.visit():
+474.             print("   " + x.relto(testdir.tmpdir))
+475. 
+476.         return {"runner": runner, "package": package, "swc": swc, "snc": snc}
+477. 
+478.     # N.B.: "swc" stands for "subdir with conftest.py"
+479.     #       "snc" stands for "subdir no [i.e. without] conftest.py"
+480.     @pytest.mark.parametrize(
+481.         "chdir,testarg,expect_ntests_passed",
+482.         [
+483.             # Effective target: package/..
+484.             ("runner", "..", 3),
+485.             ("package", "..", 3),
+486.             ("swc", "../..", 3),
+487.             ("snc", "../..", 3),
+488.             # Effective target: package
+489.             ("runner", "../package", 3),
+490.             ("package", ".", 3),
+491.             ("swc", "..", 3),
+492.             ("snc", "..", 3),
+493.             # Effective target: package/swc
+494.             ("runner", "../package/swc", 1),
+495.             ("package", "./swc", 1),
+496.             ("swc", ".", 1),
+497.             ("snc", "../swc", 1),
+498.             # Effective target: package/snc
+499.             ("runner", "../package/snc", 1),
+500.             ("package", "./snc", 1),
+501.             ("swc", "../snc", 1),
+502.             ("snc", ".", 1),
+503.         ],
+504.     )
+505.     def test_parsefactories_relative_node_ids(
+506.         self, testdir, chdir, testarg, expect_ntests_passed
+507.     ):
+508.         """#616"""
+509.         dirs = self._setup_tree(testdir)
+510.         print("pytest run in cwd: %s" % (dirs[chdir].relto(testdir.tmpdir)))
+511.         print("pytestarg        : %s" % (testarg))
+512.         print("expected pass    : %s" % (expect_ntests_passed))
+513.         with dirs[chdir].as_cwd():
+514.             reprec = testdir.inline_run(testarg, "-q", "--traceconfig")
+515.             reprec.assertoutcome(passed=expect_ntests_passed)
+516. 
+517. 
+518. @pytest.mark.parametrize(
+519.     "confcutdir,passed,error", [(".", 2, 0), ("src", 1, 1), (None, 1, 1)]
+520. )
+521. def test_search_conftest_up_to_inifile(testdir, confcutdir, passed, error):
+522.     """Test that conftest files are detected only up to an ini file, unless
+523.     an explicit --confcutdir option is given.
+524.     """
+525.     root = testdir.tmpdir
+526.     src = root.join("src").ensure(dir=1)
+527.     src.join("pytest.ini").write("[pytest]")
+528.     src.join("conftest.py").write(
+529.         textwrap.dedent(
+530.             """\
+531.             import pytest
+532.             @pytest.fixture
+533.             def fix1(): pass
+534.             """
+535.         )
+536.     )
+537.     src.join("test_foo.py").write(
+538.         textwrap.dedent(
+539.             """\
+540.             def test_1(fix1):
+541.                 pass
+542.             def test_2(out_of_reach):
+543.                 pass
+544.             """
+545.         )
+546.     )
+547.     root.join("conftest.py").write(
+548.         textwrap.dedent(
+549.             """\
+550.             import pytest
+551.             @pytest.fixture
+552.             def out_of_reach(): pass
+553.             """
+554.         )
+555.     )
+556. 
+557.     args = [str(src)]
+558.     if confcutdir:
+559.         args = ["--confcutdir=%s" % root.join(confcutdir)]
+560.     result = testdir.runpytest(*args)
+561.     match = ""
+562.     if passed:
+563.         match += "*%d passed*" % passed
+564.     if error:
+565.         match += "*%d error*" % error
+566.     result.stdout.fnmatch_lines(match)
+567. 
+568. 
+569. def test_issue1073_conftest_special_objects(testdir):
+570.     testdir.makeconftest(
+571.         """\
+572.         class DontTouchMe(object):
+573.             def __getattr__(self, x):
+574.                 raise Exception('cant touch me')
+575. 
+576.         x = DontTouchMe()
+577.         """
+578.     )
+579.     testdir.makepyfile(
+580.         """\
+581.         def test_some():
+582.             pass
+583.         """
+584.     )
+585.     res = testdir.runpytest()
+586.     assert res.ret == 0
+587. 
+588. 
+589. def test_conftest_exception_handling(testdir):
+590.     testdir.makeconftest(
+591.         """\
+592.         raise ValueError()
+593.         """
+594.     )
+595.     testdir.makepyfile(
+596.         """\
+597.         def test_some():
+598.             pass
+599.         """
+600.     )
+601.     res = testdir.runpytest()
+602.     assert res.ret == 4
+603.     assert "raise ValueError()" in [line.strip() for line in res.errlines]
+604. 
+605. 
+606. def test_hook_proxy(testdir):
+607.     """Session's gethookproxy() would cache conftests incorrectly (#2016).
+608.     It was decided to remove the cache altogether.
+609.     """
+610.     testdir.makepyfile(
+611.         **{
+612.             "root/demo-0/test_foo1.py": "def test1(): pass",
+613.             "root/demo-a/test_foo2.py": "def test1(): pass",
+614.             "root/demo-a/conftest.py": """\
+615.             def pytest_ignore_collect(path, config):
+616.                 return True
+617.             """,
+618.             "root/demo-b/test_foo3.py": "def test1(): pass",
+619.             "root/demo-c/test_foo4.py": "def test1(): pass",
+620.         }
+621.     )
+622.     result = testdir.runpytest()
+623.     result.stdout.fnmatch_lines(
+624.         ["*test_foo1.py*", "*test_foo3.py*", "*test_foo4.py*", "*3 passed*"]
+625.     )
+626. 
+627. 
+628. def test_required_option_help(testdir):
+629.     testdir.makeconftest("assert 0")
+630.     x = testdir.mkdir("x")
+631.     x.join("conftest.py").write(
+632.         textwrap.dedent(
+633.             """\
+634.             def pytest_addoption(parser):
+635.                 parser.addoption("--xyz", action="store_true", required=True)
+636.             """
+637.         )
+638.     )
+639.     result = testdir.runpytest("-h", x)
+640.     assert "argument --xyz is required" not in result.stdout.str()
+641.     assert "general:" in result.stdout.str()
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 22:51:44,722 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user's issue is caused by incorrect path case handling on Windows, and the provided patch modifies the `unique_path` function in `_pytest/pathlib.py`. The current context contains `testing/test_conftest.py`, which has some relevant tests, but the tests for `unique_path` itself are most likely in `testing/test_pathlib.py`. Accessing `testing/test_pathlib.py` is crucial to find tests that directly validate the behavior of path normalization, which is at the core of the reported bug." query='Please provide the full content of the file `testing/test_pathlib.py`.' extra_requirements='' purpose='I need to find tests for the `unique_path` function, which is central to the path casing issue reported in the bug, and these tests are likely located in `testing/test_pathlib.py`.'
+2025-12-20 22:51:44,723 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file `testing/test_pathlib.py`.
+2025-12-20 22:51:44,723 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-20 22:51:44,724 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-20 22:51:44,725 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-20 22:51:44,725 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file `testing/test_pathlib.py`.
+Purpose: I need to find tests for the `unique_path` function, which is central to the path casing issue reported in the bug, and these tests are likely located in `testing/test_pathlib.py`.
+2025-12-20 22:51:46,845 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the entire content of `testing/test_pathlib.py`. This file contains various tests for path-related utility functions, which will help in understanding the existing test coverage around the `unique_path` function and how path casing is handled.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/test_pathlib.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2065, 'candidates_token_count': 75, 'total_token_count': 2216, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2065}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 75}], 'thoughts_token_count': 76, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.11554019927978515, 'model_name': 'gemini-2.5-pro'} id='run--f9d9c2db-22d0-4ee6-aaa2-4e55b6198dab-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/test_pathlib.py'}, 'id': '9fb88b40-b954-4169-a5ed-837ef35b29e9', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2065, 'output_tokens': 75, 'total_tokens': 2216, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 76}}
+2025-12-20 22:51:49,756 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the entire content of `testing/test_pathlib.py`. This file contains various tests for path-related utility functions. This will help in understanding the existing test coverage around the `unique_path` function and how path casing is handled.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 3453, 'candidates_token_count': 53, 'total_token_count': 3729, 'cached_content_token_count': 1604, 'prompt_tokens_details': [{'modality': 1, 'token_count': 3453}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1604}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 53}], 'thoughts_token_count': 223}, 'finish_reason': 'STOP', 'avg_logprobs': -0.45688895459445017, 'model_name': 'gemini-2.5-pro'} id='run--a5c75bd8-6f04-49f2-8de8-eb001f691414-0' usage_metadata={'input_tokens': 3453, 'output_tokens': 53, 'total_tokens': 3729, 'input_token_details': {'cache_read': 1604}, 'output_token_details': {'reasoning': 223}}
+2025-12-20 22:51:49,758 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file `testing/test_pathlib.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to find tests for the `unique_path` function, which is central to the path casing issue reported in the bug, and these tests are likely located in `testing/test_pathlib.py`.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/test_pathlib.py
+Line number range: 1 - 91
+Content:
+1. import os.path
+2. import sys
+3. 
+4. import py
+5. 
+6. import pytest
+7. from _pytest.pathlib import fnmatch_ex
+8. from _pytest.pathlib import get_lock_path
+9. from _pytest.pathlib import maybe_delete_a_numbered_dir
+10. from _pytest.pathlib import Path
+11. 
+12. 
+13. class TestPort:
+14.     """Test that our port of py.common.FNMatcher (fnmatch_ex) produces the same results as the
+15.     original py.path.local.fnmatch method.
+16.     """
+17. 
+18.     @pytest.fixture(params=["pathlib", "py.path"])
+19.     def match(self, request):
+20.         if request.param == "py.path":
+21. 
+22.             def match_(pattern, path):
+23.                 return py.path.local(path).fnmatch(pattern)
+24. 
+25.         else:
+26.             assert request.param == "pathlib"
+27. 
+28.             def match_(pattern, path):
+29.                 return fnmatch_ex(pattern, path)
+30. 
+31.         return match_
+32. 
+33.     if sys.platform == "win32":
+34.         drv1 = "c:"
+35.         drv2 = "d:"
+36.     else:
+37.         drv1 = "/c"
+38.         drv2 = "/d"
+39. 
+40.     @pytest.mark.parametrize(
+41.         "pattern, path",
+42.         [
+43.             ("*.py", "foo.py"),
+44.             ("*.py", "bar/foo.py"),
+45.             ("test_*.py", "foo/test_foo.py"),
+46.             ("tests/*.py", "tests/foo.py"),
+47.             (drv1 + "/*.py", drv1 + "/foo.py"),
+48.             (drv1 + "/foo/*.py", drv1 + "/foo/foo.py"),
+49.             ("tests/**/test*.py", "tests/foo/test_foo.py"),
+50.             ("tests/**/doc/test*.py", "tests/foo/bar/doc/test_foo.py"),
+51.             ("tests/**/doc/**/test*.py", "tests/foo/doc/bar/test_foo.py"),
+52.         ],
+53.     )
+54.     def test_matching(self, match, pattern, path):
+55.         assert match(pattern, path)
+56. 
+57.     def test_matching_abspath(self, match):
+58.         abspath = os.path.abspath(os.path.join("tests/foo.py"))
+59.         assert match("tests/foo.py", abspath)
+60. 
+61.     @pytest.mark.parametrize(
+62.         "pattern, path",
+63.         [
+64.             ("*.py", "foo.pyc"),
+65.             ("*.py", "foo/foo.pyc"),
+66.             ("tests/*.py", "foo/foo.py"),
+67.             (drv1 + "/*.py", drv2 + "/foo.py"),
+68.             (drv1 + "/foo/*.py", drv2 + "/foo/foo.py"),
+69.             ("tests/**/test*.py", "tests/foo.py"),
+70.             ("tests/**/test*.py", "foo/test_foo.py"),
+71.             ("tests/**/doc/test*.py", "tests/foo/bar/doc/foo.py"),
+72.             ("tests/**/doc/test*.py", "tests/foo/bar/test_foo.py"),
+73.         ],
+74.     )
+75.     def test_not_matching(self, match, pattern, path):
+76.         assert not match(pattern, path)
+77. 
+78. 
+79. def test_access_denied_during_cleanup(tmp_path, monkeypatch):
+80.     """Ensure that deleting a numbered dir does not fail because of OSErrors (#4262)."""
+81.     path = tmp_path / "temp-1"
+82.     path.mkdir()
+83. 
+84.     def renamed_failed(*args):
+85.         raise OSError("access denied")
+86. 
+87.     monkeypatch.setattr(Path, "rename", renamed_failed)
+88. 
+89.     lock_path = get_lock_path(path)
+90.     maybe_delete_a_numbered_dir(path)
+91.     assert not lock_path.is_file()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-20 22:51:53,033 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly requested the full content of the file `testing/test_pathlib.py`.\n\n2. Extended relevance:\n   - The provided context contains the entire content of the requested file, from line 1 to 91. Therefore, the entire file is relevant to fulfill the user's request.", relative_path='testing/test_pathlib.py', start_line=1, end_line=91)]
+2025-12-20 22:51:53,034 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the file `testing/test_pathlib.py`.
+2025-12-20 22:51:53,035 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-20 22:51:53,035 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-20 22:51:53,035 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 1 existing contexts
+2025-12-20 22:51:53,035 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 2 total contexts (removed 0 duplicates)
+2025-12-20 22:51:53,036 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── config.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── HOWTORELEASE.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── TIDELIFT.rst
+├── azure-pipelines.yml
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 5807.bugfix.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   └── sidebarintro.html
+|       ├── _themes
+|       |   ├── flask
+|       |   |   ├── layout.html
+|       |   |   ├── relations.html
+|       |   |   ├── slim_searchbox.html
+|       |   |   └── static
+|       |   └── flask_theme_support.py
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── costlysetup
+|       |   |   ├── conftest.py
+|       |   |   ├── sub_a
+|       |   |   └── sub_b
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── py2py3
+|       |   |   ├── conftest.py
+|       |   |   ├── test_py2.py
+|       |   |   └── test_py3.py
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── publish_gh_release_notes.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   └── report-coverage.sh
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   └── saferepr.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── legacy.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   └── test_setup_skip_module.py
+    |   └── warnings
+    |       └── test_group_warnings_by_message.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   └── test_saferepr.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   ├── setup_only.py
+    |   ├── setup_plan.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_mark.py
+    ├── test_modimport.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pdb.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: 5.1.2 ImportError while loading conftest (windows import folder casing issues)
+
+Description: 5.1.1 works fine. after upgrade to 5.1.2, the path was converted to lower case
+```
+Installing collected packages: pytest
+  Found existing installation: pytest 5.1.1
+    Uninstalling pytest-5.1.1:
+      Successfully uninstalled pytest-5.1.1
+Successfully installed pytest-5.1.2
+PS C:\Azure\KMS\ComponentTest\Python> pytest --collect-only .\PIsys -m smoke
+ImportError while loading conftest 'c:\azure\kms\componenttest\python\pisys\conftest.py'.
+ModuleNotFoundError: No module named 'python'
+PS C:\Azure\KMS\ComponentTest\Python>
+```
+
+
+
+Patch information:
+diff --git a/src/_pytest/config/__init__.py b/src/_pytest/config/__init__.py
+index 3a0eca546..3e0151b50 100644
+--- a/src/_pytest/config/__init__.py
++++ b/src/_pytest/config/__init__.py
+@@ -406,20 +406,22 @@ class PytestPluginManager(PluginManager):
+         else:
+             directory = path
+ 
+-        directory = unique_path(directory)
++        # Keep original-case directory for import operations; use a normalized key for mappings.
++        directory_key = unique_path(directory)
+ 
+         # XXX these days we may rather want to use config.rootdir
+         # and allow users to opt into looking into the rootdir parent
+         # directories instead of requiring to specify confcutdir
+         clist = []
+         for parent in directory.parts():
+-            if self._confcutdir and self._confcutdir.relto(parent):
++            parent_key = unique_path(parent)
++            if self._confcutdir and self._confcutdir.relto(parent_key):
+                 continue
+             conftestpath = parent.join("conftest.py")
+             if conftestpath.isfile():
+                 mod = self._importconftest(conftestpath)
+                 clist.append(mod)
+-        self._dirpath2confmods[directory] = clist
++        self._dirpath2confmods[directory_key] = clist
+         return clist
+ 
+     def _rget_with_confmod(self, name, path):
+@@ -435,9 +437,9 @@ class PytestPluginManager(PluginManager):
+         # Use realpath to avoid loading the same conftest twice
+         # with build systems that create build directories containing
+         # symlinks to actual files.
+-        conftestpath = unique_path(conftestpath)
++        keypath = unique_path(conftestpath)
+         try:
+-            return self._conftestpath2mod[conftestpath]
++            return self._conftestpath2mod[keypath]
+         except KeyError:
+             pkgpath = conftestpath.pypkgpath()
+             if pkgpath is None:
+@@ -454,11 +456,11 @@ class PytestPluginManager(PluginManager):
+                 raise ConftestImportFailure(conftestpath, sys.exc_info())
+ 
+             self._conftest_plugins.add(mod)
+-            self._conftestpath2mod[conftestpath] = mod
+-            dirpath = conftestpath.dirpath()
+-            if dirpath in self._dirpath2confmods:
++            self._conftestpath2mod[keypath] = mod
++            dirpath_key = unique_path(conftestpath.dirpath())
++            if dirpath_key in self._dirpath2confmods:
+                 for path, mods in self._dirpath2confmods.items():
+-                    if path and path.relto(dirpath) or path == dirpath:
++                    if path and path.relto(dirpath_key) or path == dirpath_key:
+                         assert mod not in mods
+                         mods.append(mod)
+             self.trace("loaded conftestmodule %r" % (mod))
+diff --git a/src/_pytest/pathlib.py b/src/_pytest/pathlib.py
+index 0403b6947..b4d399bdb 100644
+--- a/src/_pytest/pathlib.py
++++ b/src/_pytest/pathlib.py
+@@ -338,9 +338,16 @@ def parts(s):
+ 
+ 
+ def unique_path(path):
+-    """Returns a unique path in case-insensitive (but case-preserving) file
+-    systems such as Windows.
++    """Returns a unique path representation for case-insensitive (but case-preserving)
++    file systems such as Windows.
++
++    Note:
++    - This should be used for comparisons, deduplication and dictionary keys only.
++    - Do not use the normalized path to derive importable module names, as it may
++      change the case of path segments and break imports on case-sensitive import
++      systems.
+ 
+     This is needed only for ``py.path.local``; ``pathlib.Path`` handles this
+-    natively with ``resolve()``."""
++    natively with ``resolve()``.
++    """
+     return type(path)(normcase(str(path.realpath())))
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file `testing/test_conftest.py`.
+Extra Requirements: 
+Purpose: I need to analyze the tests for `conftest.py` to find cases that cover path handling and loading, which is central to the user's bug report.
+
+Previous refined query 2:
+Essential Query: Please provide the full content of the file `testing/test_pathlib.py`.
+Extra Requirements: 
+Purpose: I need to find tests for the `unique_path` function, which is central to the path casing issue reported in the bug, and these tests are likely located in `testing/test_pathlib.py`.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/test_conftest.py
+Line number range: 1 - 641
+Content:
+1. import os.path
+2. import textwrap
+3. 
+4. import py
+5. 
+6. import pytest
+7. from _pytest.config import PytestPluginManager
+8. from _pytest.main import ExitCode
+9. from _pytest.pathlib import unique_path
+10. 
+11. 
+12. def ConftestWithSetinitial(path):
+13.     conftest = PytestPluginManager()
+14.     conftest_setinitial(conftest, [path])
+15.     return conftest
+16. 
+17. 
+18. def conftest_setinitial(conftest, args, confcutdir=None):
+19.     class Namespace:
+20.         def __init__(self):
+21.             self.file_or_dir = args
+22.             self.confcutdir = str(confcutdir)
+23.             self.noconftest = False
+24.             self.pyargs = False
+25. 
+26.     conftest._set_initial_conftests(Namespace())
+27. 
+28. 
+29. @pytest.mark.usefixtures("_sys_snapshot")
+30. class TestConftestValueAccessGlobal:
+31.     @pytest.fixture(scope="module", params=["global", "inpackage"])
+32.     def basedir(self, request, tmpdir_factory):
+33.         tmpdir = tmpdir_factory.mktemp("basedir", numbered=True)
+34.         tmpdir.ensure("adir/conftest.py").write("a=1 ; Directory = 3")
+35.         tmpdir.ensure("adir/b/conftest.py").write("b=2 ; a = 1.5")
+36.         if request.param == "inpackage":
+37.             tmpdir.ensure("adir/__init__.py")
+38.             tmpdir.ensure("adir/b/__init__.py")
+39. 
+40.         yield tmpdir
+41. 
+42.     def test_basic_init(self, basedir):
+43.         conftest = PytestPluginManager()
+44.         p = basedir.join("adir")
+45.         assert conftest._rget_with_confmod("a", p)[1] == 1
+46. 
+47.     def test_immediate_initialiation_and_incremental_are_the_same(self, basedir):
+48.         conftest = PytestPluginManager()
+49.         assert not len(conftest._dirpath2confmods)
+50.         conftest._getconftestmodules(basedir)
+51.         snap1 = len(conftest._dirpath2confmods)
+52.         assert snap1 == 1
+53.         conftest._getconftestmodules(basedir.join("adir"))
+54.         assert len(conftest._dirpath2confmods) == snap1 + 1
+55.         conftest._getconftestmodules(basedir.join("b"))
+56.         assert len(conftest._dirpath2confmods) == snap1 + 2
+57. 
+58.     def test_value_access_not_existing(self, basedir):
+59.         conftest = ConftestWithSetinitial(basedir)
+60.         with pytest.raises(KeyError):
+61.             conftest._rget_with_confmod("a", basedir)
+62. 
+63.     def test_value_access_by_path(self, basedir):
+64.         conftest = ConftestWithSetinitial(basedir)
+65.         adir = basedir.join("adir")
+66.         assert conftest._rget_with_confmod("a", adir)[1] == 1
+67.         assert conftest._rget_with_confmod("a", adir.join("b"))[1] == 1.5
+68. 
+69.     def test_value_access_with_confmod(self, basedir):
+70.         startdir = basedir.join("adir", "b")
+71.         startdir.ensure("xx", dir=True)
+72.         conftest = ConftestWithSetinitial(startdir)
+73.         mod, value = conftest._rget_with_confmod("a", startdir)
+74.         assert value == 1.5
+75.         path = py.path.local(mod.__file__)
+76.         assert path.dirpath() == basedir.join("adir", "b")
+77.         assert path.purebasename.startswith("conftest")
+78. 
+79. 
+80. def test_conftest_in_nonpkg_with_init(tmpdir, _sys_snapshot):
+81.     tmpdir.ensure("adir-1.0/conftest.py").write("a=1 ; Directory = 3")
+82.     tmpdir.ensure("adir-1.0/b/conftest.py").write("b=2 ; a = 1.5")
+83.     tmpdir.ensure("adir-1.0/b/__init__.py")
+84.     tmpdir.ensure("adir-1.0/__init__.py")
+85.     ConftestWithSetinitial(tmpdir.join("adir-1.0", "b"))
+86. 
+87. 
+88. def test_doubledash_considered(testdir):
+89.     conf = testdir.mkdir("--option")
+90.     conf.ensure("conftest.py")
+91.     conftest = PytestPluginManager()
+92.     conftest_setinitial(conftest, [conf.basename, conf.basename])
+93.     values = conftest._getconftestmodules(conf)
+94.     assert len(values) == 1
+95. 
+96. 
+97. def test_issue151_load_all_conftests(testdir):
+98.     names = "code proj src".split()
+99.     for name in names:
+100.         p = testdir.mkdir(name)
+101.         p.ensure("conftest.py")
+102. 
+103.     conftest = PytestPluginManager()
+104.     conftest_setinitial(conftest, names)
+105.     d = list(conftest._conftestpath2mod.values())
+106.     assert len(d) == len(names)
+107. 
+108. 
+109. def test_conftest_global_import(testdir):
+110.     testdir.makeconftest("x=3")
+111.     p = testdir.makepyfile(
+112.         """
+113.         import py, pytest
+114.         from _pytest.config import PytestPluginManager
+115.         conf = PytestPluginManager()
+116.         mod = conf._importconftest(py.path.local("conftest.py"))
+117.         assert mod.x == 3
+118.         import conftest
+119.         assert conftest is mod, (conftest, mod)
+120.         subconf = py.path.local().ensure("sub", "conftest.py")
+121.         subconf.write("y=4")
+122.         mod2 = conf._importconftest(subconf)
+123.         assert mod != mod2
+124.         assert mod2.y == 4
+125.         import conftest
+126.         assert conftest is mod2, (conftest, mod)
+127.     """
+128.     )
+129.     res = testdir.runpython(p)
+130.     assert res.ret == 0
+131. 
+132. 
+133. def test_conftestcutdir(testdir):
+134.     conf = testdir.makeconftest("")
+135.     p = testdir.mkdir("x")
+136.     conftest = PytestPluginManager()
+137.     conftest_setinitial(conftest, [testdir.tmpdir], confcutdir=p)
+138.     values = conftest._getconftestmodules(p)
+139.     assert len(values) == 0
+140.     values = conftest._getconftestmodules(conf.dirpath())
+141.     assert len(values) == 0
+142.     assert conf not in conftest._conftestpath2mod
+143.     # but we can still import a conftest directly
+144.     conftest._importconftest(conf)
+145.     values = conftest._getconftestmodules(conf.dirpath())
+146.     assert values[0].__file__.startswith(str(unique_path(conf)))
+147.     # and all sub paths get updated properly
+148.     values = conftest._getconftestmodules(p)
+149.     assert len(values) == 1
+150.     assert values[0].__file__.startswith(str(unique_path(conf)))
+151. 
+152. 
+153. def test_conftestcutdir_inplace_considered(testdir):
+154.     conf = testdir.makeconftest("")
+155.     conftest = PytestPluginManager()
+156.     conftest_setinitial(conftest, [conf.dirpath()], confcutdir=conf.dirpath())
+157.     values = conftest._getconftestmodules(conf.dirpath())
+158.     assert len(values) == 1
+159.     assert values[0].__file__.startswith(str(unique_path(conf)))
+160. 
+161. 
+162. @pytest.mark.parametrize("name", "test tests whatever .dotdir".split())
+163. def test_setinitial_conftest_subdirs(testdir, name):
+164.     sub = testdir.mkdir(name)
+165.     subconftest = sub.ensure("conftest.py")
+166.     conftest = PytestPluginManager()
+167.     conftest_setinitial(conftest, [sub.dirpath()], confcutdir=testdir.tmpdir)
+168.     if name not in ("whatever", ".dotdir"):
+169.         assert unique_path(subconftest) in conftest._conftestpath2mod
+170.         assert len(conftest._conftestpath2mod) == 1
+171.     else:
+172.         assert subconftest not in conftest._conftestpath2mod
+173.         assert len(conftest._conftestpath2mod) == 0
+174. 
+175. 
+176. def test_conftest_confcutdir(testdir):
+177.     testdir.makeconftest("assert 0")
+178.     x = testdir.mkdir("x")
+179.     x.join("conftest.py").write(
+180.         textwrap.dedent(
+181.             """\
+182.             def pytest_addoption(parser):
+183.                 parser.addoption("--xyz", action="store_true")
+184.             """
+185.         )
+186.     )
+187.     result = testdir.runpytest("-h", "--confcutdir=%s" % x, x)
+188.     result.stdout.fnmatch_lines(["*--xyz*"])
+189.     assert "warning: could not load initial" not in result.stdout.str()
+190. 
+191. 
+192. @pytest.mark.skipif(
+193.     not hasattr(py.path.local, "mksymlinkto"),
+194.     reason="symlink not available on this platform",
+195. )
+196. def test_conftest_symlink(testdir):
+197.     """Ensure that conftest.py is used for resolved symlinks."""
+198.     real = testdir.tmpdir.mkdir("real")
+199.     realtests = real.mkdir("app").mkdir("tests")
+200.     testdir.tmpdir.join("symlinktests").mksymlinkto(realtests)
+201.     testdir.tmpdir.join("symlink").mksymlinkto(real)
+202.     testdir.makepyfile(
+203.         **{
+204.             "real/app/tests/test_foo.py": "def test1(fixture): pass",
+205.             "real/conftest.py": textwrap.dedent(
+206.                 """
+207.                 import pytest
+208. 
+209.                 print("conftest_loaded")
+210. 
+211.                 @pytest.fixture
+212.                 def fixture():
+213.                     print("fixture_used")
+214.                 """
+215.             ),
+216.         }
+217.     )
+218.     result = testdir.runpytest("-vs", "symlinktests")
+219.     result.stdout.fnmatch_lines(
+220.         [
+221.             "*conftest_loaded*",
+222.             "real/app/tests/test_foo.py::test1 fixture_used",
+223.             "PASSED",
+224.         ]
+225.     )
+226.     assert result.ret == ExitCode.OK
+227. 
+228.     # Should not cause "ValueError: Plugin already registered" (#4174).
+229.     result = testdir.runpytest("-vs", "symlink")
+230.     assert result.ret == ExitCode.OK
+231. 
+232.     realtests.ensure("__init__.py")
+233.     result = testdir.runpytest("-vs", "symlinktests/test_foo.py::test1")
+234.     result.stdout.fnmatch_lines(
+235.         [
+236.             "*conftest_loaded*",
+237.             "real/app/tests/test_foo.py::test1 fixture_used",
+238.             "PASSED",
+239.         ]
+240.     )
+241.     assert result.ret == ExitCode.OK
+242. 
+243. 
+244. @pytest.mark.skipif(
+245.     not hasattr(py.path.local, "mksymlinkto"),
+246.     reason="symlink not available on this platform",
+247. )
+248. def test_conftest_symlink_files(testdir):
+249.     """Check conftest.py loading when running in directory with symlinks."""
+250.     real = testdir.tmpdir.mkdir("real")
+251.     source = {
+252.         "app/test_foo.py": "def test1(fixture): pass",
+253.         "app/__init__.py": "",
+254.         "app/conftest.py": textwrap.dedent(
+255.             """
+256.             import pytest
+257. 
+258.             print("conftest_loaded")
+259. 
+260.             @pytest.fixture
+261.             def fixture():
+262.                 print("fixture_used")
+263.             """
+264.         ),
+265.     }
+266.     testdir.makepyfile(**{"real/%s" % k: v for k, v in source.items()})
+267. 
+268.     # Create a build directory that contains symlinks to actual files
+269.     # but doesn't symlink actual directories.
+270.     build = testdir.tmpdir.mkdir("build")
+271.     build.mkdir("app")
+272.     for f in source:
+273.         build.join(f).mksymlinkto(real.join(f))
+274.     build.chdir()
+275.     result = testdir.runpytest("-vs", "app/test_foo.py")
+276.     result.stdout.fnmatch_lines(["*conftest_loaded*", "PASSED"])
+277.     assert result.ret == ExitCode.OK
+278. 
+279. 
+280. @pytest.mark.skipif(
+281.     os.path.normcase("x") != os.path.normcase("X"),
+282.     reason="only relevant for case insensitive file systems",
+283. )
+284. def test_conftest_badcase(testdir):
+285.     """Check conftest.py loading when directory casing is wrong."""
+286.     testdir.tmpdir.mkdir("JenkinsRoot").mkdir("test")
+287.     source = {"setup.py": "", "test/__init__.py": "", "test/conftest.py": ""}
+288.     testdir.makepyfile(**{"JenkinsRoot/%s" % k: v for k, v in source.items()})
+289. 
+290.     testdir.tmpdir.join("jenkinsroot/test").chdir()
+291.     result = testdir.runpytest()
+292.     assert result.ret == ExitCode.NO_TESTS_COLLECTED
+293. 
+294. 
+295. def test_no_conftest(testdir):
+296.     testdir.makeconftest("assert 0")
+297.     result = testdir.runpytest("--noconftest")
+298.     assert result.ret == ExitCode.NO_TESTS_COLLECTED
+299. 
+300.     result = testdir.runpytest()
+301.     assert result.ret == ExitCode.USAGE_ERROR
+302. 
+303. 
+304. def test_conftest_existing_resultlog(testdir):
+305.     x = testdir.mkdir("tests")
+306.     x.join("conftest.py").write(
+307.         textwrap.dedent(
+308.             """\
+309.             def pytest_addoption(parser):
+310.                 parser.addoption("--xyz", action="store_true")
+311.             """
+312.         )
+313.     )
+314.     testdir.makefile(ext=".log", result="")  # Writes result.log
+315.     result = testdir.runpytest("-h", "--resultlog", "result.log")
+316.     result.stdout.fnmatch_lines(["*--xyz*"])
+317. 
+318. 
+319. def test_conftest_existing_junitxml(testdir):
+320.     x = testdir.mkdir("tests")
+321.     x.join("conftest.py").write(
+322.         textwrap.dedent(
+323.             """\
+324.             def pytest_addoption(parser):
+325.                 parser.addoption("--xyz", action="store_true")
+326.             """
+327.         )
+328.     )
+329.     testdir.makefile(ext=".xml", junit="")  # Writes junit.xml
+330.     result = testdir.runpytest("-h", "--junitxml", "junit.xml")
+331.     result.stdout.fnmatch_lines(["*--xyz*"])
+332. 
+333. 
+334. def test_conftest_import_order(testdir, monkeypatch):
+335.     ct1 = testdir.makeconftest("")
+336.     sub = testdir.mkdir("sub")
+337.     ct2 = sub.join("conftest.py")
+338.     ct2.write("")
+339. 
+340.     def impct(p):
+341.         return p
+342. 
+343.     conftest = PytestPluginManager()
+344.     conftest._confcutdir = testdir.tmpdir
+345.     monkeypatch.setattr(conftest, "_importconftest", impct)
+346.     assert conftest._getconftestmodules(sub) == [ct1, ct2]
+347. 
+348. 
+349. def test_fixture_dependency(testdir, monkeypatch):
+350.     ct1 = testdir.makeconftest("")
+351.     ct1 = testdir.makepyfile("__init__.py")
+352.     ct1.write("")
+353.     sub = testdir.mkdir("sub")
+354.     sub.join("__init__.py").write("")
+355.     sub.join("conftest.py").write(
+356.         textwrap.dedent(
+357.             """\
+358.             import pytest
+359. 
+360.             @pytest.fixture
+361.             def not_needed():
+362.                 assert False, "Should not be called!"
+363. 
+364.             @pytest.fixture
+365.             def foo():
+366.                 assert False, "Should not be called!"
+367. 
+368.             @pytest.fixture
+369.             def bar(foo):
+370.                 return 'bar'
+371.             """
+372.         )
+373.     )
+374.     subsub = sub.mkdir("subsub")
+375.     subsub.join("__init__.py").write("")
+376.     subsub.join("test_bar.py").write(
+377.         textwrap.dedent(
+378.             """\
+379.             import pytest
+380. 
+381.             @pytest.fixture
+382.             def bar():
+383.                 return 'sub bar'
+384. 
+385.             def test_event_fixture(bar):
+386.                 assert bar == 'sub bar'
+387.             """
+388.         )
+389.     )
+390.     result = testdir.runpytest("sub")
+391.     result.stdout.fnmatch_lines(["*1 passed*"])
+392. 
+393. 
+394. def test_conftest_found_with_double_dash(testdir):
+395.     sub = testdir.mkdir("sub")
+396.     sub.join("conftest.py").write(
+397.         textwrap.dedent(
+398.             """\
+399.             def pytest_addoption(parser):
+400.                 parser.addoption("--hello-world", action="store_true")
+401.             """
+402.         )
+403.     )
+404.     p = sub.join("test_hello.py")
+405.     p.write("def test_hello(): pass")
+406.     result = testdir.runpytest(str(p) + "::test_hello", "-h")
+407.     result.stdout.fnmatch_lines(
+408.         """
+409.         *--hello-world*
+410.     """
+411.     )
+412. 
+413. 
+414. class TestConftestVisibility:
+415.     def _setup_tree(self, testdir):  # for issue616
+416.         # example mostly taken from:
+417.         # https://mail.python.org/pipermail/pytest-dev/2014-September/002617.html
+418.         runner = testdir.mkdir("empty")
+419.         package = testdir.mkdir("package")
+420. 
+421.         package.join("conftest.py").write(
+422.             textwrap.dedent(
+423.                 """\
+424.                 import pytest
+425.                 @pytest.fixture
+426.                 def fxtr():
+427.                     return "from-package"
+428.                 """
+429.             )
+430.         )
+431.         package.join("test_pkgroot.py").write(
+432.             textwrap.dedent(
+433.                 """\
+434.                 def test_pkgroot(fxtr):
+435.                     assert fxtr == "from-package"
+436.                 """
+437.             )
+438.         )
+439. 
+440.         swc = package.mkdir("swc")
+441.         swc.join("__init__.py").ensure()
+442.         swc.join("conftest.py").write(
+443.             textwrap.dedent(
+444.                 """\
+445.                 import pytest
+446.                 @pytest.fixture
+447.                 def fxtr():
+448.                     return "from-swc"
+449.                 """
+450.             )
+451.         )
+452.         swc.join("test_with_conftest.py").write(
+453.             textwrap.dedent(
+454.                 """\
+455.                 def test_with_conftest(fxtr):
+456.                     assert fxtr == "from-swc"
+457.                 """
+458.             )
+459.         )
+460. 
+461.         snc = package.mkdir("snc")
+462.         snc.join("__init__.py").ensure()
+463.         snc.join("test_no_conftest.py").write(
+464.             textwrap.dedent(
+465.                 """\
+466.                 def test_no_conftest(fxtr):
+467.                     assert fxtr == "from-package"   # No local conftest.py, so should
+468.                                                     # use value from parent dir's
+469.                 """
+470.             )
+471.         )
+472.         print("created directory structure:")
+473.         for x in testdir.tmpdir.visit():
+474.             print("   " + x.relto(testdir.tmpdir))
+475. 
+476.         return {"runner": runner, "package": package, "swc": swc, "snc": snc}
+477. 
+478.     # N.B.: "swc" stands for "subdir with conftest.py"
+479.     #       "snc" stands for "subdir no [i.e. without] conftest.py"
+480.     @pytest.mark.parametrize(
+481.         "chdir,testarg,expect_ntests_passed",
+482.         [
+483.             # Effective target: package/..
+484.             ("runner", "..", 3),
+485.             ("package", "..", 3),
+486.             ("swc", "../..", 3),
+487.             ("snc", "../..", 3),
+488.             # Effective target: package
+489.             ("runner", "../package", 3),
+490.             ("package", ".", 3),
+491.             ("swc", "..", 3),
+492.             ("snc", "..", 3),
+493.             # Effective target: package/swc
+494.             ("runner", "../package/swc", 1),
+495.             ("package", "./swc", 1),
+496.             ("swc", ".", 1),
+497.             ("snc", "../swc", 1),
+498.             # Effective target: package/snc
+499.             ("runner", "../package/snc", 1),
+500.             ("package", "./snc", 1),
+501.             ("swc", "../snc", 1),
+502.             ("snc", ".", 1),
+503.         ],
+504.     )
+505.     def test_parsefactories_relative_node_ids(
+506.         self, testdir, chdir, testarg, expect_ntests_passed
+507.     ):
+508.         """#616"""
+509.         dirs = self._setup_tree(testdir)
+510.         print("pytest run in cwd: %s" % (dirs[chdir].relto(testdir.tmpdir)))
+511.         print("pytestarg        : %s" % (testarg))
+512.         print("expected pass    : %s" % (expect_ntests_passed))
+513.         with dirs[chdir].as_cwd():
+514.             reprec = testdir.inline_run(testarg, "-q", "--traceconfig")
+515.             reprec.assertoutcome(passed=expect_ntests_passed)
+516. 
+517. 
+518. @pytest.mark.parametrize(
+519.     "confcutdir,passed,error", [(".", 2, 0), ("src", 1, 1), (None, 1, 1)]
+520. )
+521. def test_search_conftest_up_to_inifile(testdir, confcutdir, passed, error):
+522.     """Test that conftest files are detected only up to an ini file, unless
+523.     an explicit --confcutdir option is given.
+524.     """
+525.     root = testdir.tmpdir
+526.     src = root.join("src").ensure(dir=1)
+527.     src.join("pytest.ini").write("[pytest]")
+528.     src.join("conftest.py").write(
+529.         textwrap.dedent(
+530.             """\
+531.             import pytest
+532.             @pytest.fixture
+533.             def fix1(): pass
+534.             """
+535.         )
+536.     )
+537.     src.join("test_foo.py").write(
+538.         textwrap.dedent(
+539.             """\
+540.             def test_1(fix1):
+541.                 pass
+542.             def test_2(out_of_reach):
+543.                 pass
+544.             """
+545.         )
+546.     )
+547.     root.join("conftest.py").write(
+548.         textwrap.dedent(
+549.             """\
+550.             import pytest
+551.             @pytest.fixture
+552.             def out_of_reach(): pass
+553.             """
+554.         )
+555.     )
+556. 
+557.     args = [str(src)]
+558.     if confcutdir:
+559.         args = ["--confcutdir=%s" % root.join(confcutdir)]
+560.     result = testdir.runpytest(*args)
+561.     match = ""
+562.     if passed:
+563.         match += "*%d passed*" % passed
+564.     if error:
+565.         match += "*%d error*" % error
+566.     result.stdout.fnmatch_lines(match)
+567. 
+568. 
+569. def test_issue1073_conftest_special_objects(testdir):
+570.     testdir.makeconftest(
+571.         """\
+572.         class DontTouchMe(object):
+573.             def __getattr__(self, x):
+574.                 raise Exception('cant touch me')
+575. 
+576.         x = DontTouchMe()
+577.         """
+578.     )
+579.     testdir.makepyfile(
+580.         """\
+581.         def test_some():
+582.             pass
+583.         """
+584.     )
+585.     res = testdir.runpytest()
+586.     assert res.ret == 0
+587. 
+588. 
+589. def test_conftest_exception_handling(testdir):
+590.     testdir.makeconftest(
+591.         """\
+592.         raise ValueError()
+593.         """
+594.     )
+595.     testdir.makepyfile(
+596.         """\
+597.         def test_some():
+598.             pass
+599.         """
+600.     )
+601.     res = testdir.runpytest()
+602.     assert res.ret == 4
+603.     assert "raise ValueError()" in [line.strip() for line in res.errlines]
+604. 
+605. 
+606. def test_hook_proxy(testdir):
+607.     """Session's gethookproxy() would cache conftests incorrectly (#2016).
+608.     It was decided to remove the cache altogether.
+609.     """
+610.     testdir.makepyfile(
+611.         **{
+612.             "root/demo-0/test_foo1.py": "def test1(): pass",
+613.             "root/demo-a/test_foo2.py": "def test1(): pass",
+614.             "root/demo-a/conftest.py": """\
+615.             def pytest_ignore_collect(path, config):
+616.                 return True
+617.             """,
+618.             "root/demo-b/test_foo3.py": "def test1(): pass",
+619.             "root/demo-c/test_foo4.py": "def test1(): pass",
+620.         }
+621.     )
+622.     result = testdir.runpytest()
+623.     result.stdout.fnmatch_lines(
+624.         ["*test_foo1.py*", "*test_foo3.py*", "*test_foo4.py*", "*3 passed*"]
+625.     )
+626. 
+627. 
+628. def test_required_option_help(testdir):
+629.     testdir.makeconftest("assert 0")
+630.     x = testdir.mkdir("x")
+631.     x.join("conftest.py").write(
+632.         textwrap.dedent(
+633.             """\
+634.             def pytest_addoption(parser):
+635.                 parser.addoption("--xyz", action="store_true", required=True)
+636.             """
+637.         )
+638.     )
+639.     result = testdir.runpytest("-h", x)
+640.     assert "argument --xyz is required" not in result.stdout.str()
+641.     assert "general:" in result.stdout.str()
+
+
+File: testing/test_pathlib.py
+Line number range: 1 - 91
+Content:
+1. import os.path
+2. import sys
+3. 
+4. import py
+5. 
+6. import pytest
+7. from _pytest.pathlib import fnmatch_ex
+8. from _pytest.pathlib import get_lock_path
+9. from _pytest.pathlib import maybe_delete_a_numbered_dir
+10. from _pytest.pathlib import Path
+11. 
+12. 
+13. class TestPort:
+14.     """Test that our port of py.common.FNMatcher (fnmatch_ex) produces the same results as the
+15.     original py.path.local.fnmatch method.
+16.     """
+17. 
+18.     @pytest.fixture(params=["pathlib", "py.path"])
+19.     def match(self, request):
+20.         if request.param == "py.path":
+21. 
+22.             def match_(pattern, path):
+23.                 return py.path.local(path).fnmatch(pattern)
+24. 
+25.         else:
+26.             assert request.param == "pathlib"
+27. 
+28.             def match_(pattern, path):
+29.                 return fnmatch_ex(pattern, path)
+30. 
+31.         return match_
+32. 
+33.     if sys.platform == "win32":
+34.         drv1 = "c:"
+35.         drv2 = "d:"
+36.     else:
+37.         drv1 = "/c"
+38.         drv2 = "/d"
+39. 
+40.     @pytest.mark.parametrize(
+41.         "pattern, path",
+42.         [
+43.             ("*.py", "foo.py"),
+44.             ("*.py", "bar/foo.py"),
+45.             ("test_*.py", "foo/test_foo.py"),
+46.             ("tests/*.py", "tests/foo.py"),
+47.             (drv1 + "/*.py", drv1 + "/foo.py"),
+48.             (drv1 + "/foo/*.py", drv1 + "/foo/foo.py"),
+49.             ("tests/**/test*.py", "tests/foo/test_foo.py"),
+50.             ("tests/**/doc/test*.py", "tests/foo/bar/doc/test_foo.py"),
+51.             ("tests/**/doc/**/test*.py", "tests/foo/doc/bar/test_foo.py"),
+52.         ],
+53.     )
+54.     def test_matching(self, match, pattern, path):
+55.         assert match(pattern, path)
+56. 
+57.     def test_matching_abspath(self, match):
+58.         abspath = os.path.abspath(os.path.join("tests/foo.py"))
+59.         assert match("tests/foo.py", abspath)
+60. 
+61.     @pytest.mark.parametrize(
+62.         "pattern, path",
+63.         [
+64.             ("*.py", "foo.pyc"),
+65.             ("*.py", "foo/foo.pyc"),
+66.             ("tests/*.py", "foo/foo.py"),
+67.             (drv1 + "/*.py", drv2 + "/foo.py"),
+68.             (drv1 + "/foo/*.py", drv2 + "/foo/foo.py"),
+69.             ("tests/**/test*.py", "tests/foo.py"),
+70.             ("tests/**/test*.py", "foo/test_foo.py"),
+71.             ("tests/**/doc/test*.py", "tests/foo/bar/doc/foo.py"),
+72.             ("tests/**/doc/test*.py", "tests/foo/bar/test_foo.py"),
+73.         ],
+74.     )
+75.     def test_not_matching(self, match, pattern, path):
+76.         assert not match(pattern, path)
+77. 
+78. 
+79. def test_access_denied_during_cleanup(tmp_path, monkeypatch):
+80.     """Ensure that deleting a numbered dir does not fail because of OSErrors (#4262)."""
+81.     path = tmp_path / "temp-1"
+82.     path.mkdir()
+83. 
+84.     def renamed_failed(*args):
+85.         raise OSError("access denied")
+86. 
+87.     monkeypatch.setattr(Path, "rename", renamed_failed)
+88. 
+89.     lock_path = get_lock_path(path)
+90.     maybe_delete_a_numbered_dir(path)
+91.     assert not lock_path.is_file()
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 22:52:37,961 - thread-134133542028992.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="I have analyzed the user's request and the provided context, which includes the full content of `testing/test_conftest.py` and `testing/test_pathlib.py`. The file `testing/test_conftest.py` contains several test cases that are highly relevant to the reported bug, which involves an `ImportError` during `conftest.py` loading on a case-insensitive filesystem. Specifically, `test_conftest_badcase` directly tests loading conftest with incorrect path casing, `test_conftest_symlink` tests behavior with path resolution which is related to `realpath()` used in the patch, and `test_conftest_global_import` tests the import mechanism itself. This is sufficient to select three relevant test cases that cover the different aspects of the bug. Therefore, I do not need additional context." query='' extra_requirements='' purpose=''
+2025-12-20 22:52:37,962 - thread-134133542028992.prometheus_context_collector - INFO - Successfully retrieved 2 context snippets

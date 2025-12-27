@@ -1,0 +1,4644 @@
+2025-12-21 17:03:19,081 - thread-131918823687872.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: UnboundLocalError in evalf
+
+Description: ```
+>>> Mul(x, Max(0, y), evaluate=False).evalf()
+x*Max(0, y)
+>>> Mul(Max(0, y), x, evaluate=False).evalf()
+Traceback (most recent call last):
+  File "./sympy/core/evalf.py", line 1285, in evalf
+    rf = evalf_table[x.func]
+KeyError: Max
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "./sympy/core/evalf.py", line 1394, in evalf
+    result = evalf(self, prec + 4, options)
+  File "./sympy/core/evalf.py", line 1286, in evalf
+    r = rf(x, prec, options)
+  File "./sympy/core/evalf.py", line 538, in evalf_mul
+    arg = evalf(arg, prec, options)
+  File "./sympy/core/evalf.py", line 1308, in evalf
+    r = re, im, reprec, imprec
+UnboundLocalError: local variable 'reprec' referenced before assignment
+```
+
+I found this after changing the order of Mul args in https://github.com/sympy/sympy/pull/13059.
+
+Based on the code, I think the elif clauses that define reprec and imprec should have an `else: raise NotImplementedError`. That appears to fix it, although I didn't try to debug to see why the arg order is mattering here. 
+
+Patch information:
+diff --git a/sympy/core/evalf.py b/sympy/core/evalf.py
+index 72a5fbae52..f34908710a 100644
+--- a/sympy/core/evalf.py
++++ b/sympy/core/evalf.py
+@@ -1301,12 +1301,16 @@ def evalf(x, prec, options):
+             elif re.is_number:
+                 re = re._to_mpmath(prec, allow_ints=False)._mpf_
+                 reprec = prec
++            else:
++                raise NotImplementedError
+             if im == 0:
+                 im = None
+                 imprec = None
+             elif im.is_number:
+                 im = im._to_mpmath(prec, allow_ints=False)._mpf_
+                 imprec = prec
++            else:
++                raise NotImplementedError
+             r = re, im, reprec, imprec
+         except AttributeError:
+             raise NotImplementedError
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-21 17:03:19,154 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .travis.yml
+├── CODE_OF_CONDUCT.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.rst
+├── bin
+|   ├── ask_update.py
+|   ├── authors_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_update.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_import.py
+|   ├── test_setup.py
+|   └── test_travis.sh
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   ├── numpydoc.py
+|   |   └── sympylive.py
+|   ├── generate_logos.py
+|   ├── man
+|   |   └── isympy.xml
+|   └── src
+|       ├── _static
+|       ├── _templates
+|       |   └── layout.html
+|       ├── aboutus.rst
+|       ├── citing.rst
+|       ├── conf.py
+|       ├── gotchas.rst
+|       ├── guide.rst
+|       ├── index.rst
+|       ├── install.rst
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── handlers
+|       |   |   ├── index.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── index.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   └── integrals.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   └── sparse.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── hyperexpand.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   └── tensor.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   ├── runtests.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       └── intro.rst
+|       ├── outreach.rst
+|       ├── pics
+|       ├── python-comparisons.rst
+|       ├── special_topics
+|       |   ├── finite_diff_derivatives.rst
+|       |   ├── index.rst
+|       |   └── intro.rst
+|       ├── tutorial
+|       |   ├── basic_operations.rst
+|       |   ├── calculus.rst
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── intro.rst
+|       |   ├── manipulation.rst
+|       |   ├── matrices.rst
+|       |   ├── preliminaries.rst
+|       |   ├── printing.rst
+|       |   ├── simplification.rst
+|       |   └── solvers.rst
+|       └── wiki.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── release
+|   ├── Dockerfile
+|   ├── README.md
+|   ├── fabfile.py
+|   ├── pull_and_run_rever.sh
+|   └── release.sh
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_assumptions_2.py
+    |       ├── test_context.py
+    |       ├── test_matrices.py
+    |       ├── test_query.py
+    |       ├── test_refine.py
+    |       ├── test_satask.py
+    |       └── test_sathandlers.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── ffunctions.py
+    |   ├── rewriting.py
+    |   └── tests
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_ffunctions.py
+    |       └── test_rewriting.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── evaluate.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── power.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_eval_power.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_evaluate.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_trace.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   └── trace.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── deprecated
+    |   ├── __init__.py
+    |   ├── class_registry.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_class_registry.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── importtools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_sage.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── linearsolver.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── rubi
+    |   |   ├── __init__.py
+    |   |   ├── parsetools
+    |   |   |   ├── __init__.py
+    |   |   |   ├── parse.py
+    |   |   |   └── tests
+    |   |   ├── rubi.py
+    |   |   ├── rules
+    |   |   |   ├── __init__.py
+    |   |   |   ├── binomial_products.py
+    |   |   |   ├── exponential.py
+    |   |   |   ├── hyperbolic.py
+    |   |   |   ├── integrand_simplification.py
+    |   |   |   ├── inverse_hyperbolic.py
+    |   |   |   ├── inverse_trig.py
+    |   |   |   ├── linear_products.py
+    |   |   |   ├── logarithms.py
+    |   |   |   ├── miscellaneous_algebraic.py
+    |   |   |   ├── miscellaneous_integration.py
+    |   |   |   ├── miscellaneous_trig.py
+    |   |   |   ├── piecewise_linear.py
+    |   |   |   ├── quadratic_products.py
+    |   |   |   ├── secant.py
+    |   |   |   ├── sine.py
+    |   |   |   ├── tangent.py
+    |   |   |   └── trinomial_products.py
+    |   |   ├── symbol.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_1_2.py
+    |   |   |   ├── test_1_3.py
+    |   |   |   ├── test_1_4.py
+    |   |   |   ├── test_rubi_integrate.py
+    |   |   |   └── test_utility_function.py
+    |   |   └── utility_function.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── ipythonprinting.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_interactive.py
+    |       ├── test_ipython.py
+    |       └── test_ipythonprinting.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   └── dpll2.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── dense.py
+    |   ├── densearith.py
+    |   ├── densesolve.py
+    |   ├── densetools.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── slice.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── immutable.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_commonmatrix.py
+    |       ├── test_densearith.py
+    |       ├── test_densesolve.py
+    |       ├── test_densetools.py
+    |       ├── test_immutable.py
+    |       ├── test_interactions.py
+    |       ├── test_matrices.py
+    |       ├── test_normalforms.py
+    |       ├── test_sparse.py
+    |       └── test_sparsetools.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── egyptian_fraction.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sympy_parser.py
+    |   ├── sympy_tokenize.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_beam.py
+    |   ├── gaussopt.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_anticommutator.py
+    |   |       ├── test_boson.py
+    |   |       ├── test_cartesian.py
+    |   |       ├── test_cg.py
+    |   |       ├── test_circuitplot.py
+    |   |       ├── test_circuitutils.py
+    |   |       ├── test_commutator.py
+    |   |       ├── test_constants.py
+    |   |       ├── test_dagger.py
+    |   |       ├── test_density.py
+    |   |       ├── test_fermion.py
+    |   |       ├── test_gate.py
+    |   |       ├── test_grover.py
+    |   |       ├── test_hilbert.py
+    |   |       ├── test_identitysearch.py
+    |   |       ├── test_innerproduct.py
+    |   |       ├── test_matrixutils.py
+    |   |       ├── test_operator.py
+    |   |       ├── test_operatorordering.py
+    |   |       ├── test_operatorset.py
+    |   |       ├── test_pauli.py
+    |   |       ├── test_piab.py
+    |   |       ├── test_printing.py
+    |   |       ├── test_qapply.py
+    |   |       ├── test_qasm.py
+    |   |       ├── test_qexpr.py
+    |   |       ├── test_qft.py
+    |   |       ├── test_qubit.py
+    |   |       ├── test_represent.py
+    |   |       ├── test_sho1d.py
+    |   |       ├── test_shor.py
+    |   |       ├── test_spin.py
+    |   |       ├── test_state.py
+    |   |       └── test_tensorproduct.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── unitsystems.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_plot.py
+    |   |   └── test_plot_implicit.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── numberfields.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_numberfields.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── ccode.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxxcode.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fcode.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_ccode.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cxxcode.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fcode.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   └── test_theanocode.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   ├── test_traversaltools.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_diophantine.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_ode.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_mix.py
+    |       ├── test_rv.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       └── test_mutable_ndim_array.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_index_methods.py
+    |       ├── test_indexed.py
+    |       └── test_tensor.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── autowrap.py
+    |   ├── benchmarking.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_module_imports.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_pytest.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   └── timeutils.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── operators.py
+        ├── orienters.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_operators.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: UnboundLocalError in evalf
+
+Description: ```
+>>> Mul(x, Max(0, y), evaluate=False).evalf()
+x*Max(0, y)
+>>> Mul(Max(0, y), x, evaluate=False).evalf()
+Traceback (most recent call last):
+  File "./sympy/core/evalf.py", line 1285, in evalf
+    rf = evalf_table[x.func]
+KeyError: Max
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "./sympy/core/evalf.py", line 1394, in evalf
+    result = evalf(self, prec + 4, options)
+  File "./sympy/core/evalf.py", line 1286, in evalf
+    r = rf(x, prec, options)
+  File "./sympy/core/evalf.py", line 538, in evalf_mul
+    arg = evalf(arg, prec, options)
+  File "./sympy/core/evalf.py", line 1308, in evalf
+    r = re, im, reprec, imprec
+UnboundLocalError: local variable 'reprec' referenced before assignment
+```
+
+I found this after changing the order of Mul args in https://github.com/sympy/sympy/pull/13059.
+
+Based on the code, I think the elif clauses that define reprec and imprec should have an `else: raise NotImplementedError`. That appears to fix it, although I didn't try to debug to see why the arg order is mattering here. 
+
+Patch information:
+diff --git a/sympy/core/evalf.py b/sympy/core/evalf.py
+index 72a5fbae52..f34908710a 100644
+--- a/sympy/core/evalf.py
++++ b/sympy/core/evalf.py
+@@ -1301,12 +1301,16 @@ def evalf(x, prec, options):
+             elif re.is_number:
+                 re = re._to_mpmath(prec, allow_ints=False)._mpf_
+                 reprec = prec
++            else:
++                raise NotImplementedError
+             if im == 0:
+                 im = None
+                 imprec = None
+             elif im.is_number:
+                 im = im._to_mpmath(prec, allow_ints=False)._mpf_
+                 imprec = prec
++            else:
++                raise NotImplementedError
+             r = re, im, reprec, imprec
+         except AttributeError:
+             raise NotImplementedError
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 17:03:30,809 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to find 3 relevant test cases for a bug in `sympy/core/evalf.py`. The most likely place to find these test cases is in the corresponding test file, `sympy/core/tests/test_evalf.py`. I need the content of this file to analyze the existing tests and select the most relevant ones. The current context is empty, so I must request this file.' query='Please provide the full content of sympy/core/tests/test_evalf.py' extra_requirements='' purpose='I need the content of this test file to find 3 relevant test cases that demonstrate the `UnboundLocalError` in `evalf` or similar behavior, as requested by the user.'
+2025-12-21 17:03:30,810 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of sympy/core/tests/test_evalf.py
+2025-12-21 17:03:30,810 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 17:03:30,811 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 17:03:30,811 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 17:03:30,811 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of sympy/core/tests/test_evalf.py
+Purpose: I need the content of this test file to find 3 relevant test cases that demonstrate the `UnboundLocalError` in `evalf` or similar behavior, as requested by the user.
+2025-12-21 17:03:32,646 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "sympy/core/tests/test_evalf.py"}'}, '__gemini_function_call_thought_signatures__': {'3b693221-daa2-43c4-80b8-8ce4cea8a918': 'CroDAY89a1+kKIgOQP0eU9ULB/HrkEXBKbybj9S6GstezgvjHgfDBgVht/NFzE5YNGq3qM/zV5u4NPxjowZB+cvpJQFzlN11BJ1btmUHrF/LKYyijbyBD4tEG7hvbdYWROT8hRiIxD+GNqpMSP/954e79VPspFBhd29gheoqKdeobBc/POmoIWGYl0F0dBwQHfGY71wv+Y+6QHbDclXXOZMzvQdvYemscfeNWFTorAx7xQ1jmIdKwzm91p6hDSGXYWAgbfyokGFP2x9KqVDrpVgZXYz0om7A4IfhWZIQixE6VEfm2FDy0MFXV9/LLxotK7NCUKOfiZWRmxCkP8yJLkSS5U1+0MUpq0lAPHbRxUyANe7Vy23tUNP3yE5NGgHAz+aEE+XTxsff3zhXqxjyhGFfaXcoQuxQ2s9xQG+ZvXzsw57dNC9L5sxCAtSfRnR0d/MChucANSlCzO3J9bj52rHXWOwYYRSXazEQkfV6SQ1y6BY627x43jtPW4ND8t3yQRaKf3QqNisbxoSqU+b5QGXfbmaCFJnE2gMfoQrtf3zZhrGk9XoiTz9qWN2Q0W4ph1VWiVH97lc818L5xA=='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2113, 'candidates_token_count': 26, 'total_token_count': 2260, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2113}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 26}], 'thoughts_token_count': 121, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.14118886910952055, 'model_name': 'gemini-2.5-pro'} id='run--97703b73-34c6-4b85-b0db-69c1a2866341-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'sympy/core/tests/test_evalf.py'}, 'id': '3b693221-daa2-43c4-80b8-8ce4cea8a918', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2113, 'output_tokens': 26, 'total_tokens': 2260, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 121}}
+2025-12-21 17:03:34,903 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"relative_path": "sympy/core/tests/test_evalf.py", "end_line": 1000.0, "start_line": 501.0}'}, '__gemini_function_call_thought_signatures__': {'38abac4f-01dc-4283-9942-65d9dc8f9db7': 'CuYDAY89a1+wM+8TISZiuQSfiM58m5Mg7FnSfO9u64oIySoUiLRU48BVockKui+e+oAYrFC2vjUs1KiYTQSvyeCVR76KnUWgHM09lSAvc8CtBfLpqLlaFuPivF71XA5fF7AXxos8tQUFUCpB7aM+N4wjzAJmzBgZYtRdx4xFxrTl75tnAlwdWIT8m16MQ8Jhif4DJHqwpXgoBe5VJ5a5QetlEaw9Mi+9F9DwKZ/Il/qSkGoHJvyV6UvzPGLAm2x1KWISrAy0COFGL1Yfx15ZfQhDFy1/+mhVLPQPlfLVdXUInWhbBLmxzZPl6PWlIifHAPlvZDZXQAM1bAqVQf1DRE/DkvdJkPQ0afn+NYSIApksB/PY2SGw5LBThfg4xDnuRpEO3JXdLCScZQIooQDGcdfnj+0dVfcQAkgyoghQYkDGqCRfzWuEYjzRlCWb4ecQabKsXxIXpDJ93EkCIAZ1/Si+i5fPg61R3flcpLbt2PG0OFOCJ8AvDI72dgFeS+pp2QkPGHwQeyPhWU8j43Jv8PFdJfZshEPfWPVWwq8jIJvGoBYUxjDYeTNipm3lRQFiHG4LJvUMnvvAB97TjHbj00ObXupQCbQU+A74wA4qKZ+YtvE0GzFRmpsT52MPnNjfxB3Rp5VTtQ1e'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 14634, 'candidates_token_count': 32, 'total_token_count': 14802, 'cached_content_token_count': 1902, 'prompt_tokens_details': [{'modality': 1, 'token_count': 14755}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1902}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 32}], 'thoughts_token_count': 136}, 'finish_reason': 'STOP', 'avg_logprobs': -0.23115244507789612, 'model_name': 'gemini-2.5-pro'} id='run--49c2fa7a-70f3-46e2-9835-79ceeab0cdbc-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'relative_path': 'sympy/core/tests/test_evalf.py', 'end_line': 1000.0, 'start_line': 501.0}, 'id': '38abac4f-01dc-4283-9942-65d9dc8f9db7', 'type': 'tool_call'}] usage_metadata={'input_tokens': 14634, 'output_tokens': 32, 'total_tokens': 14802, 'input_token_details': {'cache_read': 1902}, 'output_token_details': {'reasoning': 136}}
+2025-12-21 17:03:44,446 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have successfully retrieved the full content of the test file `sympy/core/tests/test_evalf.py` by using the available tools. I first read the beginning of the file and then fetched the remaining content to ensure I had the complete file. This will allow me to analyze the test cases for the `UnboundLocalError` as requested.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 14983, 'candidates_token_count': 73, 'total_token_count': 15811, 'cached_content_token_count': 13296, 'prompt_tokens_details': [{'modality': 1, 'token_count': 15240}], 'cache_tokens_details': [{'modality': 1, 'token_count': 13296}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 73}], 'thoughts_token_count': 755}, 'finish_reason': 'STOP', 'avg_logprobs': -1.1803942118605522, 'model_name': 'gemini-2.5-pro'} id='run--76b07844-13c9-4e01-8778-9dbc93cc6d55-0' usage_metadata={'input_tokens': 14983, 'output_tokens': 73, 'total_tokens': 15811, 'input_token_details': {'cache_read': 13296}, 'output_token_details': {'reasoning': 755}}
+2025-12-21 17:03:44,448 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of sympy/core/tests/test_evalf.py
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the content of this test file to find 3 relevant test cases that demonstrate the `UnboundLocalError` in `evalf` or similar behavior, as requested by the user.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: sympy/core/tests/test_evalf.py
+Line number range: 1 - 500
+Content:
+1. from sympy import (Abs, Add, atan, ceiling, cos, E, Eq, exp,
+2.     factorial, fibonacci, floor, Function, GoldenRatio, I, Integral,
+3.     integrate, log, Mul, N, oo, pi, Pow, product, Product,
+4.     Rational, S, Sum, sin, sqrt, sstr, sympify, Symbol, Max, nfloat)
+5. from sympy.core.evalf import (complex_accuracy, PrecisionExhausted,
+6.     scaled_zero, get_integer_part, as_mpmath)
+7. from mpmath import inf, ninf
+8. from mpmath.libmp.libmpf import from_float
+9. from sympy.core.compatibility import long, range
+10. from sympy.utilities.pytest import raises, XFAIL
+11. 
+12. from sympy.abc import n, x, y
+13. 
+14. def NS(e, n=15, **options):
+15.     return sstr(sympify(e).evalf(n, **options), full_prec=True)
+16. 
+17. 
+18. def test_evalf_helpers():
+19.     assert complex_accuracy((from_float(2.0), None, 35, None)) == 35
+20.     assert complex_accuracy((from_float(2.0), from_float(10.0), 35, 100)) == 37
+21.     assert complex_accuracy(
+22.         (from_float(2.0), from_float(1000.0), 35, 100)) == 43
+23.     assert complex_accuracy((from_float(2.0), from_float(10.0), 100, 35)) == 35
+24.     assert complex_accuracy(
+25.         (from_float(2.0), from_float(1000.0), 100, 35)) == 35
+26. 
+27. 
+28. def test_evalf_basic():
+29.     assert NS('pi', 15) == '3.14159265358979'
+30.     assert NS('2/3', 10) == '0.6666666667'
+31.     assert NS('355/113-pi', 6) == '2.66764e-7'
+32.     assert NS('16*atan(1/5)-4*atan(1/239)', 15) == '3.14159265358979'
+33. 
+34. 
+35. def test_cancellation():
+36.     assert NS(Add(pi, Rational(1, 10**1000), -pi, evaluate=False), 15,
+37.               maxn=1200) == '1.00000000000000e-1000'
+38. 
+39. 
+40. def test_evalf_powers():
+41.     assert NS('pi**(10**20)', 10) == '1.339148777e+49714987269413385435'
+42.     assert NS(pi**(10**100), 10) == ('4.946362032e+4971498726941338543512682882'
+43.           '9089887365167832438044244613405349992494711208'
+44.           '95526746555473864642912223')
+45.     assert NS('2**(1/10**50)', 15) == '1.00000000000000'
+46.     assert NS('2**(1/10**50)-1', 15) == '6.93147180559945e-51'
+47. 
+48. # Evaluation of Rump's ill-conditioned polynomial
+49. 
+50. 
+51. def test_evalf_rump():
+52.     a = 1335*y**6/4 + x**2*(11*x**2*y**2 - y**6 - 121*y**4 - 2) + 11*y**8/2 + x/(2*y)
+53.     assert NS(a, 15, subs={x: 77617, y: 33096}) == '-0.827396059946821'
+54. 
+55. 
+56. def test_evalf_complex():
+57.     assert NS('2*sqrt(pi)*I', 10) == '3.544907702*I'
+58.     assert NS('3+3*I', 15) == '3.00000000000000 + 3.00000000000000*I'
+59.     assert NS('E+pi*I', 15) == '2.71828182845905 + 3.14159265358979*I'
+60.     assert NS('pi * (3+4*I)', 15) == '9.42477796076938 + 12.5663706143592*I'
+61.     assert NS('I*(2+I)', 15) == '-1.00000000000000 + 2.00000000000000*I'
+62. 
+63. 
+64. @XFAIL
+65. def test_evalf_complex_bug():
+66.     assert NS('(pi+E*I)*(E+pi*I)', 15) in ('0.e-15 + 17.25866050002*I',
+67.               '0.e-17 + 17.25866050002*I', '-0.e-17 + 17.25866050002*I')
+68. 
+69. 
+70. def test_evalf_complex_powers():
+71.     assert NS('(E+pi*I)**100000000000000000') == \
+72.         '-3.58896782867793e+61850354284995199 + 4.58581754997159e+61850354284995199*I'
+73.     # XXX: rewrite if a+a*I simplification introduced in sympy
+74.     #assert NS('(pi + pi*I)**2') in ('0.e-15 + 19.7392088021787*I', '0.e-16 + 19.7392088021787*I')
+75.     assert NS('(pi + pi*I)**2', chop=True) == '19.7392088021787*I'
+76.     assert NS(
+77.         '(pi + 1/10**8 + pi*I)**2') == '6.2831853e-8 + 19.7392088650106*I'
+78.     assert NS('(pi + 1/10**12 + pi*I)**2') == '6.283e-12 + 19.7392088021850*I'
+79.     assert NS('(pi + pi*I)**4', chop=True) == '-389.636364136010'
+80.     assert NS(
+81.         '(pi + 1/10**8 + pi*I)**4') == '-389.636366616512 + 2.4805021e-6*I'
+82.     assert NS('(pi + 1/10**12 + pi*I)**4') == '-389.636364136258 + 2.481e-10*I'
+83.     assert NS(
+84.         '(10000*pi + 10000*pi*I)**4', chop=True) == '-3.89636364136010e+18'
+85. 
+86. 
+87. @XFAIL
+88. def test_evalf_complex_powers_bug():
+89.     assert NS('(pi + pi*I)**4') == '-389.63636413601 + 0.e-14*I'
+90. 
+91. 
+92. def test_evalf_exponentiation():
+93.     assert NS(sqrt(-pi)) == '1.77245385090552*I'
+94.     assert NS(Pow(pi*I, Rational(
+95.         1, 2), evaluate=False)) == '1.25331413731550 + 1.25331413731550*I'
+96.     assert NS(pi**I) == '0.413292116101594 + 0.910598499212615*I'
+97.     assert NS(pi**(E + I/3)) == '20.8438653991931 + 8.36343473930031*I'
+98.     assert NS((pi + I/3)**(E + I/3)) == '17.2442906093590 + 13.6839376767037*I'
+99.     assert NS(exp(pi)) == '23.1406926327793'
+100.     assert NS(exp(pi + E*I)) == '-21.0981542849657 + 9.50576358282422*I'
+101.     assert NS(pi**pi) == '36.4621596072079'
+102.     assert NS((-pi)**pi) == '-32.9138577418939 - 15.6897116534332*I'
+103.     assert NS((-pi)**(-pi)) == '-0.0247567717232697 + 0.0118013091280262*I'
+104. 
+105. # An example from Smith, "Multiple Precision Complex Arithmetic and Functions"
+106. 
+107. 
+108. def test_evalf_complex_cancellation():
+109.     A = Rational('63287/100000')
+110.     B = Rational('52498/100000')
+111.     C = Rational('69301/100000')
+112.     D = Rational('83542/100000')
+113.     F = Rational('2231321613/2500000000')
+114.     # XXX: the number of returned mantissa digits in the real part could
+115.     # change with the implementation. What matters is that the returned digits are
+116.     # correct; those that are showing now are correct.
+117.     # >>> ((A+B*I)*(C+D*I)).expand()
+118.     # 64471/10000000000 + 2231321613*I/2500000000
+119.     # >>> 2231321613*4
+120.     # 8925286452L
+121.     assert NS((A + B*I)*(C + D*I), 6) == '6.44710e-6 + 0.892529*I'
+122.     assert NS((A + B*I)*(C + D*I), 10) == '6.447100000e-6 + 0.8925286452*I'
+123.     assert NS((A + B*I)*(
+124.         C + D*I) - F*I, 5) in ('6.4471e-6 + 0.e-14*I', '6.4471e-6 - 0.e-14*I')
+125. 
+126. 
+127. def test_evalf_logs():
+128.     assert NS("log(3+pi*I)", 15) == '1.46877619736226 + 0.808448792630022*I'
+129.     assert NS("log(pi*I)", 15) == '1.14472988584940 + 1.57079632679490*I'
+130.     assert NS('log(-1 + 0.00001)', 2) == '-1.0e-5 + 3.1*I'
+131.     assert NS('log(100, 10, evaluate=False)', 15) == '2.00000000000000'
+132.     assert NS('-2*I*log(-(-1)**(S(1)/9))', 15) == '-5.58505360638185'
+133. 
+134. 
+135. def test_evalf_trig():
+136.     assert NS('sin(1)', 15) == '0.841470984807897'
+137.     assert NS('cos(1)', 15) == '0.540302305868140'
+138.     assert NS('sin(10**-6)', 15) == '9.99999999999833e-7'
+139.     assert NS('cos(10**-6)', 15) == '0.999999999999500'
+140.     assert NS('sin(E*10**100)', 15) == '0.409160531722613'
+141.     # Some input near roots
+142.     assert NS(sin(exp(pi*sqrt(163))*pi), 15) == '-2.35596641936785e-12'
+143.     assert NS(sin(pi*10**100 + Rational(7, 10**5), evaluate=False), 15, maxn=120) == \
+144.         '6.99999999428333e-5'
+145.     assert NS(sin(Rational(7, 10**5), evaluate=False), 15) == \
+146.         '6.99999999428333e-5'
+147. 
+148. # Check detection of various false identities
+149. 
+150. 
+151. def test_evalf_near_integers():
+152.     # Binet's formula
+153.     f = lambda n: ((1 + sqrt(5))**n)/(2**n * sqrt(5))
+154.     assert NS(f(5000) - fibonacci(5000), 10, maxn=1500) == '5.156009964e-1046'
+155.     # Some near-integer identities from
+156.     # http://mathworld.wolfram.com/AlmostInteger.html
+157.     assert NS('sin(2017*2**(1/5))', 15) == '-1.00000000000000'
+158.     assert NS('sin(2017*2**(1/5))', 20) == '-0.99999999999999997857'
+159.     assert NS('1+sin(2017*2**(1/5))', 15) == '2.14322287389390e-17'
+160.     assert NS('45 - 613*E/37 + 35/991', 15) == '6.03764498766326e-11'
+161. 
+162. 
+163. def test_evalf_ramanujan():
+164.     assert NS(exp(pi*sqrt(163)) - 640320**3 - 744, 10) == '-7.499274028e-13'
+165.     # A related identity
+166.     A = 262537412640768744*exp(-pi*sqrt(163))
+167.     B = 196884*exp(-2*pi*sqrt(163))
+168.     C = 103378831900730205293632*exp(-3*pi*sqrt(163))
+169.     assert NS(1 - A - B + C, 10) == '1.613679005e-59'
+170. 
+171. # Input that for various reasons have failed at some point
+172. 
+173. 
+174. def test_evalf_bugs():
+175.     assert NS(sin(1) + exp(-10**10), 10) == NS(sin(1), 10)
+176.     assert NS(exp(10**10) + sin(1), 10) == NS(exp(10**10), 10)
+177.     assert NS('log(1+1/10**50)', 20) == '1.0000000000000000000e-50'
+178.     assert NS('log(10**100,10)', 10) == '100.0000000'
+179.     assert NS('log(2)', 10) == '0.6931471806'
+180.     assert NS(
+181.         '(sin(x)-x)/x**3', 15, subs={x: '1/10**50'}) == '-0.166666666666667'
+182.     assert NS(sin(1) + Rational(
+183.         1, 10**100)*I, 15) == '0.841470984807897 + 1.00000000000000e-100*I'
+184.     assert x.evalf() == x
+185.     assert NS((1 + I)**2*I, 6) == '-2.00000'
+186.     d = {n: (
+187.         -1)**Rational(6, 7), y: (-1)**Rational(4, 7), x: (-1)**Rational(2, 7)}
+188.     assert NS((x*(1 + y*(1 + n))).subs(d).evalf(), 6) == '0.346011 + 0.433884*I'
+189.     assert NS(((-I - sqrt(2)*I)**2).evalf()) == '-5.82842712474619'
+190.     assert NS((1 + I)**2*I, 15) == '-2.00000000000000'
+191.     # issue 4758 (1/2):
+192.     assert NS(pi.evalf(69) - pi) == '-4.43863937855894e-71'
+193.     # issue 4758 (2/2): With the bug present, this still only fails if the
+194.     # terms are in the order given here. This is not generally the case,
+195.     # because the order depends on the hashes of the terms.
+196.     assert NS(20 - 5008329267844*n**25 - 477638700*n**37 - 19*n,
+197.               subs={n: .01}) == '19.8100000000000'
+198.     assert NS(((x - 1)*((1 - x))**1000).n()
+199.               ) == '(-x + 1.00000000000000)**1000*(x - 1.00000000000000)'
+200.     assert NS((-x).n()) == '-x'
+201.     assert NS((-2*x).n()) == '-2.00000000000000*x'
+202.     assert NS((-2*x*y).n()) == '-2.00000000000000*x*y'
+203.     assert cos(x).n(subs={x: 1+I}) == cos(x).subs(x, 1+I).n()
+204.     # issue 6660. Also NaN != mpmath.nan
+205.     # In this order:
+206.     # 0*nan, 0/nan, 0*inf, 0/inf
+207.     # 0+nan, 0-nan, 0+inf, 0-inf
+208.     # >>> n = Some Number
+209.     # n*nan, n/nan, n*inf, n/inf
+210.     # n+nan, n-nan, n+inf, n-inf
+211.     assert (0*E**(oo)).n() == S.NaN
+212.     assert (0/E**(oo)).n() == S.Zero
+213. 
+214.     assert (0+E**(oo)).n() == S.Infinity
+215.     assert (0-E**(oo)).n() == S.NegativeInfinity
+216. 
+217.     assert (5*E**(oo)).n() == S.Infinity
+218.     assert (5/E**(oo)).n() == S.Zero
+219. 
+220.     assert (5+E**(oo)).n() == S.Infinity
+221.     assert (5-E**(oo)).n() == S.NegativeInfinity
+222. 
+223.     #issue 7416
+224.     assert as_mpmath(0.0, 10, {'chop': True}) == 0
+225. 
+226.     #issue 5412
+227.     assert ((oo*I).n() == S.Infinity*I)
+228.     assert ((oo+oo*I).n() == S.Infinity + S.Infinity*I)
+229. 
+230.     #issue 11518
+231.     assert NS(2*x**2.5, 5) == '2.0000*x**2.5000'
+232. 
+233. 
+234. def test_evalf_integer_parts():
+235.     a = floor(log(8)/log(2) - exp(-1000), evaluate=False)
+236.     b = floor(log(8)/log(2), evaluate=False)
+237.     assert a.evalf() == 3
+238.     assert b.evalf() == 3
+239.     # equals, as a fallback, can still fail but it might succeed as here
+240.     assert ceiling(10*(sin(1)**2 + cos(1)**2)) == 10
+241. 
+242.     assert int(floor(factorial(50)/E, evaluate=False).evalf(70)) == \
+243.         long(11188719610782480504630258070757734324011354208865721592720336800)
+244.     assert int(ceiling(factorial(50)/E, evaluate=False).evalf(70)) == \
+245.         long(11188719610782480504630258070757734324011354208865721592720336801)
+246.     assert int(floor((GoldenRatio**999 / sqrt(5) + Rational(1, 2)))
+247.                .evalf(1000)) == fibonacci(999)
+248.     assert int(floor((GoldenRatio**1000 / sqrt(5) + Rational(1, 2)))
+249.                .evalf(1000)) == fibonacci(1000)
+250. 
+251.     assert ceiling(x).evalf(subs={x: 3}) == 3
+252.     assert ceiling(x).evalf(subs={x: 3*I}) == 3*I
+253.     assert ceiling(x).evalf(subs={x: 2 + 3*I}) == 2 + 3*I
+254.     assert ceiling(x).evalf(subs={x: 3.}) == 3
+255.     assert ceiling(x).evalf(subs={x: 3.*I}) == 3*I
+256.     assert ceiling(x).evalf(subs={x: 2. + 3*I}) == 2 + 3*I
+257. 
+258. 
+259. def test_evalf_trig_zero_detection():
+260.     a = sin(160*pi, evaluate=False)
+261.     t = a.evalf(maxn=100)
+262.     assert abs(t) < 1e-100
+263.     assert t._prec < 2
+264.     assert a.evalf(chop=True) == 0
+265.     raises(PrecisionExhausted, lambda: a.evalf(strict=True))
+266. 
+267. 
+268. def test_evalf_sum():
+269.     assert Sum(n,(n,1,2)).evalf() == 3.
+270.     assert Sum(n,(n,1,2)).doit().evalf() == 3.
+271.     # the next test should return instantly
+272.     assert Sum(1/n,(n,1,2)).evalf() == 1.5
+273. 
+274.     # issue 8219
+275.     assert Sum(E/factorial(n), (n, 0, oo)).evalf() == (E*E).evalf()
+276.     # issue 8254
+277.     assert Sum(2**n*n/factorial(n), (n, 0, oo)).evalf() == (2*E*E).evalf()
+278.     # issue 8411
+279.     s = Sum(1/x**2, (x, 100, oo))
+280.     assert s.n() == s.doit().n()
+281. 
+282. 
+283. def test_evalf_divergent_series():
+284.     raises(ValueError, lambda: Sum(1/n, (n, 1, oo)).evalf())
+285.     raises(ValueError, lambda: Sum(n/(n**2 + 1), (n, 1, oo)).evalf())
+286.     raises(ValueError, lambda: Sum((-1)**n, (n, 1, oo)).evalf())
+287.     raises(ValueError, lambda: Sum((-1)**n, (n, 1, oo)).evalf())
+288.     raises(ValueError, lambda: Sum(n**2, (n, 1, oo)).evalf())
+289.     raises(ValueError, lambda: Sum(2**n, (n, 1, oo)).evalf())
+290.     raises(ValueError, lambda: Sum((-2)**n, (n, 1, oo)).evalf())
+291.     raises(ValueError, lambda: Sum((2*n + 3)/(3*n**2 + 4), (n, 0, oo)).evalf())
+292.     raises(ValueError, lambda: Sum((0.5*n**3)/(n**4 + 1), (n, 0, oo)).evalf())
+293. 
+294. 
+295. def test_evalf_product():
+296.     assert Product(n, (n, 1, 10)).evalf() == 3628800.
+297.     assert Product(1 - S.Half**2/n**2, (n, 1, oo)).evalf(5)==0.63662
+298.     assert Product(n, (n, -1, 3)).evalf() == 0
+299. 
+300. 
+301. def test_evalf_py_methods():
+302.     assert abs(float(pi + 1) - 4.1415926535897932) < 1e-10
+303.     assert abs(complex(pi + 1) - 4.1415926535897932) < 1e-10
+304.     assert abs(
+305.         complex(pi + E*I) - (3.1415926535897931 + 2.7182818284590451j)) < 1e-10
+306.     raises(TypeError, lambda: float(pi + x))
+307. 
+308. 
+309. def test_evalf_power_subs_bugs():
+310.     assert (x**2).evalf(subs={x: 0}) == 0
+311.     assert sqrt(x).evalf(subs={x: 0}) == 0
+312.     assert (x**Rational(2, 3)).evalf(subs={x: 0}) == 0
+313.     assert (x**x).evalf(subs={x: 0}) == 1
+314.     assert (3**x).evalf(subs={x: 0}) == 1
+315.     assert exp(x).evalf(subs={x: 0}) == 1
+316.     assert ((2 + I)**x).evalf(subs={x: 0}) == 1
+317.     assert (0**x).evalf(subs={x: 0}) == 1
+318. 
+319. 
+320. def test_evalf_arguments():
+321.     raises(TypeError, lambda: pi.evalf(method="garbage"))
+322. 
+323. 
+324. def test_implemented_function_evalf():
+325.     from sympy.utilities.lambdify import implemented_function
+326.     f = Function('f')
+327.     f = implemented_function(f, lambda x: x + 1)
+328.     assert str(f(x)) == "f(x)"
+329.     assert str(f(2)) == "f(2)"
+330.     assert f(2).evalf() == 3
+331.     assert f(x).evalf() == f(x)
+332.     del f._imp_     # XXX: due to caching _imp_ would influence all other tests
+333. 
+334. 
+335. def test_evaluate_false():
+336.     for no in [0, False]:
+337.         assert Add(3, 2, evaluate=no).is_Add
+338.         assert Mul(3, 2, evaluate=no).is_Mul
+339.         assert Pow(3, 2, evaluate=no).is_Pow
+340.     assert Pow(y, 2, evaluate=True) - Pow(y, 2, evaluate=True) == 0
+341. 
+342. 
+343. def test_evalf_relational():
+344.     assert Eq(x/5, y/10).evalf() == Eq(0.2*x, 0.1*y)
+345. 
+346. 
+347. def test_issue_5486():
+348.     assert not cos(sqrt(0.5 + I)).n().is_Function
+349. 
+350. 
+351. def test_issue_5486_bug():
+352.     from sympy import I, Expr
+353.     assert abs(Expr._from_mpmath(I._to_mpmath(15), 15) - I) < 1.0e-15
+354. 
+355. 
+356. def test_bugs():
+357.     from sympy import polar_lift, re
+358. 
+359.     assert abs(re((1 + I)**2)) < 1e-15
+360. 
+361.     # anything that evalf's to 0 will do in place of polar_lift
+362.     assert abs(polar_lift(0)).n() == 0
+363. 
+364. 
+365. def test_subs():
+366.     assert NS('besseli(-x, y) - besseli(x, y)', subs={x: 3.5, y: 20.0}) == \
+367.         '-4.92535585957223e-10'
+368.     assert NS('Piecewise((x, x>0)) + Piecewise((1-x, x>0))', subs={x: 0.1}) == \
+369.         '1.00000000000000'
+370.     raises(TypeError, lambda: x.evalf(subs=(x, 1)))
+371. 
+372. 
+373. def test_issue_4956_5204():
+374.     # issue 4956
+375.     v = S('''(-27*12**(1/3)*sqrt(31)*I +
+376.     27*2**(2/3)*3**(1/3)*sqrt(31)*I)/(-2511*2**(2/3)*3**(1/3) +
+377.     (29*18**(1/3) + 9*2**(1/3)*3**(2/3)*sqrt(31)*I +
+378.     87*2**(1/3)*3**(1/6)*I)**2)''')
+379.     assert NS(v, 1) == '0.e-118 - 0.e-118*I'
+380. 
+381.     # issue 5204
+382.     v = S('''-(357587765856 + 18873261792*249**(1/2) + 56619785376*I*83**(1/2) +
+383.     108755765856*I*3**(1/2) + 41281887168*6**(1/3)*(1422 +
+384.     54*249**(1/2))**(1/3) - 1239810624*6**(1/3)*249**(1/2)*(1422 +
+385.     54*249**(1/2))**(1/3) - 3110400000*I*6**(1/3)*83**(1/2)*(1422 +
+386.     54*249**(1/2))**(1/3) + 13478400000*I*3**(1/2)*6**(1/3)*(1422 +
+387.     54*249**(1/2))**(1/3) + 1274950152*6**(2/3)*(1422 +
+388.     54*249**(1/2))**(2/3) + 32347944*6**(2/3)*249**(1/2)*(1422 +
+389.     54*249**(1/2))**(2/3) - 1758790152*I*3**(1/2)*6**(2/3)*(1422 +
+390.     54*249**(1/2))**(2/3) - 304403832*I*6**(2/3)*83**(1/2)*(1422 +
+391.     4*249**(1/2))**(2/3))/(175732658352 + (1106028 + 25596*249**(1/2) +
+392.     76788*I*83**(1/2))**2)''')
+393.     assert NS(v, 5) == '0.077284 + 1.1104*I'
+394.     assert NS(v, 1) == '0.08 + 1.*I'
+395. 
+396. 
+397. def test_old_docstring():
+398.     a = (E + pi*I)*(E - pi*I)
+399.     assert NS(a) == '17.2586605000200'
+400.     assert a.n() == 17.25866050002001
+401. 
+402. 
+403. def test_issue_4806():
+404.     assert integrate(atan(x)**2, (x, -1, 1)).evalf().round(1) == 0.5
+405.     assert atan(0, evaluate=False).n() == 0
+406. 
+407. 
+408. def test_evalf_mul():
+409.     # sympy should not try to expand this; it should be handled term-wise
+410.     # in evalf through mpmath
+411.     assert NS(product(1 + sqrt(n)*I, (n, 1, 500)), 1) == '5.e+567 + 2.e+568*I'
+412. 
+413. 
+414. def test_scaled_zero():
+415.     a, b = (([0], 1, 100, 1), -1)
+416.     assert scaled_zero(100) == (a, b)
+417.     assert scaled_zero(a) == (0, 1, 100, 1)
+418.     a, b = (([1], 1, 100, 1), -1)
+419.     assert scaled_zero(100, -1) == (a, b)
+420.     assert scaled_zero(a) == (1, 1, 100, 1)
+421.     raises(ValueError, lambda: scaled_zero(scaled_zero(100)))
+422.     raises(ValueError, lambda: scaled_zero(100, 2))
+423.     raises(ValueError, lambda: scaled_zero(100, 0))
+424.     raises(ValueError, lambda: scaled_zero((1, 5, 1, 3)))
+425. 
+426. 
+427. def test_chop_value():
+428.     for i in range(-27, 28):
+429.         assert (Pow(10, i)*2).n(chop=10**i) and not (Pow(10, i)).n(chop=10**i)
+430. 
+431. 
+432. def test_infinities():
+433.     assert oo.evalf(chop=True) == inf
+434.     assert (-oo).evalf(chop=True) == ninf
+435. 
+436. 
+437. def test_to_mpmath():
+438.     assert sqrt(3)._to_mpmath(20)._mpf_ == (0, long(908093), -19, 20)
+439.     assert S(3.2)._to_mpmath(20)._mpf_ == (0, long(838861), -18, 20)
+440. 
+441. 
+442. def test_issue_6632_evalf():
+443.     add = (-100000*sqrt(2500000001) + 5000000001)
+444.     assert add.n() == 9.999999998e-11
+445.     assert (add*add).n() == 9.999999996e-21
+446. 
+447. 
+448. def test_issue_4945():
+449.     from sympy.abc import H
+450.     from sympy import zoo
+451.     assert (H/0).evalf(subs={H:1}) == zoo*H
+452. 
+453. 
+454. def test_evalf_integral():
+455.     # test that workprec has to increase in order to get a result other than 0
+456.     eps = Rational(1, 1000000)
+457.     assert Integral(sin(x), (x, -pi, pi + eps)).n(2)._prec == 10
+458. 
+459. 
+460. def test_issue_8821_highprec_from_str():
+461.     s = str(pi.evalf(128))
+462.     p = N(s)
+463.     assert Abs(sin(p)) < 1e-15
+464.     p = N(s, 64)
+465.     assert Abs(sin(p)) < 1e-64
+466. 
+467. 
+468. def test_issue_8853():
+469.     p = Symbol('x', even=True, positive=True)
+470.     assert floor(-p - S.Half).is_even == False
+471.     assert floor(-p + S.Half).is_even == True
+472.     assert ceiling(p - S.Half).is_even == True
+473.     assert ceiling(p + S.Half).is_even == False
+474. 
+475.     assert get_integer_part(S.Half, -1, {}, True) == (0, 0)
+476.     assert get_integer_part(S.Half, 1, {}, True) == (1, 0)
+477.     assert get_integer_part(-S.Half, -1, {}, True) == (-1, 0)
+478.     assert get_integer_part(-S.Half, 1, {}, True) == (0, 0)
+479. 
+480. 
+481. def test_issue_9326():
+482.     from sympy import Dummy
+483.     d1 = Dummy('d')
+484.     d2 = Dummy('d')
+485.     e = d1 + d2
+486.     assert e.evalf(subs = {d1: 1, d2: 2}) == 3
+487. 
+488. 
+489. def test_issue_10323():
+490.     assert ceiling(sqrt(2**30 + 1)) == 2**15 + 1
+491. 
+492. 
+493. def test_AssocOp_Function():
+494.     e = S('''
+495.     Min(-sqrt(3)*cos(pi/18)/6 + re(1/((-1/2 - sqrt(3)*I/2)*(1/6 +
+496.     sqrt(3)*I/18)**(1/3)))/3 + sin(pi/18)/2 + 2 + I*(-cos(pi/18)/2 -
+497.     sqrt(3)*sin(pi/18)/6 + im(1/((-1/2 - sqrt(3)*I/2)*(1/6 +
+498.     sqrt(3)*I/18)**(1/3)))/3), re(1/((-1/2 + sqrt(3)*I/2)*(1/6 +
+499.     sqrt(3)*I/18)**(1/3)))/3 - sqrt(3)*cos(pi/18)/6 - sin(pi/18)/2 + 2 +
+500.     I*(im(1/((-1/2 + sqrt(3)*I/2)*(1/6 + sqrt(3)*I/18)**(1/3)))/3 -
+
+
+File: sympy/core/tests/test_evalf.py
+Line number range: 501 - 1000
+Content:
+501.     sqrt(3)*sin(pi/18)/6 + cos(pi/18)/2))''')
+502.     # the following should not raise a recursion error; it
+503.     # should raise a value error because the first arg computes
+504.     # a non-comparable (prec=1) imaginary part
+505.     raises(ValueError, lambda: e._eval_evalf(2))
+506. 
+507. 
+508. def test_issue_10395():
+509.     eq = x*Max(0, y)
+510.     assert nfloat(eq) == eq
+511.     eq = x*Max(y, -1.1)
+512.     assert nfloat(eq) == eq
+513.     assert Max(y, 4).n() == Max(4.0, y)
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 17:03:54,085 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly requested the 'full content' of the file `sympy/core/tests/test_evalf.py`.\n2. Extended relevance:\n   - To fulfill the request, the entire content of the file is necessary. The user's stated purpose is to search this file for specific test cases, making the full file content essential for their task.", relative_path='sympy/core/tests/test_evalf.py', start_line=1, end_line=513)]
+2025-12-21 17:03:54,086 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of sympy/core/tests/test_evalf.py
+2025-12-21 17:03:54,086 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 17:03:54,087 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 17:03:54,087 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 17:03:54,087 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 17:03:54,088 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .travis.yml
+├── CODE_OF_CONDUCT.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.rst
+├── bin
+|   ├── ask_update.py
+|   ├── authors_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_update.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_import.py
+|   ├── test_setup.py
+|   └── test_travis.sh
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   ├── numpydoc.py
+|   |   └── sympylive.py
+|   ├── generate_logos.py
+|   ├── man
+|   |   └── isympy.xml
+|   └── src
+|       ├── _static
+|       ├── _templates
+|       |   └── layout.html
+|       ├── aboutus.rst
+|       ├── citing.rst
+|       ├── conf.py
+|       ├── gotchas.rst
+|       ├── guide.rst
+|       ├── index.rst
+|       ├── install.rst
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── handlers
+|       |   |   ├── index.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── index.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   └── integrals.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   └── sparse.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── hyperexpand.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   └── tensor.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   ├── runtests.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       └── intro.rst
+|       ├── outreach.rst
+|       ├── pics
+|       ├── python-comparisons.rst
+|       ├── special_topics
+|       |   ├── finite_diff_derivatives.rst
+|       |   ├── index.rst
+|       |   └── intro.rst
+|       ├── tutorial
+|       |   ├── basic_operations.rst
+|       |   ├── calculus.rst
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── intro.rst
+|       |   ├── manipulation.rst
+|       |   ├── matrices.rst
+|       |   ├── preliminaries.rst
+|       |   ├── printing.rst
+|       |   ├── simplification.rst
+|       |   └── solvers.rst
+|       └── wiki.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── release
+|   ├── Dockerfile
+|   ├── README.md
+|   ├── fabfile.py
+|   ├── pull_and_run_rever.sh
+|   └── release.sh
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_assumptions_2.py
+    |       ├── test_context.py
+    |       ├── test_matrices.py
+    |       ├── test_query.py
+    |       ├── test_refine.py
+    |       ├── test_satask.py
+    |       └── test_sathandlers.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── ffunctions.py
+    |   ├── rewriting.py
+    |   └── tests
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_ffunctions.py
+    |       └── test_rewriting.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── evaluate.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── power.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_eval_power.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_evaluate.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_trace.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   └── trace.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── deprecated
+    |   ├── __init__.py
+    |   ├── class_registry.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_class_registry.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── importtools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_sage.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── linearsolver.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── rubi
+    |   |   ├── __init__.py
+    |   |   ├── parsetools
+    |   |   |   ├── __init__.py
+    |   |   |   ├── parse.py
+    |   |   |   └── tests
+    |   |   ├── rubi.py
+    |   |   ├── rules
+    |   |   |   ├── __init__.py
+    |   |   |   ├── binomial_products.py
+    |   |   |   ├── exponential.py
+    |   |   |   ├── hyperbolic.py
+    |   |   |   ├── integrand_simplification.py
+    |   |   |   ├── inverse_hyperbolic.py
+    |   |   |   ├── inverse_trig.py
+    |   |   |   ├── linear_products.py
+    |   |   |   ├── logarithms.py
+    |   |   |   ├── miscellaneous_algebraic.py
+    |   |   |   ├── miscellaneous_integration.py
+    |   |   |   ├── miscellaneous_trig.py
+    |   |   |   ├── piecewise_linear.py
+    |   |   |   ├── quadratic_products.py
+    |   |   |   ├── secant.py
+    |   |   |   ├── sine.py
+    |   |   |   ├── tangent.py
+    |   |   |   └── trinomial_products.py
+    |   |   ├── symbol.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_1_2.py
+    |   |   |   ├── test_1_3.py
+    |   |   |   ├── test_1_4.py
+    |   |   |   ├── test_rubi_integrate.py
+    |   |   |   └── test_utility_function.py
+    |   |   └── utility_function.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── ipythonprinting.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_interactive.py
+    |       ├── test_ipython.py
+    |       └── test_ipythonprinting.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   └── dpll2.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── dense.py
+    |   ├── densearith.py
+    |   ├── densesolve.py
+    |   ├── densetools.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── slice.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── immutable.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_commonmatrix.py
+    |       ├── test_densearith.py
+    |       ├── test_densesolve.py
+    |       ├── test_densetools.py
+    |       ├── test_immutable.py
+    |       ├── test_interactions.py
+    |       ├── test_matrices.py
+    |       ├── test_normalforms.py
+    |       ├── test_sparse.py
+    |       └── test_sparsetools.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── egyptian_fraction.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sympy_parser.py
+    |   ├── sympy_tokenize.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_beam.py
+    |   ├── gaussopt.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_anticommutator.py
+    |   |       ├── test_boson.py
+    |   |       ├── test_cartesian.py
+    |   |       ├── test_cg.py
+    |   |       ├── test_circuitplot.py
+    |   |       ├── test_circuitutils.py
+    |   |       ├── test_commutator.py
+    |   |       ├── test_constants.py
+    |   |       ├── test_dagger.py
+    |   |       ├── test_density.py
+    |   |       ├── test_fermion.py
+    |   |       ├── test_gate.py
+    |   |       ├── test_grover.py
+    |   |       ├── test_hilbert.py
+    |   |       ├── test_identitysearch.py
+    |   |       ├── test_innerproduct.py
+    |   |       ├── test_matrixutils.py
+    |   |       ├── test_operator.py
+    |   |       ├── test_operatorordering.py
+    |   |       ├── test_operatorset.py
+    |   |       ├── test_pauli.py
+    |   |       ├── test_piab.py
+    |   |       ├── test_printing.py
+    |   |       ├── test_qapply.py
+    |   |       ├── test_qasm.py
+    |   |       ├── test_qexpr.py
+    |   |       ├── test_qft.py
+    |   |       ├── test_qubit.py
+    |   |       ├── test_represent.py
+    |   |       ├── test_sho1d.py
+    |   |       ├── test_shor.py
+    |   |       ├── test_spin.py
+    |   |       ├── test_state.py
+    |   |       └── test_tensorproduct.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── unitsystems.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_plot.py
+    |   |   └── test_plot_implicit.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── numberfields.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_numberfields.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── ccode.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxxcode.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fcode.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_ccode.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cxxcode.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fcode.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   └── test_theanocode.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   ├── test_traversaltools.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_diophantine.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_ode.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_mix.py
+    |       ├── test_rv.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       └── test_mutable_ndim_array.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_index_methods.py
+    |       ├── test_indexed.py
+    |       └── test_tensor.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── autowrap.py
+    |   ├── benchmarking.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_module_imports.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_pytest.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   └── timeutils.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── operators.py
+        ├── orienters.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_operators.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: UnboundLocalError in evalf
+
+Description: ```
+>>> Mul(x, Max(0, y), evaluate=False).evalf()
+x*Max(0, y)
+>>> Mul(Max(0, y), x, evaluate=False).evalf()
+Traceback (most recent call last):
+  File "./sympy/core/evalf.py", line 1285, in evalf
+    rf = evalf_table[x.func]
+KeyError: Max
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "./sympy/core/evalf.py", line 1394, in evalf
+    result = evalf(self, prec + 4, options)
+  File "./sympy/core/evalf.py", line 1286, in evalf
+    r = rf(x, prec, options)
+  File "./sympy/core/evalf.py", line 538, in evalf_mul
+    arg = evalf(arg, prec, options)
+  File "./sympy/core/evalf.py", line 1308, in evalf
+    r = re, im, reprec, imprec
+UnboundLocalError: local variable 'reprec' referenced before assignment
+```
+
+I found this after changing the order of Mul args in https://github.com/sympy/sympy/pull/13059.
+
+Based on the code, I think the elif clauses that define reprec and imprec should have an `else: raise NotImplementedError`. That appears to fix it, although I didn't try to debug to see why the arg order is mattering here. 
+
+Patch information:
+diff --git a/sympy/core/evalf.py b/sympy/core/evalf.py
+index 72a5fbae52..f34908710a 100644
+--- a/sympy/core/evalf.py
++++ b/sympy/core/evalf.py
+@@ -1301,12 +1301,16 @@ def evalf(x, prec, options):
+             elif re.is_number:
+                 re = re._to_mpmath(prec, allow_ints=False)._mpf_
+                 reprec = prec
++            else:
++                raise NotImplementedError
+             if im == 0:
+                 im = None
+                 imprec = None
+             elif im.is_number:
+                 im = im._to_mpmath(prec, allow_ints=False)._mpf_
+                 imprec = prec
++            else:
++                raise NotImplementedError
+             r = re, im, reprec, imprec
+         except AttributeError:
+             raise NotImplementedError
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of sympy/core/tests/test_evalf.py
+Extra Requirements: 
+Purpose: I need the content of this test file to find 3 relevant test cases that demonstrate the `UnboundLocalError` in `evalf` or similar behavior, as requested by the user.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: sympy/core/tests/test_evalf.py
+Line number range: 1 - 513
+Content:
+1. from sympy import (Abs, Add, atan, ceiling, cos, E, Eq, exp,
+2.     factorial, fibonacci, floor, Function, GoldenRatio, I, Integral,
+3.     integrate, log, Mul, N, oo, pi, Pow, product, Product,
+4.     Rational, S, Sum, sin, sqrt, sstr, sympify, Symbol, Max, nfloat)
+5. from sympy.core.evalf import (complex_accuracy, PrecisionExhausted,
+6.     scaled_zero, get_integer_part, as_mpmath)
+7. from mpmath import inf, ninf
+8. from mpmath.libmp.libmpf import from_float
+9. from sympy.core.compatibility import long, range
+10. from sympy.utilities.pytest import raises, XFAIL
+11. 
+12. from sympy.abc import n, x, y
+13. 
+14. def NS(e, n=15, **options):
+15.     return sstr(sympify(e).evalf(n, **options), full_prec=True)
+16. 
+17. 
+18. def test_evalf_helpers():
+19.     assert complex_accuracy((from_float(2.0), None, 35, None)) == 35
+20.     assert complex_accuracy((from_float(2.0), from_float(10.0), 35, 100)) == 37
+21.     assert complex_accuracy(
+22.         (from_float(2.0), from_float(1000.0), 35, 100)) == 43
+23.     assert complex_accuracy((from_float(2.0), from_float(10.0), 100, 35)) == 35
+24.     assert complex_accuracy(
+25.         (from_float(2.0), from_float(1000.0), 100, 35)) == 35
+26. 
+27. 
+28. def test_evalf_basic():
+29.     assert NS('pi', 15) == '3.14159265358979'
+30.     assert NS('2/3', 10) == '0.6666666667'
+31.     assert NS('355/113-pi', 6) == '2.66764e-7'
+32.     assert NS('16*atan(1/5)-4*atan(1/239)', 15) == '3.14159265358979'
+33. 
+34. 
+35. def test_cancellation():
+36.     assert NS(Add(pi, Rational(1, 10**1000), -pi, evaluate=False), 15,
+37.               maxn=1200) == '1.00000000000000e-1000'
+38. 
+39. 
+40. def test_evalf_powers():
+41.     assert NS('pi**(10**20)', 10) == '1.339148777e+49714987269413385435'
+42.     assert NS(pi**(10**100), 10) == ('4.946362032e+4971498726941338543512682882'
+43.           '9089887365167832438044244613405349992494711208'
+44.           '95526746555473864642912223')
+45.     assert NS('2**(1/10**50)', 15) == '1.00000000000000'
+46.     assert NS('2**(1/10**50)-1', 15) == '6.93147180559945e-51'
+47. 
+48. # Evaluation of Rump's ill-conditioned polynomial
+49. 
+50. 
+51. def test_evalf_rump():
+52.     a = 1335*y**6/4 + x**2*(11*x**2*y**2 - y**6 - 121*y**4 - 2) + 11*y**8/2 + x/(2*y)
+53.     assert NS(a, 15, subs={x: 77617, y: 33096}) == '-0.827396059946821'
+54. 
+55. 
+56. def test_evalf_complex():
+57.     assert NS('2*sqrt(pi)*I', 10) == '3.544907702*I'
+58.     assert NS('3+3*I', 15) == '3.00000000000000 + 3.00000000000000*I'
+59.     assert NS('E+pi*I', 15) == '2.71828182845905 + 3.14159265358979*I'
+60.     assert NS('pi * (3+4*I)', 15) == '9.42477796076938 + 12.5663706143592*I'
+61.     assert NS('I*(2+I)', 15) == '-1.00000000000000 + 2.00000000000000*I'
+62. 
+63. 
+64. @XFAIL
+65. def test_evalf_complex_bug():
+66.     assert NS('(pi+E*I)*(E+pi*I)', 15) in ('0.e-15 + 17.25866050002*I',
+67.               '0.e-17 + 17.25866050002*I', '-0.e-17 + 17.25866050002*I')
+68. 
+69. 
+70. def test_evalf_complex_powers():
+71.     assert NS('(E+pi*I)**100000000000000000') == \
+72.         '-3.58896782867793e+61850354284995199 + 4.58581754997159e+61850354284995199*I'
+73.     # XXX: rewrite if a+a*I simplification introduced in sympy
+74.     #assert NS('(pi + pi*I)**2') in ('0.e-15 + 19.7392088021787*I', '0.e-16 + 19.7392088021787*I')
+75.     assert NS('(pi + pi*I)**2', chop=True) == '19.7392088021787*I'
+76.     assert NS(
+77.         '(pi + 1/10**8 + pi*I)**2') == '6.2831853e-8 + 19.7392088650106*I'
+78.     assert NS('(pi + 1/10**12 + pi*I)**2') == '6.283e-12 + 19.7392088021850*I'
+79.     assert NS('(pi + pi*I)**4', chop=True) == '-389.636364136010'
+80.     assert NS(
+81.         '(pi + 1/10**8 + pi*I)**4') == '-389.636366616512 + 2.4805021e-6*I'
+82.     assert NS('(pi + 1/10**12 + pi*I)**4') == '-389.636364136258 + 2.481e-10*I'
+83.     assert NS(
+84.         '(10000*pi + 10000*pi*I)**4', chop=True) == '-3.89636364136010e+18'
+85. 
+86. 
+87. @XFAIL
+88. def test_evalf_complex_powers_bug():
+89.     assert NS('(pi + pi*I)**4') == '-389.63636413601 + 0.e-14*I'
+90. 
+91. 
+92. def test_evalf_exponentiation():
+93.     assert NS(sqrt(-pi)) == '1.77245385090552*I'
+94.     assert NS(Pow(pi*I, Rational(
+95.         1, 2), evaluate=False)) == '1.25331413731550 + 1.25331413731550*I'
+96.     assert NS(pi**I) == '0.413292116101594 + 0.910598499212615*I'
+97.     assert NS(pi**(E + I/3)) == '20.8438653991931 + 8.36343473930031*I'
+98.     assert NS((pi + I/3)**(E + I/3)) == '17.2442906093590 + 13.6839376767037*I'
+99.     assert NS(exp(pi)) == '23.1406926327793'
+100.     assert NS(exp(pi + E*I)) == '-21.0981542849657 + 9.50576358282422*I'
+101.     assert NS(pi**pi) == '36.4621596072079'
+102.     assert NS((-pi)**pi) == '-32.9138577418939 - 15.6897116534332*I'
+103.     assert NS((-pi)**(-pi)) == '-0.0247567717232697 + 0.0118013091280262*I'
+104. 
+105. # An example from Smith, "Multiple Precision Complex Arithmetic and Functions"
+106. 
+107. 
+108. def test_evalf_complex_cancellation():
+109.     A = Rational('63287/100000')
+110.     B = Rational('52498/100000')
+111.     C = Rational('69301/100000')
+112.     D = Rational('83542/100000')
+113.     F = Rational('2231321613/2500000000')
+114.     # XXX: the number of returned mantissa digits in the real part could
+115.     # change with the implementation. What matters is that the returned digits are
+116.     # correct; those that are showing now are correct.
+117.     # >>> ((A+B*I)*(C+D*I)).expand()
+118.     # 64471/10000000000 + 2231321613*I/2500000000
+119.     # >>> 2231321613*4
+120.     # 8925286452L
+121.     assert NS((A + B*I)*(C + D*I), 6) == '6.44710e-6 + 0.892529*I'
+122.     assert NS((A + B*I)*(C + D*I), 10) == '6.447100000e-6 + 0.8925286452*I'
+123.     assert NS((A + B*I)*(
+124.         C + D*I) - F*I, 5) in ('6.4471e-6 + 0.e-14*I', '6.4471e-6 - 0.e-14*I')
+125. 
+126. 
+127. def test_evalf_logs():
+128.     assert NS("log(3+pi*I)", 15) == '1.46877619736226 + 0.808448792630022*I'
+129.     assert NS("log(pi*I)", 15) == '1.14472988584940 + 1.57079632679490*I'
+130.     assert NS('log(-1 + 0.00001)', 2) == '-1.0e-5 + 3.1*I'
+131.     assert NS('log(100, 10, evaluate=False)', 15) == '2.00000000000000'
+132.     assert NS('-2*I*log(-(-1)**(S(1)/9))', 15) == '-5.58505360638185'
+133. 
+134. 
+135. def test_evalf_trig():
+136.     assert NS('sin(1)', 15) == '0.841470984807897'
+137.     assert NS('cos(1)', 15) == '0.540302305868140'
+138.     assert NS('sin(10**-6)', 15) == '9.99999999999833e-7'
+139.     assert NS('cos(10**-6)', 15) == '0.999999999999500'
+140.     assert NS('sin(E*10**100)', 15) == '0.409160531722613'
+141.     # Some input near roots
+142.     assert NS(sin(exp(pi*sqrt(163))*pi), 15) == '-2.35596641936785e-12'
+143.     assert NS(sin(pi*10**100 + Rational(7, 10**5), evaluate=False), 15, maxn=120) == \
+144.         '6.99999999428333e-5'
+145.     assert NS(sin(Rational(7, 10**5), evaluate=False), 15) == \
+146.         '6.99999999428333e-5'
+147. 
+148. # Check detection of various false identities
+149. 
+150. 
+151. def test_evalf_near_integers():
+152.     # Binet's formula
+153.     f = lambda n: ((1 + sqrt(5))**n)/(2**n * sqrt(5))
+154.     assert NS(f(5000) - fibonacci(5000), 10, maxn=1500) == '5.156009964e-1046'
+155.     # Some near-integer identities from
+156.     # http://mathworld.wolfram.com/AlmostInteger.html
+157.     assert NS('sin(2017*2**(1/5))', 15) == '-1.00000000000000'
+158.     assert NS('sin(2017*2**(1/5))', 20) == '-0.99999999999999997857'
+159.     assert NS('1+sin(2017*2**(1/5))', 15) == '2.14322287389390e-17'
+160.     assert NS('45 - 613*E/37 + 35/991', 15) == '6.03764498766326e-11'
+161. 
+162. 
+163. def test_evalf_ramanujan():
+164.     assert NS(exp(pi*sqrt(163)) - 640320**3 - 744, 10) == '-7.499274028e-13'
+165.     # A related identity
+166.     A = 262537412640768744*exp(-pi*sqrt(163))
+167.     B = 196884*exp(-2*pi*sqrt(163))
+168.     C = 103378831900730205293632*exp(-3*pi*sqrt(163))
+169.     assert NS(1 - A - B + C, 10) == '1.613679005e-59'
+170. 
+171. # Input that for various reasons have failed at some point
+172. 
+173. 
+174. def test_evalf_bugs():
+175.     assert NS(sin(1) + exp(-10**10), 10) == NS(sin(1), 10)
+176.     assert NS(exp(10**10) + sin(1), 10) == NS(exp(10**10), 10)
+177.     assert NS('log(1+1/10**50)', 20) == '1.0000000000000000000e-50'
+178.     assert NS('log(10**100,10)', 10) == '100.0000000'
+179.     assert NS('log(2)', 10) == '0.6931471806'
+180.     assert NS(
+181.         '(sin(x)-x)/x**3', 15, subs={x: '1/10**50'}) == '-0.166666666666667'
+182.     assert NS(sin(1) + Rational(
+183.         1, 10**100)*I, 15) == '0.841470984807897 + 1.00000000000000e-100*I'
+184.     assert x.evalf() == x
+185.     assert NS((1 + I)**2*I, 6) == '-2.00000'
+186.     d = {n: (
+187.         -1)**Rational(6, 7), y: (-1)**Rational(4, 7), x: (-1)**Rational(2, 7)}
+188.     assert NS((x*(1 + y*(1 + n))).subs(d).evalf(), 6) == '0.346011 + 0.433884*I'
+189.     assert NS(((-I - sqrt(2)*I)**2).evalf()) == '-5.82842712474619'
+190.     assert NS((1 + I)**2*I, 15) == '-2.00000000000000'
+191.     # issue 4758 (1/2):
+192.     assert NS(pi.evalf(69) - pi) == '-4.43863937855894e-71'
+193.     # issue 4758 (2/2): With the bug present, this still only fails if the
+194.     # terms are in the order given here. This is not generally the case,
+195.     # because the order depends on the hashes of the terms.
+196.     assert NS(20 - 5008329267844*n**25 - 477638700*n**37 - 19*n,
+197.               subs={n: .01}) == '19.8100000000000'
+198.     assert NS(((x - 1)*((1 - x))**1000).n()
+199.               ) == '(-x + 1.00000000000000)**1000*(x - 1.00000000000000)'
+200.     assert NS((-x).n()) == '-x'
+201.     assert NS((-2*x).n()) == '-2.00000000000000*x'
+202.     assert NS((-2*x*y).n()) == '-2.00000000000000*x*y'
+203.     assert cos(x).n(subs={x: 1+I}) == cos(x).subs(x, 1+I).n()
+204.     # issue 6660. Also NaN != mpmath.nan
+205.     # In this order:
+206.     # 0*nan, 0/nan, 0*inf, 0/inf
+207.     # 0+nan, 0-nan, 0+inf, 0-inf
+208.     # >>> n = Some Number
+209.     # n*nan, n/nan, n*inf, n/inf
+210.     # n+nan, n-nan, n+inf, n-inf
+211.     assert (0*E**(oo)).n() == S.NaN
+212.     assert (0/E**(oo)).n() == S.Zero
+213. 
+214.     assert (0+E**(oo)).n() == S.Infinity
+215.     assert (0-E**(oo)).n() == S.NegativeInfinity
+216. 
+217.     assert (5*E**(oo)).n() == S.Infinity
+218.     assert (5/E**(oo)).n() == S.Zero
+219. 
+220.     assert (5+E**(oo)).n() == S.Infinity
+221.     assert (5-E**(oo)).n() == S.NegativeInfinity
+222. 
+223.     #issue 7416
+224.     assert as_mpmath(0.0, 10, {'chop': True}) == 0
+225. 
+226.     #issue 5412
+227.     assert ((oo*I).n() == S.Infinity*I)
+228.     assert ((oo+oo*I).n() == S.Infinity + S.Infinity*I)
+229. 
+230.     #issue 11518
+231.     assert NS(2*x**2.5, 5) == '2.0000*x**2.5000'
+232. 
+233. 
+234. def test_evalf_integer_parts():
+235.     a = floor(log(8)/log(2) - exp(-1000), evaluate=False)
+236.     b = floor(log(8)/log(2), evaluate=False)
+237.     assert a.evalf() == 3
+238.     assert b.evalf() == 3
+239.     # equals, as a fallback, can still fail but it might succeed as here
+240.     assert ceiling(10*(sin(1)**2 + cos(1)**2)) == 10
+241. 
+242.     assert int(floor(factorial(50)/E, evaluate=False).evalf(70)) == \
+243.         long(11188719610782480504630258070757734324011354208865721592720336800)
+244.     assert int(ceiling(factorial(50)/E, evaluate=False).evalf(70)) == \
+245.         long(11188719610782480504630258070757734324011354208865721592720336801)
+246.     assert int(floor((GoldenRatio**999 / sqrt(5) + Rational(1, 2)))
+247.                .evalf(1000)) == fibonacci(999)
+248.     assert int(floor((GoldenRatio**1000 / sqrt(5) + Rational(1, 2)))
+249.                .evalf(1000)) == fibonacci(1000)
+250. 
+251.     assert ceiling(x).evalf(subs={x: 3}) == 3
+252.     assert ceiling(x).evalf(subs={x: 3*I}) == 3*I
+253.     assert ceiling(x).evalf(subs={x: 2 + 3*I}) == 2 + 3*I
+254.     assert ceiling(x).evalf(subs={x: 3.}) == 3
+255.     assert ceiling(x).evalf(subs={x: 3.*I}) == 3*I
+256.     assert ceiling(x).evalf(subs={x: 2. + 3*I}) == 2 + 3*I
+257. 
+258. 
+259. def test_evalf_trig_zero_detection():
+260.     a = sin(160*pi, evaluate=False)
+261.     t = a.evalf(maxn=100)
+262.     assert abs(t) < 1e-100
+263.     assert t._prec < 2
+264.     assert a.evalf(chop=True) == 0
+265.     raises(PrecisionExhausted, lambda: a.evalf(strict=True))
+266. 
+267. 
+268. def test_evalf_sum():
+269.     assert Sum(n,(n,1,2)).evalf() == 3.
+270.     assert Sum(n,(n,1,2)).doit().evalf() == 3.
+271.     # the next test should return instantly
+272.     assert Sum(1/n,(n,1,2)).evalf() == 1.5
+273. 
+274.     # issue 8219
+275.     assert Sum(E/factorial(n), (n, 0, oo)).evalf() == (E*E).evalf()
+276.     # issue 8254
+277.     assert Sum(2**n*n/factorial(n), (n, 0, oo)).evalf() == (2*E*E).evalf()
+278.     # issue 8411
+279.     s = Sum(1/x**2, (x, 100, oo))
+280.     assert s.n() == s.doit().n()
+281. 
+282. 
+283. def test_evalf_divergent_series():
+284.     raises(ValueError, lambda: Sum(1/n, (n, 1, oo)).evalf())
+285.     raises(ValueError, lambda: Sum(n/(n**2 + 1), (n, 1, oo)).evalf())
+286.     raises(ValueError, lambda: Sum((-1)**n, (n, 1, oo)).evalf())
+287.     raises(ValueError, lambda: Sum((-1)**n, (n, 1, oo)).evalf())
+288.     raises(ValueError, lambda: Sum(n**2, (n, 1, oo)).evalf())
+289.     raises(ValueError, lambda: Sum(2**n, (n, 1, oo)).evalf())
+290.     raises(ValueError, lambda: Sum((-2)**n, (n, 1, oo)).evalf())
+291.     raises(ValueError, lambda: Sum((2*n + 3)/(3*n**2 + 4), (n, 0, oo)).evalf())
+292.     raises(ValueError, lambda: Sum((0.5*n**3)/(n**4 + 1), (n, 0, oo)).evalf())
+293. 
+294. 
+295. def test_evalf_product():
+296.     assert Product(n, (n, 1, 10)).evalf() == 3628800.
+297.     assert Product(1 - S.Half**2/n**2, (n, 1, oo)).evalf(5)==0.63662
+298.     assert Product(n, (n, -1, 3)).evalf() == 0
+299. 
+300. 
+301. def test_evalf_py_methods():
+302.     assert abs(float(pi + 1) - 4.1415926535897932) < 1e-10
+303.     assert abs(complex(pi + 1) - 4.1415926535897932) < 1e-10
+304.     assert abs(
+305.         complex(pi + E*I) - (3.1415926535897931 + 2.7182818284590451j)) < 1e-10
+306.     raises(TypeError, lambda: float(pi + x))
+307. 
+308. 
+309. def test_evalf_power_subs_bugs():
+310.     assert (x**2).evalf(subs={x: 0}) == 0
+311.     assert sqrt(x).evalf(subs={x: 0}) == 0
+312.     assert (x**Rational(2, 3)).evalf(subs={x: 0}) == 0
+313.     assert (x**x).evalf(subs={x: 0}) == 1
+314.     assert (3**x).evalf(subs={x: 0}) == 1
+315.     assert exp(x).evalf(subs={x: 0}) == 1
+316.     assert ((2 + I)**x).evalf(subs={x: 0}) == 1
+317.     assert (0**x).evalf(subs={x: 0}) == 1
+318. 
+319. 
+320. def test_evalf_arguments():
+321.     raises(TypeError, lambda: pi.evalf(method="garbage"))
+322. 
+323. 
+324. def test_implemented_function_evalf():
+325.     from sympy.utilities.lambdify import implemented_function
+326.     f = Function('f')
+327.     f = implemented_function(f, lambda x: x + 1)
+328.     assert str(f(x)) == "f(x)"
+329.     assert str(f(2)) == "f(2)"
+330.     assert f(2).evalf() == 3
+331.     assert f(x).evalf() == f(x)
+332.     del f._imp_     # XXX: due to caching _imp_ would influence all other tests
+333. 
+334. 
+335. def test_evaluate_false():
+336.     for no in [0, False]:
+337.         assert Add(3, 2, evaluate=no).is_Add
+338.         assert Mul(3, 2, evaluate=no).is_Mul
+339.         assert Pow(3, 2, evaluate=no).is_Pow
+340.     assert Pow(y, 2, evaluate=True) - Pow(y, 2, evaluate=True) == 0
+341. 
+342. 
+343. def test_evalf_relational():
+344.     assert Eq(x/5, y/10).evalf() == Eq(0.2*x, 0.1*y)
+345. 
+346. 
+347. def test_issue_5486():
+348.     assert not cos(sqrt(0.5 + I)).n().is_Function
+349. 
+350. 
+351. def test_issue_5486_bug():
+352.     from sympy import I, Expr
+353.     assert abs(Expr._from_mpmath(I._to_mpmath(15), 15) - I) < 1.0e-15
+354. 
+355. 
+356. def test_bugs():
+357.     from sympy import polar_lift, re
+358. 
+359.     assert abs(re((1 + I)**2)) < 1e-15
+360. 
+361.     # anything that evalf's to 0 will do in place of polar_lift
+362.     assert abs(polar_lift(0)).n() == 0
+363. 
+364. 
+365. def test_subs():
+366.     assert NS('besseli(-x, y) - besseli(x, y)', subs={x: 3.5, y: 20.0}) == \
+367.         '-4.92535585957223e-10'
+368.     assert NS('Piecewise((x, x>0)) + Piecewise((1-x, x>0))', subs={x: 0.1}) == \
+369.         '1.00000000000000'
+370.     raises(TypeError, lambda: x.evalf(subs=(x, 1)))
+371. 
+372. 
+373. def test_issue_4956_5204():
+374.     # issue 4956
+375.     v = S('''(-27*12**(1/3)*sqrt(31)*I +
+376.     27*2**(2/3)*3**(1/3)*sqrt(31)*I)/(-2511*2**(2/3)*3**(1/3) +
+377.     (29*18**(1/3) + 9*2**(1/3)*3**(2/3)*sqrt(31)*I +
+378.     87*2**(1/3)*3**(1/6)*I)**2)''')
+379.     assert NS(v, 1) == '0.e-118 - 0.e-118*I'
+380. 
+381.     # issue 5204
+382.     v = S('''-(357587765856 + 18873261792*249**(1/2) + 56619785376*I*83**(1/2) +
+383.     108755765856*I*3**(1/2) + 41281887168*6**(1/3)*(1422 +
+384.     54*249**(1/2))**(1/3) - 1239810624*6**(1/3)*249**(1/2)*(1422 +
+385.     54*249**(1/2))**(1/3) - 3110400000*I*6**(1/3)*83**(1/2)*(1422 +
+386.     54*249**(1/2))**(1/3) + 13478400000*I*3**(1/2)*6**(1/3)*(1422 +
+387.     54*249**(1/2))**(1/3) + 1274950152*6**(2/3)*(1422 +
+388.     54*249**(1/2))**(2/3) + 32347944*6**(2/3)*249**(1/2)*(1422 +
+389.     54*249**(1/2))**(2/3) - 1758790152*I*3**(1/2)*6**(2/3)*(1422 +
+390.     54*249**(1/2))**(2/3) - 304403832*I*6**(2/3)*83**(1/2)*(1422 +
+391.     4*249**(1/2))**(2/3))/(175732658352 + (1106028 + 25596*249**(1/2) +
+392.     76788*I*83**(1/2))**2)''')
+393.     assert NS(v, 5) == '0.077284 + 1.1104*I'
+394.     assert NS(v, 1) == '0.08 + 1.*I'
+395. 
+396. 
+397. def test_old_docstring():
+398.     a = (E + pi*I)*(E - pi*I)
+399.     assert NS(a) == '17.2586605000200'
+400.     assert a.n() == 17.25866050002001
+401. 
+402. 
+403. def test_issue_4806():
+404.     assert integrate(atan(x)**2, (x, -1, 1)).evalf().round(1) == 0.5
+405.     assert atan(0, evaluate=False).n() == 0
+406. 
+407. 
+408. def test_evalf_mul():
+409.     # sympy should not try to expand this; it should be handled term-wise
+410.     # in evalf through mpmath
+411.     assert NS(product(1 + sqrt(n)*I, (n, 1, 500)), 1) == '5.e+567 + 2.e+568*I'
+412. 
+413. 
+414. def test_scaled_zero():
+415.     a, b = (([0], 1, 100, 1), -1)
+416.     assert scaled_zero(100) == (a, b)
+417.     assert scaled_zero(a) == (0, 1, 100, 1)
+418.     a, b = (([1], 1, 100, 1), -1)
+419.     assert scaled_zero(100, -1) == (a, b)
+420.     assert scaled_zero(a) == (1, 1, 100, 1)
+421.     raises(ValueError, lambda: scaled_zero(scaled_zero(100)))
+422.     raises(ValueError, lambda: scaled_zero(100, 2))
+423.     raises(ValueError, lambda: scaled_zero(100, 0))
+424.     raises(ValueError, lambda: scaled_zero((1, 5, 1, 3)))
+425. 
+426. 
+427. def test_chop_value():
+428.     for i in range(-27, 28):
+429.         assert (Pow(10, i)*2).n(chop=10**i) and not (Pow(10, i)).n(chop=10**i)
+430. 
+431. 
+432. def test_infinities():
+433.     assert oo.evalf(chop=True) == inf
+434.     assert (-oo).evalf(chop=True) == ninf
+435. 
+436. 
+437. def test_to_mpmath():
+438.     assert sqrt(3)._to_mpmath(20)._mpf_ == (0, long(908093), -19, 20)
+439.     assert S(3.2)._to_mpmath(20)._mpf_ == (0, long(838861), -18, 20)
+440. 
+441. 
+442. def test_issue_6632_evalf():
+443.     add = (-100000*sqrt(2500000001) + 5000000001)
+444.     assert add.n() == 9.999999998e-11
+445.     assert (add*add).n() == 9.999999996e-21
+446. 
+447. 
+448. def test_issue_4945():
+449.     from sympy.abc import H
+450.     from sympy import zoo
+451.     assert (H/0).evalf(subs={H:1}) == zoo*H
+452. 
+453. 
+454. def test_evalf_integral():
+455.     # test that workprec has to increase in order to get a result other than 0
+456.     eps = Rational(1, 1000000)
+457.     assert Integral(sin(x), (x, -pi, pi + eps)).n(2)._prec == 10
+458. 
+459. 
+460. def test_issue_8821_highprec_from_str():
+461.     s = str(pi.evalf(128))
+462.     p = N(s)
+463.     assert Abs(sin(p)) < 1e-15
+464.     p = N(s, 64)
+465.     assert Abs(sin(p)) < 1e-64
+466. 
+467. 
+468. def test_issue_8853():
+469.     p = Symbol('x', even=True, positive=True)
+470.     assert floor(-p - S.Half).is_even == False
+471.     assert floor(-p + S.Half).is_even == True
+472.     assert ceiling(p - S.Half).is_even == True
+473.     assert ceiling(p + S.Half).is_even == False
+474. 
+475.     assert get_integer_part(S.Half, -1, {}, True) == (0, 0)
+476.     assert get_integer_part(S.Half, 1, {}, True) == (1, 0)
+477.     assert get_integer_part(-S.Half, -1, {}, True) == (-1, 0)
+478.     assert get_integer_part(-S.Half, 1, {}, True) == (0, 0)
+479. 
+480. 
+481. def test_issue_9326():
+482.     from sympy import Dummy
+483.     d1 = Dummy('d')
+484.     d2 = Dummy('d')
+485.     e = d1 + d2
+486.     assert e.evalf(subs = {d1: 1, d2: 2}) == 3
+487. 
+488. 
+489. def test_issue_10323():
+490.     assert ceiling(sqrt(2**30 + 1)) == 2**15 + 1
+491. 
+492. 
+493. def test_AssocOp_Function():
+494.     e = S('''
+495.     Min(-sqrt(3)*cos(pi/18)/6 + re(1/((-1/2 - sqrt(3)*I/2)*(1/6 +
+496.     sqrt(3)*I/18)**(1/3)))/3 + sin(pi/18)/2 + 2 + I*(-cos(pi/18)/2 -
+497.     sqrt(3)*sin(pi/18)/6 + im(1/((-1/2 - sqrt(3)*I/2)*(1/6 +
+498.     sqrt(3)*I/18)**(1/3)))/3), re(1/((-1/2 + sqrt(3)*I/2)*(1/6 +
+499.     sqrt(3)*I/18)**(1/3)))/3 - sqrt(3)*cos(pi/18)/6 - sin(pi/18)/2 + 2 +
+500.     I*(im(1/((-1/2 + sqrt(3)*I/2)*(1/6 + sqrt(3)*I/18)**(1/3)))/3 -
+501.     sqrt(3)*sin(pi/18)/6 + cos(pi/18)/2))''')
+502.     # the following should not raise a recursion error; it
+503.     # should raise a value error because the first arg computes
+504.     # a non-comparable (prec=1) imaginary part
+505.     raises(ValueError, lambda: e._eval_evalf(2))
+506. 
+507. 
+508. def test_issue_10395():
+509.     eq = x*Max(0, y)
+510.     assert nfloat(eq) == eq
+511.     eq = x*Max(y, -1.1)
+512.     assert nfloat(eq) == eq
+513.     assert Max(y, 4).n() == Max(4.0, y)
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 17:04:55,399 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The provided context from `sympy/core/tests/test_evalf.py` is sufficient to fulfill the user's request. This file contains several relevant test cases for the `evalf` function. Specifically, `test_issue_10395` tests `evalf` with `Max`, `test_AssocOp_Function` tests `evalf` with the similar `Min` function and error handling, and `test_evalf_bugs` provides examples of `evalf` on symbolic `Mul` expressions. These tests cover the functionality related to the reported bug, and I can construct the final answer from this context. Therefore, no additional context is required." query='' extra_requirements='' purpose=''
+2025-12-21 17:04:55,407 - thread-131918823687872.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

@@ -1,0 +1,4584 @@
+2025-12-21 18:21:38,589 - thread-139828228261568.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Product(n + 1 / 2**k, [k, 0, n-1]) is incorrect
+
+Description:     >>> from sympy import *
+    >>> from sympy.abc import n,k
+    >>> p = Product(n + 1 / 2**k, [k, 0, n-1]).doit()
+    >>> print(simplify(p))
+    2**(n*(-n + 1)/2) + n**n
+    >>> print(p.subs(n,2))
+    9/2
+
+This is incorrect- for example, the product for `n=2` is `(2 + 2^0) * (2 + 2^(-1)) = 15/2`. The correct expression involves the [q-Pochhammer symbol](https://www.wolframalpha.com/input/?i=product+of+n+%2B+1%2F2%5Ek+from+k%3D0+to+n-1).
+
+Patch information:
+diff --git a/sympy/concrete/products.py b/sympy/concrete/products.py
+index 66aafde2d6..e9179532e3 100644
+--- a/sympy/concrete/products.py
++++ b/sympy/concrete/products.py
+@@ -275,18 +275,39 @@ def _eval_product(self, term, limits):
+             return poly.LC()**(n - a + 1) * A * B
+ 
+         elif term.is_Add:
++            # Handle special form: A + B*C**(alpha*k + beta) with A, B, C independent of k
++            A0, Rsum = term.as_independent(k)
++            if (not A0.has(k)) and (A0.is_zero is not True) and (Rsum.is_zero is not True):
++                B0, R = Rsum.as_independent(k, as_Add=False)
++                if R.is_Pow and not R.base.has(k):
++                    E = R.exp
++                    Ep = E.as_poly(k)
++                    if Ep is not None and Ep.degree() == 1:
++                        alpha, beta = Ep.all_coeffs()
++                        if alpha.is_zero is True:
++                            return None
++                        qbase = R.base**alpha
++                        Bprime = B0 * (R.base**beta)
++                        m = n - a + 1
++                        q_poch = None
++                        try:
++                            from sympy.functions.special.q_functions import q_pochhammer as q_poch
++                        except ImportError:
++                            try:
++                                from sympy import q_pochhammer as q_poch
++                            except ImportError:
++                                q_poch = None
++                        if q_poch is not None:
++                            return A0**m * q_poch(-(Bprime/A0)*qbase**a, qbase, m)
++            # Conservative handling for generic Add: avoid distributing product over addition
+             p, q = term.as_numer_denom()
+-            q = self._eval_product(q, (k, a, n))
+-            if q.is_Number:
+-
+-                # There is expression, which couldn't change by
+-                # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).
+-                # We have to catch this case.
+-
+-                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])
+-            else:
+-                p = self._eval_product(p, (k, a, n))
+-            return p / q
++            q_eval = self._eval_product(q, (k, a, n))
++            p_eval = self._eval_product(p, (k, a, n))
++            if p_eval is not None and q_eval is not None:
++                return p_eval / q_eval
++            if q_eval is not None:
++                return self.func(p, (k, a, n)) / q_eval
++            return None
+ 
+         elif term.is_Mul:
+             exclude, include = [], []
+diff --git a/sympy/functions/__init__.py b/sympy/functions/__init__.py
+index 0c8fda287d..3b7daa507c 100644
+--- a/sympy/functions/__init__.py
++++ b/sympy/functions/__init__.py
+@@ -46,4 +46,5 @@
+ from sympy.functions.special.beta_functions import beta
+ from sympy.functions.special.mathieu_functions import (mathieus, mathieuc,
+         mathieusprime, mathieucprime)
++from sympy.functions.special.q_functions import q_pochhammer
+ ln = log
+diff --git a/sympy/functions/special/__init__.py b/sympy/functions/special/__init__.py
+index f227799549..13b67d53a4 100644
+--- a/sympy/functions/special/__init__.py
++++ b/sympy/functions/special/__init__.py
+@@ -9,3 +9,4 @@
+ from . import singularity_functions
+ 
+ from . import polynomials
++from . import q_functions
+diff --git a/sympy/functions/special/q_functions.py b/sympy/functions/special/q_functions.py
+new file mode 100644
+index 0000000000..d3c6f0c5f3
+--- /dev/null
++++ b/sympy/functions/special/q_functions.py
+@@ -0,0 +1,37 @@
++from __future__ import print_function, division
++
++from sympy.core import S, sympify
++from sympy.core.function import Function, ArgumentIndexError
++from sympy.core.mul import Mul
++from sympy.core.compatibility import range
++
++class q_pochhammer(Function):
++    """
++    The q-Pochhammer symbol (a; q)_m defined as:
++        (a; q)_m = Product_{i=0}^{m-1} (1 - a*q**i)
++    This minimal implementation evaluates for nonnegative integer m.
++    """
++    @classmethod
++    def eval(cls, a, q, m):
++        a = sympify(a)
++        q = sympify(q)
++        m = sympify(m)
++        if m.is_Number:
++            if m is S.NaN:
++                return S.NaN
++            if m.is_Integer:
++                if m.is_negative:
++                    # Leave unevaluated for negative m in this minimal implementation
++                    return
++                mm = int(m)
++                if mm == 0:
++                    return S.One
++                # finite product
++                res = S.One
++                for i in range(mm):
++                    res *= (S.One - a*q**i)
++                return res
++
++    def fdiff(self, argindex=3):
++        # Derivatives not implemented in this minimal version
++        raise ArgumentIndexError(self, argindex)
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-21 18:21:38,630 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .travis.yml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.rst
+├── bin
+|   ├── ask_update.py
+|   ├── authors_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_update.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_import.py
+|   ├── test_setup.py
+|   └── test_travis.sh
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   ├── numpydoc.py
+|   |   └── sympylive.py
+|   ├── generate_logos.py
+|   ├── man
+|   |   └── isympy.xml
+|   └── src
+|       ├── _static
+|       ├── _templates
+|       |   └── layout.html
+|       ├── aboutus.rst
+|       ├── citing.rst
+|       ├── conf.py
+|       ├── gotchas.rst
+|       ├── guide.rst
+|       ├── index.rst
+|       ├── install.rst
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── handlers
+|       |   |   ├── index.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── index.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   └── integrals.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   └── sparse.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── hyperexpand.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   └── tensor.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   ├── runtests.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       └── intro.rst
+|       ├── outreach.rst
+|       ├── pics
+|       ├── python-comparisons.rst
+|       ├── special_topics
+|       |   ├── finite_diff_derivatives.rst
+|       |   ├── index.rst
+|       |   └── intro.rst
+|       ├── tutorial
+|       |   ├── basic_operations.rst
+|       |   ├── calculus.rst
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── intro.rst
+|       |   ├── manipulation.rst
+|       |   ├── matrices.rst
+|       |   ├── preliminaries.rst
+|       |   ├── printing.rst
+|       |   ├── simplification.rst
+|       |   └── solvers.rst
+|       └── wiki.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── isympy.py
+├── release
+|   ├── Dockerfile
+|   ├── README.md
+|   ├── fabfile.py
+|   ├── pull_and_run_rever.sh
+|   └── release.sh
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_assumptions_2.py
+    |       ├── test_context.py
+    |       ├── test_matrices.py
+    |       ├── test_query.py
+    |       ├── test_refine.py
+    |       ├── test_satask.py
+    |       └── test_sathandlers.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── ffunctions.py
+    |   ├── rewriting.py
+    |   └── tests
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_ffunctions.py
+    |       └── test_rewriting.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── evaluate.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── power.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_eval_power.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_evaluate.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_trace.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   └── trace.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── deprecated
+    |   ├── __init__.py
+    |   ├── class_registry.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_class_registry.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── importtools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_sage.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── linearsolver.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── rubi
+    |   |   ├── __init__.py
+    |   |   ├── parsetools
+    |   |   |   ├── __init__.py
+    |   |   |   ├── parse.py
+    |   |   |   └── tests
+    |   |   ├── rubi.py
+    |   |   ├── rules
+    |   |   |   ├── __init__.py
+    |   |   |   ├── binomial_products.py
+    |   |   |   ├── exponential.py
+    |   |   |   ├── hyperbolic.py
+    |   |   |   ├── integrand_simplification.py
+    |   |   |   ├── inverse_hyperbolic.py
+    |   |   |   ├── inverse_trig.py
+    |   |   |   ├── linear_products.py
+    |   |   |   ├── logarithms.py
+    |   |   |   ├── miscellaneous_algebraic.py
+    |   |   |   ├── miscellaneous_integration.py
+    |   |   |   ├── miscellaneous_trig.py
+    |   |   |   ├── piecewise_linear.py
+    |   |   |   ├── quadratic_products.py
+    |   |   |   ├── secant.py
+    |   |   |   ├── sine.py
+    |   |   |   ├── tangent.py
+    |   |   |   └── trinomial_products.py
+    |   |   ├── symbol.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_1_2.py
+    |   |   |   ├── test_1_3.py
+    |   |   |   ├── test_1_4.py
+    |   |   |   ├── test_rubi_integrate.py
+    |   |   |   └── test_utility_function.py
+    |   |   └── utility_function.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── ipythonprinting.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_interactive.py
+    |       ├── test_ipython.py
+    |       └── test_ipythonprinting.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   └── dpll2.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── dense.py
+    |   ├── densearith.py
+    |   ├── densesolve.py
+    |   ├── densetools.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── slice.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── immutable.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_commonmatrix.py
+    |       ├── test_densearith.py
+    |       ├── test_densesolve.py
+    |       ├── test_densetools.py
+    |       ├── test_immutable.py
+    |       ├── test_interactions.py
+    |       ├── test_matrices.py
+    |       ├── test_normalforms.py
+    |       ├── test_sparse.py
+    |       └── test_sparsetools.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── egyptian_fraction.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sympy_parser.py
+    |   ├── sympy_tokenize.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_beam.py
+    |   ├── gaussopt.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_anticommutator.py
+    |   |       ├── test_boson.py
+    |   |       ├── test_cartesian.py
+    |   |       ├── test_cg.py
+    |   |       ├── test_circuitplot.py
+    |   |       ├── test_circuitutils.py
+    |   |       ├── test_commutator.py
+    |   |       ├── test_constants.py
+    |   |       ├── test_dagger.py
+    |   |       ├── test_density.py
+    |   |       ├── test_fermion.py
+    |   |       ├── test_gate.py
+    |   |       ├── test_grover.py
+    |   |       ├── test_hilbert.py
+    |   |       ├── test_identitysearch.py
+    |   |       ├── test_innerproduct.py
+    |   |       ├── test_matrixutils.py
+    |   |       ├── test_operator.py
+    |   |       ├── test_operatorordering.py
+    |   |       ├── test_operatorset.py
+    |   |       ├── test_pauli.py
+    |   |       ├── test_piab.py
+    |   |       ├── test_printing.py
+    |   |       ├── test_qapply.py
+    |   |       ├── test_qasm.py
+    |   |       ├── test_qexpr.py
+    |   |       ├── test_qft.py
+    |   |       ├── test_qubit.py
+    |   |       ├── test_represent.py
+    |   |       ├── test_sho1d.py
+    |   |       ├── test_shor.py
+    |   |       ├── test_spin.py
+    |   |       ├── test_state.py
+    |   |       └── test_tensorproduct.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── unitsystems.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_plot.py
+    |   |   └── test_plot_implicit.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── extensions.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_extensions.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── numberfields.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_numberfields.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── ccode.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxxcode.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fcode.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_ccode.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cxxcode.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fcode.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   └── test_theanocode.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   ├── test_traversaltools.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_diophantine.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_ode.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_mix.py
+    |       ├── test_rv.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       └── test_mutable_ndim_array.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_index_methods.py
+    |       ├── test_indexed.py
+    |       └── test_tensor.py
+    ├── this.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── autowrap.py
+    |   ├── benchmarking.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_module_imports.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_pytest.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   └── timeutils.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── operators.py
+        ├── orienters.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_operators.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Product(n + 1 / 2**k, [k, 0, n-1]) is incorrect
+
+Description:     >>> from sympy import *
+    >>> from sympy.abc import n,k
+    >>> p = Product(n + 1 / 2**k, [k, 0, n-1]).doit()
+    >>> print(simplify(p))
+    2**(n*(-n + 1)/2) + n**n
+    >>> print(p.subs(n,2))
+    9/2
+
+This is incorrect- for example, the product for `n=2` is `(2 + 2^0) * (2 + 2^(-1)) = 15/2`. The correct expression involves the [q-Pochhammer symbol](https://www.wolframalpha.com/input/?i=product+of+n+%2B+1%2F2%5Ek+from+k%3D0+to+n-1).
+
+Patch information:
+diff --git a/sympy/concrete/products.py b/sympy/concrete/products.py
+index 66aafde2d6..e9179532e3 100644
+--- a/sympy/concrete/products.py
++++ b/sympy/concrete/products.py
+@@ -275,18 +275,39 @@ def _eval_product(self, term, limits):
+             return poly.LC()**(n - a + 1) * A * B
+ 
+         elif term.is_Add:
++            # Handle special form: A + B*C**(alpha*k + beta) with A, B, C independent of k
++            A0, Rsum = term.as_independent(k)
++            if (not A0.has(k)) and (A0.is_zero is not True) and (Rsum.is_zero is not True):
++                B0, R = Rsum.as_independent(k, as_Add=False)
++                if R.is_Pow and not R.base.has(k):
++                    E = R.exp
++                    Ep = E.as_poly(k)
++                    if Ep is not None and Ep.degree() == 1:
++                        alpha, beta = Ep.all_coeffs()
++                        if alpha.is_zero is True:
++                            return None
++                        qbase = R.base**alpha
++                        Bprime = B0 * (R.base**beta)
++                        m = n - a + 1
++                        q_poch = None
++                        try:
++                            from sympy.functions.special.q_functions import q_pochhammer as q_poch
++                        except ImportError:
++                            try:
++                                from sympy import q_pochhammer as q_poch
++                            except ImportError:
++                                q_poch = None
++                        if q_poch is not None:
++                            return A0**m * q_poch(-(Bprime/A0)*qbase**a, qbase, m)
++            # Conservative handling for generic Add: avoid distributing product over addition
+             p, q = term.as_numer_denom()
+-            q = self._eval_product(q, (k, a, n))
+-            if q.is_Number:
+-
+-                # There is expression, which couldn't change by
+-                # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).
+-                # We have to catch this case.
+-
+-                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])
+-            else:
+-                p = self._eval_product(p, (k, a, n))
+-            return p / q
++            q_eval = self._eval_product(q, (k, a, n))
++            p_eval = self._eval_product(p, (k, a, n))
++            if p_eval is not None and q_eval is not None:
++                return p_eval / q_eval
++            if q_eval is not None:
++                return self.func(p, (k, a, n)) / q_eval
++            return None
+ 
+         elif term.is_Mul:
+             exclude, include = [], []
+diff --git a/sympy/functions/__init__.py b/sympy/functions/__init__.py
+index 0c8fda287d..3b7daa507c 100644
+--- a/sympy/functions/__init__.py
++++ b/sympy/functions/__init__.py
+@@ -46,4 +46,5 @@
+ from sympy.functions.special.beta_functions import beta
+ from sympy.functions.special.mathieu_functions import (mathieus, mathieuc,
+         mathieusprime, mathieucprime)
++from sympy.functions.special.q_functions import q_pochhammer
+ ln = log
+diff --git a/sympy/functions/special/__init__.py b/sympy/functions/special/__init__.py
+index f227799549..13b67d53a4 100644
+--- a/sympy/functions/special/__init__.py
++++ b/sympy/functions/special/__init__.py
+@@ -9,3 +9,4 @@
+ from . import singularity_functions
+ 
+ from . import polynomials
++from . import q_functions
+diff --git a/sympy/functions/special/q_functions.py b/sympy/functions/special/q_functions.py
+new file mode 100644
+index 0000000000..d3c6f0c5f3
+--- /dev/null
++++ b/sympy/functions/special/q_functions.py
+@@ -0,0 +1,37 @@
++from __future__ import print_function, division
++
++from sympy.core import S, sympify
++from sympy.core.function import Function, ArgumentIndexError
++from sympy.core.mul import Mul
++from sympy.core.compatibility import range
++
++class q_pochhammer(Function):
++    """
++    The q-Pochhammer symbol (a; q)_m defined as:
++        (a; q)_m = Product_{i=0}^{m-1} (1 - a*q**i)
++    This minimal implementation evaluates for nonnegative integer m.
++    """
++    @classmethod
++    def eval(cls, a, q, m):
++        a = sympify(a)
++        q = sympify(q)
++        m = sympify(m)
++        if m.is_Number:
++            if m is S.NaN:
++                return S.NaN
++            if m.is_Integer:
++                if m.is_negative:
++                    # Leave unevaluated for negative m in this minimal implementation
++                    return
++                mm = int(m)
++                if mm == 0:
++                    return S.One
++                # finite product
++                res = S.One
++                for i in range(mm):
++                    res *= (S.One - a*q**i)
++                return res
++
++    def fdiff(self, argindex=3):
++        # Derivatives not implemented in this minimal version
++        raise ArgumentIndexError(self, argindex)
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 18:22:08,277 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to fix a bug in `Product.doit()`. The provided patch modifies `_eval_product` in `sympy/concrete/products.py` and adds a new function `q_pochhammer`. To understand how the patch fixes the incorrect evaluation of the product, I need to examine the original implementation of the `Product` class, its `doit` method, and the `_eval_product` helper function. The file `sympy/concrete/products.py` contains all this relevant context.' query='Please provide the full content of the file `sympy/concrete/products.py`.' extra_requirements='' purpose='I need to understand the original implementation of the `Product` class and its methods to verify the correctness of the patch and how it fixes the issue.'
+2025-12-21 18:22:08,279 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file `sympy/concrete/products.py`.
+2025-12-21 18:22:08,279 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 18:22:08,280 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 18:22:08,280 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 18:22:08,280 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file `sympy/concrete/products.py`.
+Purpose: I need to understand the original implementation of the `Product` class and its methods to verify the correctness of the patch and how it fixes the issue.
+2025-12-21 18:22:10,702 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the entire content of the `sympy/concrete/products.py` file. This will allow you to examine the `Product` class and its methods to understand the original implementation and assess the patch.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "sympy/concrete/products.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2103, 'candidates_token_count': 64, 'total_token_count': 2281, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2103}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 64}], 'thoughts_token_count': 114, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.08206740021705627, 'model_name': 'gemini-2.5-pro'} id='run--37810db8-5cf2-43c0-8cce-3640da0b667c-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'sympy/concrete/products.py'}, 'id': '10e29d8d-079c-493b-8518-522bde0b08cf', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2103, 'output_tokens': 64, 'total_tokens': 2281, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 114}}
+2025-12-21 18:23:05,207 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I need to get the full content of the file `sympy/concrete/products.py` to understand the implementation of the `Product` class. The `read_file_with_knowledge_graph_data` tool is the most suitable for this purpose as it reads the content of a file. I will call this tool with the relative path of the file.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "sympy/concrete/products.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 9415, 'candidates_token_count': 95, 'total_token_count': 14805, 'cached_content_token_count': 1850, 'prompt_tokens_details': [{'modality': 1, 'token_count': 9415}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1850}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 95}], 'thoughts_token_count': 5295}, 'finish_reason': 'STOP', 'avg_logprobs': -8.487041272615132, 'model_name': 'gemini-2.5-pro'} id='run--2cf1e796-4210-4332-9542-6ede6a2a760b-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'sympy/concrete/products.py'}, 'id': '25517827-5d94-4628-9e4b-77c8ece47911', 'type': 'tool_call'}] usage_metadata={'input_tokens': 9415, 'output_tokens': 95, 'total_tokens': 14805, 'input_token_details': {'cache_read': 1850}, 'output_token_details': {'reasoning': 5295}}
+2025-12-21 18:23:09,422 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `sympy/concrete/products.py`. You can now review the original implementation of the `Product` class and its methods. This will help you to understand the codebase and verify the correctness of the patch.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 16758, 'candidates_token_count': 49, 'total_token_count': 17098, 'cached_content_token_count': 9570, 'prompt_tokens_details': [{'modality': 1, 'token_count': 16758}], 'cache_tokens_details': [{'modality': 1, 'token_count': 9570}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 49}], 'thoughts_token_count': 291}, 'finish_reason': 'STOP', 'avg_logprobs': -0.5941607027637715, 'model_name': 'gemini-2.5-pro'} id='run--96f69b46-cc84-434b-b710-c713f43e6d53-0' usage_metadata={'input_tokens': 16758, 'output_tokens': 49, 'total_tokens': 17098, 'input_token_details': {'cache_read': 9570}, 'output_token_details': {'reasoning': 291}}
+2025-12-21 18:23:09,424 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file `sympy/concrete/products.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to understand the original implementation of the `Product` class and its methods to verify the correctness of the patch and how it fixes the issue.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: sympy/concrete/products.py
+Line number range: 1 - 500
+Content:
+1. from __future__ import print_function, division
+2. 
+3. from sympy.tensor.indexed import Idx
+4. from sympy.core.mul import Mul
+5. from sympy.core.singleton import S
+6. from sympy.core.symbol import symbols
+7. from sympy.concrete.expr_with_intlimits import ExprWithIntLimits
+8. from sympy.functions.elementary.exponential import exp, log
+9. from sympy.polys import quo, roots
+10. from sympy.simplify import powsimp
+11. from sympy.core.compatibility import range
+12. 
+13. 
+14. class Product(ExprWithIntLimits):
+15.     r"""Represents unevaluated products.
+16. 
+17.     ``Product`` represents a finite or infinite product, with the first
+18.     argument being the general form of terms in the series, and the second
+19.     argument being ``(dummy_variable, start, end)``, with ``dummy_variable``
+20.     taking all integer values from ``start`` through ``end``. In accordance
+21.     with long-standing mathematical convention, the end term is included in
+22.     the product.
+23. 
+24.     Finite products
+25.     ===============
+26. 
+27.     For finite products (and products with symbolic limits assumed to be finite)
+28.     we follow the analogue of the summation convention described by Karr [1],
+29.     especially definition 3 of section 1.4. The product:
+30. 
+31.     .. math::
+32. 
+33.         \prod_{m \leq i < n} f(i)
+34. 
+35.     has *the obvious meaning* for `m < n`, namely:
+36. 
+37.     .. math::
+38. 
+39.         \prod_{m \leq i < n} f(i) = f(m) f(m+1) \cdot \ldots \cdot f(n-2) f(n-1)
+40. 
+41.     with the upper limit value `f(n)` excluded. The product over an empty set is
+42.     one if and only if `m = n`:
+43. 
+44.     .. math::
+45. 
+46.         \prod_{m \leq i < n} f(i) = 1  \quad \mathrm{for} \quad  m = n
+47. 
+48.     Finally, for all other products over empty sets we assume the following
+49.     definition:
+50. 
+51.     .. math::
+52. 
+53.         \prod_{m \leq i < n} f(i) = \frac{1}{\prod_{n \leq i < m} f(i)}  \quad \mathrm{for} \quad  m > n
+54. 
+55.     It is important to note that above we define all products with the upper
+56.     limit being exclusive. This is in contrast to the usual mathematical notation,
+57.     but does not affect the product convention. Indeed we have:
+58. 
+59.     .. math::
+60. 
+61.         \prod_{m \leq i < n} f(i) = \prod_{i = m}^{n - 1} f(i)
+62. 
+63.     where the difference in notation is intentional to emphasize the meaning,
+64.     with limits typeset on the top being inclusive.
+65. 
+66.     Examples
+67.     ========
+68. 
+69.     >>> from sympy.abc import a, b, i, k, m, n, x
+70.     >>> from sympy import Product, factorial, oo
+71.     >>> Product(k, (k, 1, m))
+72.     Product(k, (k, 1, m))
+73.     >>> Product(k, (k, 1, m)).doit()
+74.     factorial(m)
+75.     >>> Product(k**2,(k, 1, m))
+76.     Product(k**2, (k, 1, m))
+77.     >>> Product(k**2,(k, 1, m)).doit()
+78.     factorial(m)**2
+79. 
+80.     Wallis' product for pi:
+81. 
+82.     >>> W = Product(2*i/(2*i-1) * 2*i/(2*i+1), (i, 1, oo))
+83.     >>> W
+84.     Product(4*i**2/((2*i - 1)*(2*i + 1)), (i, 1, oo))
+85. 
+86.     Direct computation currently fails:
+87. 
+88.     >>> W.doit()
+89.     Product(4*i**2/((2*i - 1)*(2*i + 1)), (i, 1, oo))
+90. 
+91.     But we can approach the infinite product by a limit of finite products:
+92. 
+93.     >>> from sympy import limit
+94.     >>> W2 = Product(2*i/(2*i-1)*2*i/(2*i+1), (i, 1, n))
+95.     >>> W2
+96.     Product(4*i**2/((2*i - 1)*(2*i + 1)), (i, 1, n))
+97.     >>> W2e = W2.doit()
+98.     >>> W2e
+99.     2**(-2*n)*4**n*factorial(n)**2/(RisingFactorial(1/2, n)*RisingFactorial(3/2, n))
+100.     >>> limit(W2e, n, oo)
+101.     pi/2
+102. 
+103.     By the same formula we can compute sin(pi/2):
+104. 
+105.     >>> from sympy import pi, gamma, simplify
+106.     >>> P = pi * x * Product(1 - x**2/k**2, (k, 1, n))
+107.     >>> P = P.subs(x, pi/2)
+108.     >>> P
+109.     pi**2*Product(1 - pi**2/(4*k**2), (k, 1, n))/2
+110.     >>> Pe = P.doit()
+111.     >>> Pe
+112.     pi**2*RisingFactorial(1 + pi/2, n)*RisingFactorial(-pi/2 + 1, n)/(2*factorial(n)**2)
+113.     >>> Pe = Pe.rewrite(gamma)
+114.     >>> Pe
+115.     pi**2*gamma(n + 1 + pi/2)*gamma(n - pi/2 + 1)/(2*gamma(1 + pi/2)*gamma(-pi/2 + 1)*gamma(n + 1)**2)
+116.     >>> Pe = simplify(Pe)
+117.     >>> Pe
+118.     sin(pi**2/2)*gamma(n + 1 + pi/2)*gamma(n - pi/2 + 1)/gamma(n + 1)**2
+119.     >>> limit(Pe, n, oo)
+120.     sin(pi**2/2)
+121. 
+122.     Products with the lower limit being larger than the upper one:
+123. 
+124.     >>> Product(1/i, (i, 6, 1)).doit()
+125.     120
+126.     >>> Product(i, (i, 2, 5)).doit()
+127.     120
+128. 
+129.     The empty product:
+130. 
+131.     >>> Product(i, (i, n, n-1)).doit()
+132.     1
+133. 
+134.     An example showing that the symbolic result of a product is still
+135.     valid for seemingly nonsensical values of the limits. Then the Karr
+136.     convention allows us to give a perfectly valid interpretation to
+137.     those products by interchanging the limits according to the above rules:
+138. 
+139.     >>> P = Product(2, (i, 10, n)).doit()
+140.     >>> P
+141.     2**(n - 9)
+142.     >>> P.subs(n, 5)
+143.     1/16
+144.     >>> Product(2, (i, 10, 5)).doit()
+145.     1/16
+146.     >>> 1/Product(2, (i, 6, 9)).doit()
+147.     1/16
+148. 
+149.     An explicit example of the Karr summation convention applied to products:
+150. 
+151.     >>> P1 = Product(x, (i, a, b)).doit()
+152.     >>> P1
+153.     x**(-a + b + 1)
+154.     >>> P2 = Product(x, (i, b+1, a-1)).doit()
+155.     >>> P2
+156.     x**(a - b - 1)
+157.     >>> simplify(P1 * P2)
+158.     1
+159. 
+160.     And another one:
+161. 
+162.     >>> P1 = Product(i, (i, b, a)).doit()
+163.     >>> P1
+164.     RisingFactorial(b, a - b + 1)
+165.     >>> P2 = Product(i, (i, a+1, b-1)).doit()
+166.     >>> P2
+167.     RisingFactorial(a + 1, -a + b - 1)
+168.     >>> P1 * P2
+169.     RisingFactorial(b, a - b + 1)*RisingFactorial(a + 1, -a + b - 1)
+170.     >>> simplify(P1 * P2)
+171.     1
+172. 
+173.     See Also
+174.     ========
+175. 
+176.     Sum, summation
+177.     product
+178. 
+179.     References
+180.     ==========
+181. 
+182.     .. [1] Michael Karr, "Summation in Finite Terms", Journal of the ACM,
+183.            Volume 28 Issue 2, April 1981, Pages 305-350
+184.            http://dl.acm.org/citation.cfm?doid=322248.322255
+185.     .. [2] http://en.wikipedia.org/wiki/Multiplication#Capital_Pi_notation
+186.     .. [3] http://en.wikipedia.org/wiki/Empty_product
+187.     """
+188. 
+189.     __slots__ = ['is_commutative']
+190. 
+191.     def __new__(cls, function, *symbols, **assumptions):
+192.         obj = ExprWithIntLimits.__new__(cls, function, *symbols, **assumptions)
+193.         return obj
+194. 
+195.     def _eval_rewrite_as_Sum(self, *args):
+196.         from sympy.concrete.summations import Sum
+197.         return exp(Sum(log(self.function), *self.limits))
+198. 
+199.     @property
+200.     def term(self):
+201.         return self._args[0]
+202.     function = term
+203. 
+204.     def _eval_is_zero(self):
+205.         # a Product is zero only if its term is zero.
+206.         return self.term.is_zero
+207. 
+208.     def doit(self, **hints):
+209.         f = self.function
+210.         for index, limit in enumerate(self.limits):
+211.             i, a, b = limit
+212.             dif = b - a
+213.             if dif.is_Integer and dif < 0:
+214.                 a, b = b + 1, a - 1
+215.                 f = 1 / f
+216. 
+217.             g = self._eval_product(f, (i, a, b))
+218.             if g in (None, S.NaN):
+219.                 return self.func(powsimp(f), *self.limits[index:])
+220.             else:
+221.                 f = g
+222. 
+223.         if hints.get('deep', True):
+224.             return f.doit(**hints)
+225.         else:
+226.             return powsimp(f)
+227. 
+228.     def _eval_adjoint(self):
+229.         if self.is_commutative:
+230.             return self.func(self.function.adjoint(), *self.limits)
+231.         return None
+232. 
+233.     def _eval_conjugate(self):
+234.         return self.func(self.function.conjugate(), *self.limits)
+235. 
+236.     def _eval_product(self, term, limits):
+237.         from sympy.concrete.delta import deltaproduct, _has_simple_delta
+238.         from sympy.concrete.summations import summation
+239.         from sympy.functions import KroneckerDelta, RisingFactorial
+240. 
+241.         (k, a, n) = limits
+242. 
+243.         if k not in term.free_symbols:
+244.             if (term - 1).is_zero:
+245.                 return S.One
+246.             return term**(n - a + 1)
+247. 
+248.         if a == n:
+249.             return term.subs(k, a)
+250. 
+251.         if term.has(KroneckerDelta) and _has_simple_delta(term, limits[0]):
+252.             return deltaproduct(term, limits)
+253. 
+254.         dif = n - a
+255.         if dif.is_Integer:
+256.             return Mul(*[term.subs(k, a + i) for i in range(dif + 1)])
+257. 
+258.         elif term.is_polynomial(k):
+259.             poly = term.as_poly(k)
+260. 
+261.             A = B = Q = S.One
+262. 
+263.             all_roots = roots(poly)
+264. 
+265.             M = 0
+266.             for r, m in all_roots.items():
+267.                 M += m
+268.                 A *= RisingFactorial(a - r, n - a + 1)**m
+269.                 Q *= (n - r)**m
+270. 
+271.             if M < poly.degree():
+272.                 arg = quo(poly, Q.as_poly(k))
+273.                 B = self.func(arg, (k, a, n)).doit()
+274. 
+275.             return poly.LC()**(n - a + 1) * A * B
+276. 
+277.         elif term.is_Add:
+278.             p, q = term.as_numer_denom()
+279.             q = self._eval_product(q, (k, a, n))
+280.             if q.is_Number:
+281. 
+282.                 # There is expression, which couldn't change by
+283.                 # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).
+284.                 # We have to catch this case.
+285. 
+286.                 p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])
+287.             else:
+288.                 p = self._eval_product(p, (k, a, n))
+289.             return p / q
+290. 
+291.         elif term.is_Mul:
+292.             exclude, include = [], []
+293. 
+294.             for t in term.args:
+295.                 p = self._eval_product(t, (k, a, n))
+296. 
+297.                 if p is not None:
+298.                     exclude.append(p)
+299.                 else:
+300.                     include.append(t)
+301. 
+302.             if not exclude:
+303.                 return None
+304.             else:
+305.                 arg = term._new_rawargs(*include)
+306.                 A = Mul(*exclude)
+307.                 B = self.func(arg, (k, a, n)).doit()
+308.                 return A * B
+309. 
+310.         elif term.is_Pow:
+311.             if not term.base.has(k):
+312.                 s = summation(term.exp, (k, a, n))
+313. 
+314.                 return term.base**s
+315.             elif not term.exp.has(k):
+316.                 p = self._eval_product(term.base, (k, a, n))
+317. 
+318.                 if p is not None:
+319.                     return p**term.exp
+320. 
+321.         elif isinstance(term, Product):
+322.             evaluated = term.doit()
+323.             f = self._eval_product(evaluated, limits)
+324.             if f is None:
+325.                 return self.func(evaluated, limits)
+326.             else:
+327.                 return f
+328. 
+329.     def _eval_simplify(self, ratio, measure):
+330.         from sympy.simplify.simplify import product_simplify
+331.         return product_simplify(self)
+332. 
+333.     def _eval_transpose(self):
+334.         if self.is_commutative:
+335.             return self.func(self.function.transpose(), *self.limits)
+336.         return None
+337. 
+338.     def is_convergent(self):
+339.         r"""
+340.         See docs of Sum.is_convergent() for explanation of convergence
+341.         in SymPy.
+342. 
+343.         The infinite product:
+344. 
+345.         .. math::
+346. 
+347.             \prod_{1 \leq i < \infty} f(i)
+348. 
+349.         is defined by the sequence of partial products:
+350. 
+351.         .. math::
+352. 
+353.             \prod_{i=1}^{n} f(i) = f(1) f(2) \cdots f(n)
+354. 
+355.         as n increases without bound. The product converges to a non-zero
+356.         value if and only if the sum:
+357. 
+358.         .. math::
+359. 
+360.             \sum_{1 \leq i < \infty} \log{f(n)}
+361. 
+362.         converges.
+363. 
+364.         References
+365.         ==========
+366. 
+367.         .. [1] https://en.wikipedia.org/wiki/Infinite_product
+368. 
+369.         Examples
+370.         ========
+371. 
+372.         >>> from sympy import Interval, S, Product, Symbol, cos, pi, exp, oo
+373.         >>> n = Symbol('n', integer=True)
+374.         >>> Product(n/(n + 1), (n, 1, oo)).is_convergent()
+375.         False
+376.         >>> Product(1/n**2, (n, 1, oo)).is_convergent()
+377.         False
+378.         >>> Product(cos(pi/n), (n, 1, oo)).is_convergent()
+379.         True
+380.         >>> Product(exp(-n**2), (n, 1, oo)).is_convergent()
+381.         False
+382.         """
+383.         from sympy.concrete.summations import Sum
+384. 
+385.         sequence_term = self.function
+386.         log_sum = log(sequence_term)
+387.         lim = self.limits
+388.         try:
+389.             is_conv = Sum(log_sum, *lim).is_convergent()
+390.         except NotImplementedError:
+391.             if Sum(sequence_term - 1, *lim).is_absolutely_convergent() is S.true:
+392.                 return S.true
+393.             raise NotImplementedError("The algorithm to find the product convergence of %s "
+394.                                         "is not yet implemented" % (sequence_term))
+395.         return is_conv
+396. 
+397.     def reverse_order(expr, *indices):
+398.         """
+399.         Reverse the order of a limit in a Product.
+400. 
+401.         Usage
+402.         =====
+403. 
+404.         ``reverse_order(expr, *indices)`` reverses some limits in the expression
+405.         ``expr`` which can be either a ``Sum`` or a ``Product``. The selectors in
+406.         the argument ``indices`` specify some indices whose limits get reversed.
+407.         These selectors are either variable names or numerical indices counted
+408.         starting from the inner-most limit tuple.
+409. 
+410.         Examples
+411.         ========
+412. 
+413.         >>> from sympy import Product, simplify, RisingFactorial, gamma, Sum
+414.         >>> from sympy.abc import x, y, a, b, c, d
+415.         >>> P = Product(x, (x, a, b))
+416.         >>> Pr = P.reverse_order(x)
+417.         >>> Pr
+418.         Product(1/x, (x, b + 1, a - 1))
+419.         >>> Pr = Pr.doit()
+420.         >>> Pr
+421.         1/RisingFactorial(b + 1, a - b - 1)
+422.         >>> simplify(Pr)
+423.         gamma(b + 1)/gamma(a)
+424.         >>> P = P.doit()
+425.         >>> P
+426.         RisingFactorial(a, -a + b + 1)
+427.         >>> simplify(P)
+428.         gamma(b + 1)/gamma(a)
+429. 
+430.         While one should prefer variable names when specifying which limits
+431.         to reverse, the index counting notation comes in handy in case there
+432.         are several symbols with the same name.
+433. 
+434.         >>> S = Sum(x*y, (x, a, b), (y, c, d))
+435.         >>> S
+436.         Sum(x*y, (x, a, b), (y, c, d))
+437.         >>> S0 = S.reverse_order(0)
+438.         >>> S0
+439.         Sum(-x*y, (x, b + 1, a - 1), (y, c, d))
+440.         >>> S1 = S0.reverse_order(1)
+441.         >>> S1
+442.         Sum(x*y, (x, b + 1, a - 1), (y, d + 1, c - 1))
+443. 
+444.         Of course we can mix both notations:
+445. 
+446.         >>> Sum(x*y, (x, a, b), (y, 2, 5)).reverse_order(x, 1)
+447.         Sum(x*y, (x, b + 1, a - 1), (y, 6, 1))
+448.         >>> Sum(x*y, (x, a, b), (y, 2, 5)).reverse_order(y, x)
+449.         Sum(x*y, (x, b + 1, a - 1), (y, 6, 1))
+450. 
+451.         See Also
+452.         ========
+453. 
+454.         index, reorder_limit, reorder
+455. 
+456.         References
+457.         ==========
+458. 
+459.         .. [1] Michael Karr, "Summation in Finite Terms", Journal of the ACM,
+460.                Volume 28 Issue 2, April 1981, Pages 305-350
+461.                http://dl.acm.org/citation.cfm?doid=322248.322255
+462.         """
+463.         l_indices = list(indices)
+464. 
+465.         for i, indx in enumerate(l_indices):
+466.             if not isinstance(indx, int):
+467.                 l_indices[i] = expr.index(indx)
+468. 
+469.         e = 1
+470.         limits = []
+471.         for i, limit in enumerate(expr.limits):
+472.             l = limit
+473.             if i in l_indices:
+474.                 e = -e
+475.                 l = (limit[0], limit[2] + 1, limit[1] - 1)
+476.             limits.append(l)
+477. 
+478.         return Product(expr.function ** e, *limits)
+479. 
+480. 
+481. def product(*args, **kwargs):
+482.     r"""
+483.     Compute the product.
+484. 
+485.     The notation for symbols is similar to the notation used in Sum or
+486.     Integral. product(f, (i, a, b)) computes the product of f with
+487.     respect to i from a to b, i.e.,
+488. 
+489.     ::
+490. 
+491.                                      b
+492.                                    _____
+493.         product(f(n), (i, a, b)) = |   | f(n)
+494.                                    |   |
+495.                                    i = a
+496. 
+497.     If it cannot compute the product, it returns an unevaluated Product object.
+498.     Repeated products can be computed by introducing additional symbols tuples::
+499. 
+500.     >>> from sympy import product, symbols
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 18:23:13,545 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='The user requested the full content of the file `sympy/concrete/products.py`. The provided context contains the entire file, so I am returning the whole content as requested.', relative_path='sympy/concrete/products.py', start_line=1, end_line=500)]
+2025-12-21 18:23:13,553 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the file `sympy/concrete/products.py`.
+2025-12-21 18:23:13,553 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 18:23:13,553 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 18:23:13,554 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 18:23:13,554 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 18:23:13,554 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .travis.yml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.rst
+├── bin
+|   ├── ask_update.py
+|   ├── authors_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_update.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_import.py
+|   ├── test_setup.py
+|   └── test_travis.sh
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   ├── numpydoc.py
+|   |   └── sympylive.py
+|   ├── generate_logos.py
+|   ├── man
+|   |   └── isympy.xml
+|   └── src
+|       ├── _static
+|       ├── _templates
+|       |   └── layout.html
+|       ├── aboutus.rst
+|       ├── citing.rst
+|       ├── conf.py
+|       ├── gotchas.rst
+|       ├── guide.rst
+|       ├── index.rst
+|       ├── install.rst
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── handlers
+|       |   |   ├── index.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── index.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   └── integrals.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   └── sparse.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── hyperexpand.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   └── tensor.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   ├── runtests.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       └── intro.rst
+|       ├── outreach.rst
+|       ├── pics
+|       ├── python-comparisons.rst
+|       ├── special_topics
+|       |   ├── finite_diff_derivatives.rst
+|       |   ├── index.rst
+|       |   └── intro.rst
+|       ├── tutorial
+|       |   ├── basic_operations.rst
+|       |   ├── calculus.rst
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── intro.rst
+|       |   ├── manipulation.rst
+|       |   ├── matrices.rst
+|       |   ├── preliminaries.rst
+|       |   ├── printing.rst
+|       |   ├── simplification.rst
+|       |   └── solvers.rst
+|       └── wiki.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── isympy.py
+├── release
+|   ├── Dockerfile
+|   ├── README.md
+|   ├── fabfile.py
+|   ├── pull_and_run_rever.sh
+|   └── release.sh
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_assumptions_2.py
+    |       ├── test_context.py
+    |       ├── test_matrices.py
+    |       ├── test_query.py
+    |       ├── test_refine.py
+    |       ├── test_satask.py
+    |       └── test_sathandlers.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── ffunctions.py
+    |   ├── rewriting.py
+    |   └── tests
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_ffunctions.py
+    |       └── test_rewriting.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── evaluate.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── power.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_eval_power.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_evaluate.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_trace.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   └── trace.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── deprecated
+    |   ├── __init__.py
+    |   ├── class_registry.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_class_registry.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── importtools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_sage.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── linearsolver.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── rubi
+    |   |   ├── __init__.py
+    |   |   ├── parsetools
+    |   |   |   ├── __init__.py
+    |   |   |   ├── parse.py
+    |   |   |   └── tests
+    |   |   ├── rubi.py
+    |   |   ├── rules
+    |   |   |   ├── __init__.py
+    |   |   |   ├── binomial_products.py
+    |   |   |   ├── exponential.py
+    |   |   |   ├── hyperbolic.py
+    |   |   |   ├── integrand_simplification.py
+    |   |   |   ├── inverse_hyperbolic.py
+    |   |   |   ├── inverse_trig.py
+    |   |   |   ├── linear_products.py
+    |   |   |   ├── logarithms.py
+    |   |   |   ├── miscellaneous_algebraic.py
+    |   |   |   ├── miscellaneous_integration.py
+    |   |   |   ├── miscellaneous_trig.py
+    |   |   |   ├── piecewise_linear.py
+    |   |   |   ├── quadratic_products.py
+    |   |   |   ├── secant.py
+    |   |   |   ├── sine.py
+    |   |   |   ├── tangent.py
+    |   |   |   └── trinomial_products.py
+    |   |   ├── symbol.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_1_2.py
+    |   |   |   ├── test_1_3.py
+    |   |   |   ├── test_1_4.py
+    |   |   |   ├── test_rubi_integrate.py
+    |   |   |   └── test_utility_function.py
+    |   |   └── utility_function.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── ipythonprinting.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_interactive.py
+    |       ├── test_ipython.py
+    |       └── test_ipythonprinting.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   └── dpll2.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── dense.py
+    |   ├── densearith.py
+    |   ├── densesolve.py
+    |   ├── densetools.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── slice.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── immutable.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_commonmatrix.py
+    |       ├── test_densearith.py
+    |       ├── test_densesolve.py
+    |       ├── test_densetools.py
+    |       ├── test_immutable.py
+    |       ├── test_interactions.py
+    |       ├── test_matrices.py
+    |       ├── test_normalforms.py
+    |       ├── test_sparse.py
+    |       └── test_sparsetools.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── egyptian_fraction.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sympy_parser.py
+    |   ├── sympy_tokenize.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_beam.py
+    |   ├── gaussopt.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_anticommutator.py
+    |   |       ├── test_boson.py
+    |   |       ├── test_cartesian.py
+    |   |       ├── test_cg.py
+    |   |       ├── test_circuitplot.py
+    |   |       ├── test_circuitutils.py
+    |   |       ├── test_commutator.py
+    |   |       ├── test_constants.py
+    |   |       ├── test_dagger.py
+    |   |       ├── test_density.py
+    |   |       ├── test_fermion.py
+    |   |       ├── test_gate.py
+    |   |       ├── test_grover.py
+    |   |       ├── test_hilbert.py
+    |   |       ├── test_identitysearch.py
+    |   |       ├── test_innerproduct.py
+    |   |       ├── test_matrixutils.py
+    |   |       ├── test_operator.py
+    |   |       ├── test_operatorordering.py
+    |   |       ├── test_operatorset.py
+    |   |       ├── test_pauli.py
+    |   |       ├── test_piab.py
+    |   |       ├── test_printing.py
+    |   |       ├── test_qapply.py
+    |   |       ├── test_qasm.py
+    |   |       ├── test_qexpr.py
+    |   |       ├── test_qft.py
+    |   |       ├── test_qubit.py
+    |   |       ├── test_represent.py
+    |   |       ├── test_sho1d.py
+    |   |       ├── test_shor.py
+    |   |       ├── test_spin.py
+    |   |       ├── test_state.py
+    |   |       └── test_tensorproduct.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── unitsystems.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_plot.py
+    |   |   └── test_plot_implicit.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── extensions.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_extensions.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── numberfields.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_numberfields.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── ccode.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxxcode.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fcode.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_ccode.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cxxcode.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fcode.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   └── test_theanocode.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   ├── test_traversaltools.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_diophantine.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_ode.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_mix.py
+    |       ├── test_rv.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       └── test_mutable_ndim_array.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_index_methods.py
+    |       ├── test_indexed.py
+    |       └── test_tensor.py
+    ├── this.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── autowrap.py
+    |   ├── benchmarking.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_module_imports.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_pytest.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   └── timeutils.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── operators.py
+        ├── orienters.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_operators.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Product(n + 1 / 2**k, [k, 0, n-1]) is incorrect
+
+Description:     >>> from sympy import *
+    >>> from sympy.abc import n,k
+    >>> p = Product(n + 1 / 2**k, [k, 0, n-1]).doit()
+    >>> print(simplify(p))
+    2**(n*(-n + 1)/2) + n**n
+    >>> print(p.subs(n,2))
+    9/2
+
+This is incorrect- for example, the product for `n=2` is `(2 + 2^0) * (2 + 2^(-1)) = 15/2`. The correct expression involves the [q-Pochhammer symbol](https://www.wolframalpha.com/input/?i=product+of+n+%2B+1%2F2%5Ek+from+k%3D0+to+n-1).
+
+Patch information:
+diff --git a/sympy/concrete/products.py b/sympy/concrete/products.py
+index 66aafde2d6..e9179532e3 100644
+--- a/sympy/concrete/products.py
++++ b/sympy/concrete/products.py
+@@ -275,18 +275,39 @@ def _eval_product(self, term, limits):
+             return poly.LC()**(n - a + 1) * A * B
+ 
+         elif term.is_Add:
++            # Handle special form: A + B*C**(alpha*k + beta) with A, B, C independent of k
++            A0, Rsum = term.as_independent(k)
++            if (not A0.has(k)) and (A0.is_zero is not True) and (Rsum.is_zero is not True):
++                B0, R = Rsum.as_independent(k, as_Add=False)
++                if R.is_Pow and not R.base.has(k):
++                    E = R.exp
++                    Ep = E.as_poly(k)
++                    if Ep is not None and Ep.degree() == 1:
++                        alpha, beta = Ep.all_coeffs()
++                        if alpha.is_zero is True:
++                            return None
++                        qbase = R.base**alpha
++                        Bprime = B0 * (R.base**beta)
++                        m = n - a + 1
++                        q_poch = None
++                        try:
++                            from sympy.functions.special.q_functions import q_pochhammer as q_poch
++                        except ImportError:
++                            try:
++                                from sympy import q_pochhammer as q_poch
++                            except ImportError:
++                                q_poch = None
++                        if q_poch is not None:
++                            return A0**m * q_poch(-(Bprime/A0)*qbase**a, qbase, m)
++            # Conservative handling for generic Add: avoid distributing product over addition
+             p, q = term.as_numer_denom()
+-            q = self._eval_product(q, (k, a, n))
+-            if q.is_Number:
+-
+-                # There is expression, which couldn't change by
+-                # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).
+-                # We have to catch this case.
+-
+-                p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])
+-            else:
+-                p = self._eval_product(p, (k, a, n))
+-            return p / q
++            q_eval = self._eval_product(q, (k, a, n))
++            p_eval = self._eval_product(p, (k, a, n))
++            if p_eval is not None and q_eval is not None:
++                return p_eval / q_eval
++            if q_eval is not None:
++                return self.func(p, (k, a, n)) / q_eval
++            return None
+ 
+         elif term.is_Mul:
+             exclude, include = [], []
+diff --git a/sympy/functions/__init__.py b/sympy/functions/__init__.py
+index 0c8fda287d..3b7daa507c 100644
+--- a/sympy/functions/__init__.py
++++ b/sympy/functions/__init__.py
+@@ -46,4 +46,5 @@
+ from sympy.functions.special.beta_functions import beta
+ from sympy.functions.special.mathieu_functions import (mathieus, mathieuc,
+         mathieusprime, mathieucprime)
++from sympy.functions.special.q_functions import q_pochhammer
+ ln = log
+diff --git a/sympy/functions/special/__init__.py b/sympy/functions/special/__init__.py
+index f227799549..13b67d53a4 100644
+--- a/sympy/functions/special/__init__.py
++++ b/sympy/functions/special/__init__.py
+@@ -9,3 +9,4 @@
+ from . import singularity_functions
+ 
+ from . import polynomials
++from . import q_functions
+diff --git a/sympy/functions/special/q_functions.py b/sympy/functions/special/q_functions.py
+new file mode 100644
+index 0000000000..d3c6f0c5f3
+--- /dev/null
++++ b/sympy/functions/special/q_functions.py
+@@ -0,0 +1,37 @@
++from __future__ import print_function, division
++
++from sympy.core import S, sympify
++from sympy.core.function import Function, ArgumentIndexError
++from sympy.core.mul import Mul
++from sympy.core.compatibility import range
++
++class q_pochhammer(Function):
++    """
++    The q-Pochhammer symbol (a; q)_m defined as:
++        (a; q)_m = Product_{i=0}^{m-1} (1 - a*q**i)
++    This minimal implementation evaluates for nonnegative integer m.
++    """
++    @classmethod
++    def eval(cls, a, q, m):
++        a = sympify(a)
++        q = sympify(q)
++        m = sympify(m)
++        if m.is_Number:
++            if m is S.NaN:
++                return S.NaN
++            if m.is_Integer:
++                if m.is_negative:
++                    # Leave unevaluated for negative m in this minimal implementation
++                    return
++                mm = int(m)
++                if mm == 0:
++                    return S.One
++                # finite product
++                res = S.One
++                for i in range(mm):
++                    res *= (S.One - a*q**i)
++                return res
++
++    def fdiff(self, argindex=3):
++        # Derivatives not implemented in this minimal version
++        raise ArgumentIndexError(self, argindex)
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file `sympy/concrete/products.py`.
+Extra Requirements: 
+Purpose: I need to understand the original implementation of the `Product` class and its methods to verify the correctness of the patch and how it fixes the issue.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: sympy/concrete/products.py
+Line number range: 1 - 500
+Content:
+1. from __future__ import print_function, division
+2. 
+3. from sympy.tensor.indexed import Idx
+4. from sympy.core.mul import Mul
+5. from sympy.core.singleton import S
+6. from sympy.core.symbol import symbols
+7. from sympy.concrete.expr_with_intlimits import ExprWithIntLimits
+8. from sympy.functions.elementary.exponential import exp, log
+9. from sympy.polys import quo, roots
+10. from sympy.simplify import powsimp
+11. from sympy.core.compatibility import range
+12. 
+13. 
+14. class Product(ExprWithIntLimits):
+15.     r"""Represents unevaluated products.
+16. 
+17.     ``Product`` represents a finite or infinite product, with the first
+18.     argument being the general form of terms in the series, and the second
+19.     argument being ``(dummy_variable, start, end)``, with ``dummy_variable``
+20.     taking all integer values from ``start`` through ``end``. In accordance
+21.     with long-standing mathematical convention, the end term is included in
+22.     the product.
+23. 
+24.     Finite products
+25.     ===============
+26. 
+27.     For finite products (and products with symbolic limits assumed to be finite)
+28.     we follow the analogue of the summation convention described by Karr [1],
+29.     especially definition 3 of section 1.4. The product:
+30. 
+31.     .. math::
+32. 
+33.         \prod_{m \leq i < n} f(i)
+34. 
+35.     has *the obvious meaning* for `m < n`, namely:
+36. 
+37.     .. math::
+38. 
+39.         \prod_{m \leq i < n} f(i) = f(m) f(m+1) \cdot \ldots \cdot f(n-2) f(n-1)
+40. 
+41.     with the upper limit value `f(n)` excluded. The product over an empty set is
+42.     one if and only if `m = n`:
+43. 
+44.     .. math::
+45. 
+46.         \prod_{m \leq i < n} f(i) = 1  \quad \mathrm{for} \quad  m = n
+47. 
+48.     Finally, for all other products over empty sets we assume the following
+49.     definition:
+50. 
+51.     .. math::
+52. 
+53.         \prod_{m \leq i < n} f(i) = \frac{1}{\prod_{n \leq i < m} f(i)}  \quad \mathrm{for} \quad  m > n
+54. 
+55.     It is important to note that above we define all products with the upper
+56.     limit being exclusive. This is in contrast to the usual mathematical notation,
+57.     but does not affect the product convention. Indeed we have:
+58. 
+59.     .. math::
+60. 
+61.         \prod_{m \leq i < n} f(i) = \prod_{i = m}^{n - 1} f(i)
+62. 
+63.     where the difference in notation is intentional to emphasize the meaning,
+64.     with limits typeset on the top being inclusive.
+65. 
+66.     Examples
+67.     ========
+68. 
+69.     >>> from sympy.abc import a, b, i, k, m, n, x
+70.     >>> from sympy import Product, factorial, oo
+71.     >>> Product(k, (k, 1, m))
+72.     Product(k, (k, 1, m))
+73.     >>> Product(k, (k, 1, m)).doit()
+74.     factorial(m)
+75.     >>> Product(k**2,(k, 1, m))
+76.     Product(k**2, (k, 1, m))
+77.     >>> Product(k**2,(k, 1, m)).doit()
+78.     factorial(m)**2
+79. 
+80.     Wallis' product for pi:
+81. 
+82.     >>> W = Product(2*i/(2*i-1) * 2*i/(2*i+1), (i, 1, oo))
+83.     >>> W
+84.     Product(4*i**2/((2*i - 1)*(2*i + 1)), (i, 1, oo))
+85. 
+86.     Direct computation currently fails:
+87. 
+88.     >>> W.doit()
+89.     Product(4*i**2/((2*i - 1)*(2*i + 1)), (i, 1, oo))
+90. 
+91.     But we can approach the infinite product by a limit of finite products:
+92. 
+93.     >>> from sympy import limit
+94.     >>> W2 = Product(2*i/(2*i-1)*2*i/(2*i+1), (i, 1, n))
+95.     >>> W2
+96.     Product(4*i**2/((2*i - 1)*(2*i + 1)), (i, 1, n))
+97.     >>> W2e = W2.doit()
+98.     >>> W2e
+99.     2**(-2*n)*4**n*factorial(n)**2/(RisingFactorial(1/2, n)*RisingFactorial(3/2, n))
+100.     >>> limit(W2e, n, oo)
+101.     pi/2
+102. 
+103.     By the same formula we can compute sin(pi/2):
+104. 
+105.     >>> from sympy import pi, gamma, simplify
+106.     >>> P = pi * x * Product(1 - x**2/k**2, (k, 1, n))
+107.     >>> P = P.subs(x, pi/2)
+108.     >>> P
+109.     pi**2*Product(1 - pi**2/(4*k**2), (k, 1, n))/2
+110.     >>> Pe = P.doit()
+111.     >>> Pe
+112.     pi**2*RisingFactorial(1 + pi/2, n)*RisingFactorial(-pi/2 + 1, n)/(2*factorial(n)**2)
+113.     >>> Pe = Pe.rewrite(gamma)
+114.     >>> Pe
+115.     pi**2*gamma(n + 1 + pi/2)*gamma(n - pi/2 + 1)/(2*gamma(1 + pi/2)*gamma(-pi/2 + 1)*gamma(n + 1)**2)
+116.     >>> Pe = simplify(Pe)
+117.     >>> Pe
+118.     sin(pi**2/2)*gamma(n + 1 + pi/2)*gamma(n - pi/2 + 1)/gamma(n + 1)**2
+119.     >>> limit(Pe, n, oo)
+120.     sin(pi**2/2)
+121. 
+122.     Products with the lower limit being larger than the upper one:
+123. 
+124.     >>> Product(1/i, (i, 6, 1)).doit()
+125.     120
+126.     >>> Product(i, (i, 2, 5)).doit()
+127.     120
+128. 
+129.     The empty product:
+130. 
+131.     >>> Product(i, (i, n, n-1)).doit()
+132.     1
+133. 
+134.     An example showing that the symbolic result of a product is still
+135.     valid for seemingly nonsensical values of the limits. Then the Karr
+136.     convention allows us to give a perfectly valid interpretation to
+137.     those products by interchanging the limits according to the above rules:
+138. 
+139.     >>> P = Product(2, (i, 10, n)).doit()
+140.     >>> P
+141.     2**(n - 9)
+142.     >>> P.subs(n, 5)
+143.     1/16
+144.     >>> Product(2, (i, 10, 5)).doit()
+145.     1/16
+146.     >>> 1/Product(2, (i, 6, 9)).doit()
+147.     1/16
+148. 
+149.     An explicit example of the Karr summation convention applied to products:
+150. 
+151.     >>> P1 = Product(x, (i, a, b)).doit()
+152.     >>> P1
+153.     x**(-a + b + 1)
+154.     >>> P2 = Product(x, (i, b+1, a-1)).doit()
+155.     >>> P2
+156.     x**(a - b - 1)
+157.     >>> simplify(P1 * P2)
+158.     1
+159. 
+160.     And another one:
+161. 
+162.     >>> P1 = Product(i, (i, b, a)).doit()
+163.     >>> P1
+164.     RisingFactorial(b, a - b + 1)
+165.     >>> P2 = Product(i, (i, a+1, b-1)).doit()
+166.     >>> P2
+167.     RisingFactorial(a + 1, -a + b - 1)
+168.     >>> P1 * P2
+169.     RisingFactorial(b, a - b + 1)*RisingFactorial(a + 1, -a + b - 1)
+170.     >>> simplify(P1 * P2)
+171.     1
+172. 
+173.     See Also
+174.     ========
+175. 
+176.     Sum, summation
+177.     product
+178. 
+179.     References
+180.     ==========
+181. 
+182.     .. [1] Michael Karr, "Summation in Finite Terms", Journal of the ACM,
+183.            Volume 28 Issue 2, April 1981, Pages 305-350
+184.            http://dl.acm.org/citation.cfm?doid=322248.322255
+185.     .. [2] http://en.wikipedia.org/wiki/Multiplication#Capital_Pi_notation
+186.     .. [3] http://en.wikipedia.org/wiki/Empty_product
+187.     """
+188. 
+189.     __slots__ = ['is_commutative']
+190. 
+191.     def __new__(cls, function, *symbols, **assumptions):
+192.         obj = ExprWithIntLimits.__new__(cls, function, *symbols, **assumptions)
+193.         return obj
+194. 
+195.     def _eval_rewrite_as_Sum(self, *args):
+196.         from sympy.concrete.summations import Sum
+197.         return exp(Sum(log(self.function), *self.limits))
+198. 
+199.     @property
+200.     def term(self):
+201.         return self._args[0]
+202.     function = term
+203. 
+204.     def _eval_is_zero(self):
+205.         # a Product is zero only if its term is zero.
+206.         return self.term.is_zero
+207. 
+208.     def doit(self, **hints):
+209.         f = self.function
+210.         for index, limit in enumerate(self.limits):
+211.             i, a, b = limit
+212.             dif = b - a
+213.             if dif.is_Integer and dif < 0:
+214.                 a, b = b + 1, a - 1
+215.                 f = 1 / f
+216. 
+217.             g = self._eval_product(f, (i, a, b))
+218.             if g in (None, S.NaN):
+219.                 return self.func(powsimp(f), *self.limits[index:])
+220.             else:
+221.                 f = g
+222. 
+223.         if hints.get('deep', True):
+224.             return f.doit(**hints)
+225.         else:
+226.             return powsimp(f)
+227. 
+228.     def _eval_adjoint(self):
+229.         if self.is_commutative:
+230.             return self.func(self.function.adjoint(), *self.limits)
+231.         return None
+232. 
+233.     def _eval_conjugate(self):
+234.         return self.func(self.function.conjugate(), *self.limits)
+235. 
+236.     def _eval_product(self, term, limits):
+237.         from sympy.concrete.delta import deltaproduct, _has_simple_delta
+238.         from sympy.concrete.summations import summation
+239.         from sympy.functions import KroneckerDelta, RisingFactorial
+240. 
+241.         (k, a, n) = limits
+242. 
+243.         if k not in term.free_symbols:
+244.             if (term - 1).is_zero:
+245.                 return S.One
+246.             return term**(n - a + 1)
+247. 
+248.         if a == n:
+249.             return term.subs(k, a)
+250. 
+251.         if term.has(KroneckerDelta) and _has_simple_delta(term, limits[0]):
+252.             return deltaproduct(term, limits)
+253. 
+254.         dif = n - a
+255.         if dif.is_Integer:
+256.             return Mul(*[term.subs(k, a + i) for i in range(dif + 1)])
+257. 
+258.         elif term.is_polynomial(k):
+259.             poly = term.as_poly(k)
+260. 
+261.             A = B = Q = S.One
+262. 
+263.             all_roots = roots(poly)
+264. 
+265.             M = 0
+266.             for r, m in all_roots.items():
+267.                 M += m
+268.                 A *= RisingFactorial(a - r, n - a + 1)**m
+269.                 Q *= (n - r)**m
+270. 
+271.             if M < poly.degree():
+272.                 arg = quo(poly, Q.as_poly(k))
+273.                 B = self.func(arg, (k, a, n)).doit()
+274. 
+275.             return poly.LC()**(n - a + 1) * A * B
+276. 
+277.         elif term.is_Add:
+278.             p, q = term.as_numer_denom()
+279.             q = self._eval_product(q, (k, a, n))
+280.             if q.is_Number:
+281. 
+282.                 # There is expression, which couldn't change by
+283.                 # as_numer_denom(). E.g. n**(2/3) + 1 --> (n**(2/3) + 1, 1).
+284.                 # We have to catch this case.
+285. 
+286.                 p = sum([self._eval_product(i, (k, a, n)) for i in p.as_coeff_Add()])
+287.             else:
+288.                 p = self._eval_product(p, (k, a, n))
+289.             return p / q
+290. 
+291.         elif term.is_Mul:
+292.             exclude, include = [], []
+293. 
+294.             for t in term.args:
+295.                 p = self._eval_product(t, (k, a, n))
+296. 
+297.                 if p is not None:
+298.                     exclude.append(p)
+299.                 else:
+300.                     include.append(t)
+301. 
+302.             if not exclude:
+303.                 return None
+304.             else:
+305.                 arg = term._new_rawargs(*include)
+306.                 A = Mul(*exclude)
+307.                 B = self.func(arg, (k, a, n)).doit()
+308.                 return A * B
+309. 
+310.         elif term.is_Pow:
+311.             if not term.base.has(k):
+312.                 s = summation(term.exp, (k, a, n))
+313. 
+314.                 return term.base**s
+315.             elif not term.exp.has(k):
+316.                 p = self._eval_product(term.base, (k, a, n))
+317. 
+318.                 if p is not None:
+319.                     return p**term.exp
+320. 
+321.         elif isinstance(term, Product):
+322.             evaluated = term.doit()
+323.             f = self._eval_product(evaluated, limits)
+324.             if f is None:
+325.                 return self.func(evaluated, limits)
+326.             else:
+327.                 return f
+328. 
+329.     def _eval_simplify(self, ratio, measure):
+330.         from sympy.simplify.simplify import product_simplify
+331.         return product_simplify(self)
+332. 
+333.     def _eval_transpose(self):
+334.         if self.is_commutative:
+335.             return self.func(self.function.transpose(), *self.limits)
+336.         return None
+337. 
+338.     def is_convergent(self):
+339.         r"""
+340.         See docs of Sum.is_convergent() for explanation of convergence
+341.         in SymPy.
+342. 
+343.         The infinite product:
+344. 
+345.         .. math::
+346. 
+347.             \prod_{1 \leq i < \infty} f(i)
+348. 
+349.         is defined by the sequence of partial products:
+350. 
+351.         .. math::
+352. 
+353.             \prod_{i=1}^{n} f(i) = f(1) f(2) \cdots f(n)
+354. 
+355.         as n increases without bound. The product converges to a non-zero
+356.         value if and only if the sum:
+357. 
+358.         .. math::
+359. 
+360.             \sum_{1 \leq i < \infty} \log{f(n)}
+361. 
+362.         converges.
+363. 
+364.         References
+365.         ==========
+366. 
+367.         .. [1] https://en.wikipedia.org/wiki/Infinite_product
+368. 
+369.         Examples
+370.         ========
+371. 
+372.         >>> from sympy import Interval, S, Product, Symbol, cos, pi, exp, oo
+373.         >>> n = Symbol('n', integer=True)
+374.         >>> Product(n/(n + 1), (n, 1, oo)).is_convergent()
+375.         False
+376.         >>> Product(1/n**2, (n, 1, oo)).is_convergent()
+377.         False
+378.         >>> Product(cos(pi/n), (n, 1, oo)).is_convergent()
+379.         True
+380.         >>> Product(exp(-n**2), (n, 1, oo)).is_convergent()
+381.         False
+382.         """
+383.         from sympy.concrete.summations import Sum
+384. 
+385.         sequence_term = self.function
+386.         log_sum = log(sequence_term)
+387.         lim = self.limits
+388.         try:
+389.             is_conv = Sum(log_sum, *lim).is_convergent()
+390.         except NotImplementedError:
+391.             if Sum(sequence_term - 1, *lim).is_absolutely_convergent() is S.true:
+392.                 return S.true
+393.             raise NotImplementedError("The algorithm to find the product convergence of %s "
+394.                                         "is not yet implemented" % (sequence_term))
+395.         return is_conv
+396. 
+397.     def reverse_order(expr, *indices):
+398.         """
+399.         Reverse the order of a limit in a Product.
+400. 
+401.         Usage
+402.         =====
+403. 
+404.         ``reverse_order(expr, *indices)`` reverses some limits in the expression
+405.         ``expr`` which can be either a ``Sum`` or a ``Product``. The selectors in
+406.         the argument ``indices`` specify some indices whose limits get reversed.
+407.         These selectors are either variable names or numerical indices counted
+408.         starting from the inner-most limit tuple.
+409. 
+410.         Examples
+411.         ========
+412. 
+413.         >>> from sympy import Product, simplify, RisingFactorial, gamma, Sum
+414.         >>> from sympy.abc import x, y, a, b, c, d
+415.         >>> P = Product(x, (x, a, b))
+416.         >>> Pr = P.reverse_order(x)
+417.         >>> Pr
+418.         Product(1/x, (x, b + 1, a - 1))
+419.         >>> Pr = Pr.doit()
+420.         >>> Pr
+421.         1/RisingFactorial(b + 1, a - b - 1)
+422.         >>> simplify(Pr)
+423.         gamma(b + 1)/gamma(a)
+424.         >>> P = P.doit()
+425.         >>> P
+426.         RisingFactorial(a, -a + b + 1)
+427.         >>> simplify(P)
+428.         gamma(b + 1)/gamma(a)
+429. 
+430.         While one should prefer variable names when specifying which limits
+431.         to reverse, the index counting notation comes in handy in case there
+432.         are several symbols with the same name.
+433. 
+434.         >>> S = Sum(x*y, (x, a, b), (y, c, d))
+435.         >>> S
+436.         Sum(x*y, (x, a, b), (y, c, d))
+437.         >>> S0 = S.reverse_order(0)
+438.         >>> S0
+439.         Sum(-x*y, (x, b + 1, a - 1), (y, c, d))
+440.         >>> S1 = S0.reverse_order(1)
+441.         >>> S1
+442.         Sum(x*y, (x, b + 1, a - 1), (y, d + 1, c - 1))
+443. 
+444.         Of course we can mix both notations:
+445. 
+446.         >>> Sum(x*y, (x, a, b), (y, 2, 5)).reverse_order(x, 1)
+447.         Sum(x*y, (x, b + 1, a - 1), (y, 6, 1))
+448.         >>> Sum(x*y, (x, a, b), (y, 2, 5)).reverse_order(y, x)
+449.         Sum(x*y, (x, b + 1, a - 1), (y, 6, 1))
+450. 
+451.         See Also
+452.         ========
+453. 
+454.         index, reorder_limit, reorder
+455. 
+456.         References
+457.         ==========
+458. 
+459.         .. [1] Michael Karr, "Summation in Finite Terms", Journal of the ACM,
+460.                Volume 28 Issue 2, April 1981, Pages 305-350
+461.                http://dl.acm.org/citation.cfm?doid=322248.322255
+462.         """
+463.         l_indices = list(indices)
+464. 
+465.         for i, indx in enumerate(l_indices):
+466.             if not isinstance(indx, int):
+467.                 l_indices[i] = expr.index(indx)
+468. 
+469.         e = 1
+470.         limits = []
+471.         for i, limit in enumerate(expr.limits):
+472.             l = limit
+473.             if i in l_indices:
+474.                 e = -e
+475.                 l = (limit[0], limit[2] + 1, limit[1] - 1)
+476.             limits.append(l)
+477. 
+478.         return Product(expr.function ** e, *limits)
+479. 
+480. 
+481. def product(*args, **kwargs):
+482.     r"""
+483.     Compute the product.
+484. 
+485.     The notation for symbols is similar to the notation used in Sum or
+486.     Integral. product(f, (i, a, b)) computes the product of f with
+487.     respect to i from a to b, i.e.,
+488. 
+489.     ::
+490. 
+491.                                      b
+492.                                    _____
+493.         product(f(n), (i, a, b)) = |   | f(n)
+494.                                    |   |
+495.                                    i = a
+496. 
+497.     If it cannot compute the product, it returns an unevaluated Product object.
+498.     Repeated products can be computed by introducing additional symbols tuples::
+499. 
+500.     >>> from sympy import product, symbols
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 18:23:58,777 - thread-139828228261568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The provided context is sufficient to understand the issue and the fix. The user has supplied the bug description, the patch, the file tree, and the content of `sympy/concrete/products.py`. The patch itself contains the full source code for the newly introduced file `sympy/functions/special/q_functions.py`, which defines the `q_pochhammer` function. With the original `products.py` and the diff, I can understand how the incorrect product evaluation is fixed by introducing a handler for expressions of the form `A + B*C**(alpha*k + beta)` and using the `q_pochhammer` function. The logic is self-contained and understandable without needing more files.' query='' extra_requirements='' purpose=''
+2025-12-21 18:23:58,777 - thread-139828228261568.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

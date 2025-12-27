@@ -1,0 +1,2030 @@
+2025-12-21 02:14:20,444 - thread-134624585975488.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: skipping: --runxfail breaks pytest.mark.skip location reporting
+
+Description: pytest versions: 5.4.x, current master
+
+When `@pytest.mark.skip`/`skipif` marks are used to skip a test, for example
+
+```py
+import pytest
+@pytest.mark.skip
+def test_skip_location() -> None:
+    assert 0
+```
+
+the expected skip location reported should point to the item itself, and this is indeed what happens when running with `pytest -rs`:
+
+```
+SKIPPED [1] test_it.py:3: unconditional skip
+```
+
+However, adding `pytest -rs --runxfail` breaks this:
+
+```
+SKIPPED [1] src/_pytest/skipping.py:238: unconditional skip
+```
+
+The `--runxfail` is only about xfail and should not affect this at all.
+
+---
+
+Hint: the bug is in `src/_pytest/skipping.py`, the `pytest_runtest_makereport` hook.
+
+Patch information:
+diff --git a/src/_pytest/skipping.py b/src/_pytest/skipping.py
+index 7bd975e5a..e336f1a76 100644
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -270,13 +270,12 @@ def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+         else:
+             rep.longrepr = "Unexpected success"
+         rep.outcome = "failed"
+-    elif item.config.option.runxfail:
+-        pass  # don't interfere
+-    elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception):
++
++    elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception) and not item.config.option.runxfail:
+         assert call.excinfo.value.msg is not None
+         rep.wasxfail = "reason: " + call.excinfo.value.msg
+         rep.outcome = "skipped"
+-    elif not rep.skipped and xfailed:
++    elif not rep.skipped and xfailed and not item.config.option.runxfail:
+         if call.excinfo:
+             raises = xfailed.raises
+             if raises is not None and not isinstance(call.excinfo.value, raises):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-21 02:14:20,500 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1120.bugfix.rst
+|   ├── 1316.breaking.rst
+|   ├── 1556.feature.rst
+|   ├── 4049.feature.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4675.improvement.rst
+|   ├── 4677.bugfix.rst
+|   ├── 5456.bugfix.rst
+|   ├── 5965.breaking.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6471.feature.rst
+|   ├── 6505.breaking.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6906.feature.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7119.improvement.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7133.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7245.feature.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── 7295.trivial.rst
+|   ├── 7305.feature.rst
+|   ├── 7345.doc.rst
+|   ├── 7346.feature.rst
+|   ├── 7356.trivial.rst
+|   ├── 7357.trivial.rst
+|   ├── 7360.bugfix.rst
+|   ├── 7383.bugfix.rst
+|   ├── 7385.improvement.rst
+|   ├── 7418.breaking.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: skipping: --runxfail breaks pytest.mark.skip location reporting
+
+Description: pytest versions: 5.4.x, current master
+
+When `@pytest.mark.skip`/`skipif` marks are used to skip a test, for example
+
+```py
+import pytest
+@pytest.mark.skip
+def test_skip_location() -> None:
+    assert 0
+```
+
+the expected skip location reported should point to the item itself, and this is indeed what happens when running with `pytest -rs`:
+
+```
+SKIPPED [1] test_it.py:3: unconditional skip
+```
+
+However, adding `pytest -rs --runxfail` breaks this:
+
+```
+SKIPPED [1] src/_pytest/skipping.py:238: unconditional skip
+```
+
+The `--runxfail` is only about xfail and should not affect this at all.
+
+---
+
+Hint: the bug is in `src/_pytest/skipping.py`, the `pytest_runtest_makereport` hook.
+
+Patch information:
+diff --git a/src/_pytest/skipping.py b/src/_pytest/skipping.py
+index 7bd975e5a..e336f1a76 100644
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -270,13 +270,12 @@ def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+         else:
+             rep.longrepr = "Unexpected success"
+         rep.outcome = "failed"
+-    elif item.config.option.runxfail:
+-        pass  # don't interfere
+-    elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception):
++
++    elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception) and not item.config.option.runxfail:
+         assert call.excinfo.value.msg is not None
+         rep.wasxfail = "reason: " + call.excinfo.value.msg
+         rep.outcome = "skipped"
+-    elif not rep.skipped and xfailed:
++    elif not rep.skipped and xfailed and not item.config.option.runxfail:
+         if call.excinfo:
+             raises = xfailed.raises
+             if raises is not None and not isinstance(call.excinfo.value, raises):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 02:14:47,484 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user has identified a bug in `src/_pytest/skipping.py` within the `pytest_runtest_makereport` hook. The provided patch snippet is incomplete and I need the full function definition and surrounding code in that file to understand the control flow that leads to the incorrect skip location reporting when `--runxfail` is used. This file should also contain the definition of `pytest.skip` and how skip markers are handled, which is essential context.' query='Please provide the full content of `src/_pytest/skipping.py`.' extra_requirements='' purpose='To analyze the complete implementation of the `pytest_runtest_makereport` hook and related skipping logic to understand the root cause of the bug.'
+2025-12-21 02:14:47,485 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `src/_pytest/skipping.py`.
+2025-12-21 02:14:47,485 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 02:14:47,486 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 02:14:47,486 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 02:14:47,486 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `src/_pytest/skipping.py`.
+Purpose: To analyze the complete implementation of the `pytest_runtest_makereport` hook and related skipping logic to understand the root cause of the bug.
+2025-12-21 02:14:50,409 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `src/_pytest/skipping.py` to help you analyze the implementation of the `pytest_runtest_makereport` hook and its related skipping logic. This will allow you to investigate the root cause of the bug you are examining.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "src/_pytest/skipping.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2050, 'candidates_token_count': 80, 'total_token_count': 2250, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2050}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 80}], 'thoughts_token_count': 120, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.06397791504859925, 'model_name': 'gemini-2.5-pro'} id='run--baca1c83-60a6-4b97-9234-e88243497072-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'src/_pytest/skipping.py'}, 'id': 'c0e62236-4644-44d9-b9fc-9eaa6c0620c8', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2050, 'output_tokens': 80, 'total_tokens': 2250, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 120}}
+2025-12-21 02:14:55,075 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `src/_pytest/skipping.py` for you. This file contains the complete implementation of the `pytest_runtest_makereport` hook and the related skipping logic. You can now analyze this code to understand the root cause of the bug you are investigating.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6483, 'candidates_token_count': 63, 'total_token_count': 6897, 'cached_content_token_count': 1777, 'prompt_tokens_details': [{'modality': 1, 'token_count': 6483}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1777}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 63}], 'thoughts_token_count': 351}, 'finish_reason': 'STOP', 'avg_logprobs': -0.4628538101438492, 'model_name': 'gemini-2.5-pro'} id='run--23d3b24b-91f5-47d1-bd19-c3c811491eba-0' usage_metadata={'input_tokens': 6483, 'output_tokens': 63, 'total_tokens': 6897, 'input_token_details': {'cache_read': 1777}, 'output_token_details': {'reasoning': 351}}
+2025-12-21 02:14:55,079 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `src/_pytest/skipping.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+To analyze the complete implementation of the `pytest_runtest_makereport` hook and related skipping logic to understand the root cause of the bug.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: src/_pytest/skipping.py
+Line number range: 1 - 314
+Content:
+1. """ support for skip/xfail functions and markers. """
+2. import os
+3. import platform
+4. import sys
+5. import traceback
+6. from typing import Generator
+7. from typing import Optional
+8. from typing import Tuple
+9. 
+10. import attr
+11. 
+12. import _pytest._code
+13. from _pytest.compat import TYPE_CHECKING
+14. from _pytest.config import Config
+15. from _pytest.config import hookimpl
+16. from _pytest.config.argparsing import Parser
+17. from _pytest.mark.structures import Mark
+18. from _pytest.nodes import Item
+19. from _pytest.outcomes import fail
+20. from _pytest.outcomes import skip
+21. from _pytest.outcomes import xfail
+22. from _pytest.reports import BaseReport
+23. from _pytest.runner import CallInfo
+24. from _pytest.store import StoreKey
+25. 
+26. if TYPE_CHECKING:
+27.     from typing import Type
+28. 
+29. 
+30. def pytest_addoption(parser: Parser) -> None:
+31.     group = parser.getgroup("general")
+32.     group.addoption(
+33.         "--runxfail",
+34.         action="store_true",
+35.         dest="runxfail",
+36.         default=False,
+37.         help="report the results of xfail tests as if they were not marked",
+38.     )
+39. 
+40.     parser.addini(
+41.         "xfail_strict",
+42.         "default for the strict parameter of xfail "
+43.         "markers when not given explicitly (default: False)",
+44.         default=False,
+45.         type="bool",
+46.     )
+47. 
+48. 
+49. def pytest_configure(config: Config) -> None:
+50.     if config.option.runxfail:
+51.         # yay a hack
+52.         import pytest
+53. 
+54.         old = pytest.xfail
+55.         config._cleanup.append(lambda: setattr(pytest, "xfail", old))
+56. 
+57.         def nop(*args, **kwargs):
+58.             pass
+59. 
+60.         nop.Exception = xfail.Exception  # type: ignore[attr-defined] # noqa: F821
+61.         setattr(pytest, "xfail", nop)
+62. 
+63.     config.addinivalue_line(
+64.         "markers",
+65.         "skip(reason=None): skip the given test function with an optional reason. "
+66.         'Example: skip(reason="no way of currently testing this") skips the '
+67.         "test.",
+68.     )
+69.     config.addinivalue_line(
+70.         "markers",
+71.         "skipif(condition, ..., *, reason=...): "
+72.         "skip the given test function if any of the conditions evaluate to True. "
+73.         "Example: skipif(sys.platform == 'win32') skips the test if we are on the win32 platform. "
+74.         "See https://docs.pytest.org/en/stable/reference.html#pytest-mark-skipif",
+75.     )
+76.     config.addinivalue_line(
+77.         "markers",
+78.         "xfail(condition, ..., *, reason=..., run=True, raises=None, strict=xfail_strict): "
+79.         "mark the test function as an expected failure if any of the conditions "
+80.         "evaluate to True. Optionally specify a reason for better reporting "
+81.         "and run=False if you don't even want to execute the test function. "
+82.         "If only specific exception(s) are expected, you can list them in "
+83.         "raises, and if the test fails in other ways, it will be reported as "
+84.         "a true failure. See https://docs.pytest.org/en/stable/reference.html#pytest-mark-xfail",
+85.     )
+86. 
+87. 
+88. def evaluate_condition(item: Item, mark: Mark, condition: object) -> Tuple[bool, str]:
+89.     """Evaluate a single skipif/xfail condition.
+90. 
+91.     If an old-style string condition is given, it is eval()'d, otherwise the
+92.     condition is bool()'d. If this fails, an appropriately formatted pytest.fail
+93.     is raised.
+94. 
+95.     Returns (result, reason). The reason is only relevant if the result is True.
+96.     """
+97.     # String condition.
+98.     if isinstance(condition, str):
+99.         globals_ = {
+100.             "os": os,
+101.             "sys": sys,
+102.             "platform": platform,
+103.             "config": item.config,
+104.         }
+105.         if hasattr(item, "obj"):
+106.             globals_.update(item.obj.__globals__)  # type: ignore[attr-defined]
+107.         try:
+108.             condition_code = _pytest._code.compile(condition, mode="eval")
+109.             result = eval(condition_code, globals_)
+110.         except SyntaxError as exc:
+111.             msglines = [
+112.                 "Error evaluating %r condition" % mark.name,
+113.                 "    " + condition,
+114.                 "    " + " " * (exc.offset or 0) + "^",
+115.                 "SyntaxError: invalid syntax",
+116.             ]
+117.             fail("\n".join(msglines), pytrace=False)
+118.         except Exception as exc:
+119.             msglines = [
+120.                 "Error evaluating %r condition" % mark.name,
+121.                 "    " + condition,
+122.                 *traceback.format_exception_only(type(exc), exc),
+123.             ]
+124.             fail("\n".join(msglines), pytrace=False)
+125. 
+126.     # Boolean condition.
+127.     else:
+128.         try:
+129.             result = bool(condition)
+130.         except Exception as exc:
+131.             msglines = [
+132.                 "Error evaluating %r condition as a boolean" % mark.name,
+133.                 *traceback.format_exception_only(type(exc), exc),
+134.             ]
+135.             fail("\n".join(msglines), pytrace=False)
+136. 
+137.     reason = mark.kwargs.get("reason", None)
+138.     if reason is None:
+139.         if isinstance(condition, str):
+140.             reason = "condition: " + condition
+141.         else:
+142.             # XXX better be checked at collection time
+143.             msg = (
+144.                 "Error evaluating %r: " % mark.name
+145.                 + "you need to specify reason=STRING when using booleans as conditions."
+146.             )
+147.             fail(msg, pytrace=False)
+148. 
+149.     return result, reason
+150. 
+151. 
+152. @attr.s(slots=True, frozen=True)
+153. class Skip:
+154.     """The result of evaluate_skip_marks()."""
+155. 
+156.     reason = attr.ib(type=str)
+157. 
+158. 
+159. def evaluate_skip_marks(item: Item) -> Optional[Skip]:
+160.     """Evaluate skip and skipif marks on item, returning Skip if triggered."""
+161.     for mark in item.iter_markers(name="skipif"):
+162.         if "condition" not in mark.kwargs:
+163.             conditions = mark.args
+164.         else:
+165.             conditions = (mark.kwargs["condition"],)
+166. 
+167.         # Unconditional.
+168.         if not conditions:
+169.             reason = mark.kwargs.get("reason", "")
+170.             return Skip(reason)
+171. 
+172.         # If any of the conditions are true.
+173.         for condition in conditions:
+174.             result, reason = evaluate_condition(item, mark, condition)
+175.             if result:
+176.                 return Skip(reason)
+177. 
+178.     for mark in item.iter_markers(name="skip"):
+179.         if "reason" in mark.kwargs:
+180.             reason = mark.kwargs["reason"]
+181.         elif mark.args:
+182.             reason = mark.args[0]
+183.         else:
+184.             reason = "unconditional skip"
+185.         return Skip(reason)
+186. 
+187.     return None
+188. 
+189. 
+190. @attr.s(slots=True, frozen=True)
+191. class Xfail:
+192.     """The result of evaluate_xfail_marks()."""
+193. 
+194.     reason = attr.ib(type=str)
+195.     run = attr.ib(type=bool)
+196.     strict = attr.ib(type=bool)
+197.     raises = attr.ib(type=Optional[Tuple["Type[BaseException]", ...]])
+198. 
+199. 
+200. def evaluate_xfail_marks(item: Item) -> Optional[Xfail]:
+201.     """Evaluate xfail marks on item, returning Xfail if triggered."""
+202.     for mark in item.iter_markers(name="xfail"):
+203.         run = mark.kwargs.get("run", True)
+204.         strict = mark.kwargs.get("strict", item.config.getini("xfail_strict"))
+205.         raises = mark.kwargs.get("raises", None)
+206.         if "condition" not in mark.kwargs:
+207.             conditions = mark.args
+208.         else:
+209.             conditions = (mark.kwargs["condition"],)
+210. 
+211.         # Unconditional.
+212.         if not conditions:
+213.             reason = mark.kwargs.get("reason", "")
+214.             return Xfail(reason, run, strict, raises)
+215. 
+216.         # If any of the conditions are true.
+217.         for condition in conditions:
+218.             result, reason = evaluate_condition(item, mark, condition)
+219.             if result:
+220.                 return Xfail(reason, run, strict, raises)
+221. 
+222.     return None
+223. 
+224. 
+225. # Whether skipped due to skip or skipif marks.
+226. skipped_by_mark_key = StoreKey[bool]()
+227. # Saves the xfail mark evaluation. Can be refreshed during call if None.
+228. xfailed_key = StoreKey[Optional[Xfail]]()
+229. unexpectedsuccess_key = StoreKey[str]()
+230. 
+231. 
+232. @hookimpl(tryfirst=True)
+233. def pytest_runtest_setup(item: Item) -> None:
+234.     item._store[skipped_by_mark_key] = False
+235. 
+236.     skipped = evaluate_skip_marks(item)
+237.     if skipped:
+238.         item._store[skipped_by_mark_key] = True
+239.         skip(skipped.reason)
+240. 
+241.     if not item.config.option.runxfail:
+242.         item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
+243.         if xfailed and not xfailed.run:
+244.             xfail("[NOTRUN] " + xfailed.reason)
+245. 
+246. 
+247. @hookimpl(hookwrapper=True)
+248. def pytest_runtest_call(item: Item) -> Generator[None, None, None]:
+249.     xfailed = item._store.get(xfailed_key, None)
+250.     if xfailed is None:
+251.         item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
+252. 
+253.     if not item.config.option.runxfail:
+254.         if xfailed and not xfailed.run:
+255.             xfail("[NOTRUN] " + xfailed.reason)
+256. 
+257.     yield
+258. 
+259. 
+260. @hookimpl(hookwrapper=True)
+261. def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+262.     outcome = yield
+263.     rep = outcome.get_result()
+264.     xfailed = item._store.get(xfailed_key, None)
+265.     # unittest special case, see setting of unexpectedsuccess_key
+266.     if unexpectedsuccess_key in item._store and rep.when == "call":
+267.         reason = item._store[unexpectedsuccess_key]
+268.         if reason:
+269.             rep.longrepr = "Unexpected success: {}".format(reason)
+270.         else:
+271.             rep.longrepr = "Unexpected success"
+272.         rep.outcome = "failed"
+273.     elif item.config.option.runxfail:
+274.         pass  # don't interfere
+275.     elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception):
+276.         assert call.excinfo.value.msg is not None
+277.         rep.wasxfail = "reason: " + call.excinfo.value.msg
+278.         rep.outcome = "skipped"
+279.     elif not rep.skipped and xfailed:
+280.         if call.excinfo:
+281.             raises = xfailed.raises
+282.             if raises is not None and not isinstance(call.excinfo.value, raises):
+283.                 rep.outcome = "failed"
+284.             else:
+285.                 rep.outcome = "skipped"
+286.                 rep.wasxfail = xfailed.reason
+287.         elif call.when == "call":
+288.             if xfailed.strict:
+289.                 rep.outcome = "failed"
+290.                 rep.longrepr = "[XPASS(strict)] " + xfailed.reason
+291.             else:
+292.                 rep.outcome = "passed"
+293.                 rep.wasxfail = xfailed.reason
+294.     elif (
+295.         item._store.get(skipped_by_mark_key, True)
+296.         and rep.skipped
+297.         and type(rep.longrepr) is tuple
+298.     ):
+299.         # skipped by mark.skipif; change the location of the failure
+300.         # to point to the item definition, otherwise it will display
+301.         # the location of where the skip exception was raised within pytest
+302.         _, _, reason = rep.longrepr
+303.         filename, line = item.reportinfo()[:2]
+304.         assert line is not None
+305.         rep.longrepr = str(filename), line + 1, reason
+306. 
+307. 
+308. def pytest_report_teststatus(report: BaseReport) -> Optional[Tuple[str, str, str]]:
+309.     if hasattr(report, "wasxfail"):
+310.         if report.skipped:
+311.             return "xfailed", "x", "XFAIL"
+312.         elif report.passed:
+313.             return "xpassed", "X", "XPASS"
+314.     return None
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 02:15:03,553 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly requested the full content of the file `src/_pytest/skipping.py`.\n\n2. Extended relevance:\n   - The user's stated purpose is to analyze the `pytest_runtest_makereport` hook and related skipping logic. This file contains the complete implementation of this functionality, making the entire file content essential for a thorough analysis and understanding of the bug mentioned in the purpose.", relative_path='src/_pytest/skipping.py', start_line=1, end_line=314)]
+2025-12-21 02:15:03,565 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `src/_pytest/skipping.py`.
+2025-12-21 02:15:03,565 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 02:15:03,565 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 02:15:03,566 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 02:15:03,566 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 02:15:03,567 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1120.bugfix.rst
+|   ├── 1316.breaking.rst
+|   ├── 1556.feature.rst
+|   ├── 4049.feature.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4675.improvement.rst
+|   ├── 4677.bugfix.rst
+|   ├── 5456.bugfix.rst
+|   ├── 5965.breaking.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6471.feature.rst
+|   ├── 6505.breaking.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6906.feature.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7119.improvement.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7133.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7245.feature.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── 7295.trivial.rst
+|   ├── 7305.feature.rst
+|   ├── 7345.doc.rst
+|   ├── 7346.feature.rst
+|   ├── 7356.trivial.rst
+|   ├── 7357.trivial.rst
+|   ├── 7360.bugfix.rst
+|   ├── 7383.bugfix.rst
+|   ├── 7385.improvement.rst
+|   ├── 7418.breaking.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: skipping: --runxfail breaks pytest.mark.skip location reporting
+
+Description: pytest versions: 5.4.x, current master
+
+When `@pytest.mark.skip`/`skipif` marks are used to skip a test, for example
+
+```py
+import pytest
+@pytest.mark.skip
+def test_skip_location() -> None:
+    assert 0
+```
+
+the expected skip location reported should point to the item itself, and this is indeed what happens when running with `pytest -rs`:
+
+```
+SKIPPED [1] test_it.py:3: unconditional skip
+```
+
+However, adding `pytest -rs --runxfail` breaks this:
+
+```
+SKIPPED [1] src/_pytest/skipping.py:238: unconditional skip
+```
+
+The `--runxfail` is only about xfail and should not affect this at all.
+
+---
+
+Hint: the bug is in `src/_pytest/skipping.py`, the `pytest_runtest_makereport` hook.
+
+Patch information:
+diff --git a/src/_pytest/skipping.py b/src/_pytest/skipping.py
+index 7bd975e5a..e336f1a76 100644
+--- a/src/_pytest/skipping.py
++++ b/src/_pytest/skipping.py
+@@ -270,13 +270,12 @@ def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+         else:
+             rep.longrepr = "Unexpected success"
+         rep.outcome = "failed"
+-    elif item.config.option.runxfail:
+-        pass  # don't interfere
+-    elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception):
++
++    elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception) and not item.config.option.runxfail:
+         assert call.excinfo.value.msg is not None
+         rep.wasxfail = "reason: " + call.excinfo.value.msg
+         rep.outcome = "skipped"
+-    elif not rep.skipped and xfailed:
++    elif not rep.skipped and xfailed and not item.config.option.runxfail:
+         if call.excinfo:
+             raises = xfailed.raises
+             if raises is not None and not isinstance(call.excinfo.value, raises):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `src/_pytest/skipping.py`.
+Extra Requirements: 
+Purpose: To analyze the complete implementation of the `pytest_runtest_makereport` hook and related skipping logic to understand the root cause of the bug.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: src/_pytest/skipping.py
+Line number range: 1 - 314
+Content:
+1. """ support for skip/xfail functions and markers. """
+2. import os
+3. import platform
+4. import sys
+5. import traceback
+6. from typing import Generator
+7. from typing import Optional
+8. from typing import Tuple
+9. 
+10. import attr
+11. 
+12. import _pytest._code
+13. from _pytest.compat import TYPE_CHECKING
+14. from _pytest.config import Config
+15. from _pytest.config import hookimpl
+16. from _pytest.config.argparsing import Parser
+17. from _pytest.mark.structures import Mark
+18. from _pytest.nodes import Item
+19. from _pytest.outcomes import fail
+20. from _pytest.outcomes import skip
+21. from _pytest.outcomes import xfail
+22. from _pytest.reports import BaseReport
+23. from _pytest.runner import CallInfo
+24. from _pytest.store import StoreKey
+25. 
+26. if TYPE_CHECKING:
+27.     from typing import Type
+28. 
+29. 
+30. def pytest_addoption(parser: Parser) -> None:
+31.     group = parser.getgroup("general")
+32.     group.addoption(
+33.         "--runxfail",
+34.         action="store_true",
+35.         dest="runxfail",
+36.         default=False,
+37.         help="report the results of xfail tests as if they were not marked",
+38.     )
+39. 
+40.     parser.addini(
+41.         "xfail_strict",
+42.         "default for the strict parameter of xfail "
+43.         "markers when not given explicitly (default: False)",
+44.         default=False,
+45.         type="bool",
+46.     )
+47. 
+48. 
+49. def pytest_configure(config: Config) -> None:
+50.     if config.option.runxfail:
+51.         # yay a hack
+52.         import pytest
+53. 
+54.         old = pytest.xfail
+55.         config._cleanup.append(lambda: setattr(pytest, "xfail", old))
+56. 
+57.         def nop(*args, **kwargs):
+58.             pass
+59. 
+60.         nop.Exception = xfail.Exception  # type: ignore[attr-defined] # noqa: F821
+61.         setattr(pytest, "xfail", nop)
+62. 
+63.     config.addinivalue_line(
+64.         "markers",
+65.         "skip(reason=None): skip the given test function with an optional reason. "
+66.         'Example: skip(reason="no way of currently testing this") skips the '
+67.         "test.",
+68.     )
+69.     config.addinivalue_line(
+70.         "markers",
+71.         "skipif(condition, ..., *, reason=...): "
+72.         "skip the given test function if any of the conditions evaluate to True. "
+73.         "Example: skipif(sys.platform == 'win32') skips the test if we are on the win32 platform. "
+74.         "See https://docs.pytest.org/en/stable/reference.html#pytest-mark-skipif",
+75.     )
+76.     config.addinivalue_line(
+77.         "markers",
+78.         "xfail(condition, ..., *, reason=..., run=True, raises=None, strict=xfail_strict): "
+79.         "mark the test function as an expected failure if any of the conditions "
+80.         "evaluate to True. Optionally specify a reason for better reporting "
+81.         "and run=False if you don't even want to execute the test function. "
+82.         "If only specific exception(s) are expected, you can list them in "
+83.         "raises, and if the test fails in other ways, it will be reported as "
+84.         "a true failure. See https://docs.pytest.org/en/stable/reference.html#pytest-mark-xfail",
+85.     )
+86. 
+87. 
+88. def evaluate_condition(item: Item, mark: Mark, condition: object) -> Tuple[bool, str]:
+89.     """Evaluate a single skipif/xfail condition.
+90. 
+91.     If an old-style string condition is given, it is eval()'d, otherwise the
+92.     condition is bool()'d. If this fails, an appropriately formatted pytest.fail
+93.     is raised.
+94. 
+95.     Returns (result, reason). The reason is only relevant if the result is True.
+96.     """
+97.     # String condition.
+98.     if isinstance(condition, str):
+99.         globals_ = {
+100.             "os": os,
+101.             "sys": sys,
+102.             "platform": platform,
+103.             "config": item.config,
+104.         }
+105.         if hasattr(item, "obj"):
+106.             globals_.update(item.obj.__globals__)  # type: ignore[attr-defined]
+107.         try:
+108.             condition_code = _pytest._code.compile(condition, mode="eval")
+109.             result = eval(condition_code, globals_)
+110.         except SyntaxError as exc:
+111.             msglines = [
+112.                 "Error evaluating %r condition" % mark.name,
+113.                 "    " + condition,
+114.                 "    " + " " * (exc.offset or 0) + "^",
+115.                 "SyntaxError: invalid syntax",
+116.             ]
+117.             fail("\n".join(msglines), pytrace=False)
+118.         except Exception as exc:
+119.             msglines = [
+120.                 "Error evaluating %r condition" % mark.name,
+121.                 "    " + condition,
+122.                 *traceback.format_exception_only(type(exc), exc),
+123.             ]
+124.             fail("\n".join(msglines), pytrace=False)
+125. 
+126.     # Boolean condition.
+127.     else:
+128.         try:
+129.             result = bool(condition)
+130.         except Exception as exc:
+131.             msglines = [
+132.                 "Error evaluating %r condition as a boolean" % mark.name,
+133.                 *traceback.format_exception_only(type(exc), exc),
+134.             ]
+135.             fail("\n".join(msglines), pytrace=False)
+136. 
+137.     reason = mark.kwargs.get("reason", None)
+138.     if reason is None:
+139.         if isinstance(condition, str):
+140.             reason = "condition: " + condition
+141.         else:
+142.             # XXX better be checked at collection time
+143.             msg = (
+144.                 "Error evaluating %r: " % mark.name
+145.                 + "you need to specify reason=STRING when using booleans as conditions."
+146.             )
+147.             fail(msg, pytrace=False)
+148. 
+149.     return result, reason
+150. 
+151. 
+152. @attr.s(slots=True, frozen=True)
+153. class Skip:
+154.     """The result of evaluate_skip_marks()."""
+155. 
+156.     reason = attr.ib(type=str)
+157. 
+158. 
+159. def evaluate_skip_marks(item: Item) -> Optional[Skip]:
+160.     """Evaluate skip and skipif marks on item, returning Skip if triggered."""
+161.     for mark in item.iter_markers(name="skipif"):
+162.         if "condition" not in mark.kwargs:
+163.             conditions = mark.args
+164.         else:
+165.             conditions = (mark.kwargs["condition"],)
+166. 
+167.         # Unconditional.
+168.         if not conditions:
+169.             reason = mark.kwargs.get("reason", "")
+170.             return Skip(reason)
+171. 
+172.         # If any of the conditions are true.
+173.         for condition in conditions:
+174.             result, reason = evaluate_condition(item, mark, condition)
+175.             if result:
+176.                 return Skip(reason)
+177. 
+178.     for mark in item.iter_markers(name="skip"):
+179.         if "reason" in mark.kwargs:
+180.             reason = mark.kwargs["reason"]
+181.         elif mark.args:
+182.             reason = mark.args[0]
+183.         else:
+184.             reason = "unconditional skip"
+185.         return Skip(reason)
+186. 
+187.     return None
+188. 
+189. 
+190. @attr.s(slots=True, frozen=True)
+191. class Xfail:
+192.     """The result of evaluate_xfail_marks()."""
+193. 
+194.     reason = attr.ib(type=str)
+195.     run = attr.ib(type=bool)
+196.     strict = attr.ib(type=bool)
+197.     raises = attr.ib(type=Optional[Tuple["Type[BaseException]", ...]])
+198. 
+199. 
+200. def evaluate_xfail_marks(item: Item) -> Optional[Xfail]:
+201.     """Evaluate xfail marks on item, returning Xfail if triggered."""
+202.     for mark in item.iter_markers(name="xfail"):
+203.         run = mark.kwargs.get("run", True)
+204.         strict = mark.kwargs.get("strict", item.config.getini("xfail_strict"))
+205.         raises = mark.kwargs.get("raises", None)
+206.         if "condition" not in mark.kwargs:
+207.             conditions = mark.args
+208.         else:
+209.             conditions = (mark.kwargs["condition"],)
+210. 
+211.         # Unconditional.
+212.         if not conditions:
+213.             reason = mark.kwargs.get("reason", "")
+214.             return Xfail(reason, run, strict, raises)
+215. 
+216.         # If any of the conditions are true.
+217.         for condition in conditions:
+218.             result, reason = evaluate_condition(item, mark, condition)
+219.             if result:
+220.                 return Xfail(reason, run, strict, raises)
+221. 
+222.     return None
+223. 
+224. 
+225. # Whether skipped due to skip or skipif marks.
+226. skipped_by_mark_key = StoreKey[bool]()
+227. # Saves the xfail mark evaluation. Can be refreshed during call if None.
+228. xfailed_key = StoreKey[Optional[Xfail]]()
+229. unexpectedsuccess_key = StoreKey[str]()
+230. 
+231. 
+232. @hookimpl(tryfirst=True)
+233. def pytest_runtest_setup(item: Item) -> None:
+234.     item._store[skipped_by_mark_key] = False
+235. 
+236.     skipped = evaluate_skip_marks(item)
+237.     if skipped:
+238.         item._store[skipped_by_mark_key] = True
+239.         skip(skipped.reason)
+240. 
+241.     if not item.config.option.runxfail:
+242.         item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
+243.         if xfailed and not xfailed.run:
+244.             xfail("[NOTRUN] " + xfailed.reason)
+245. 
+246. 
+247. @hookimpl(hookwrapper=True)
+248. def pytest_runtest_call(item: Item) -> Generator[None, None, None]:
+249.     xfailed = item._store.get(xfailed_key, None)
+250.     if xfailed is None:
+251.         item._store[xfailed_key] = xfailed = evaluate_xfail_marks(item)
+252. 
+253.     if not item.config.option.runxfail:
+254.         if xfailed and not xfailed.run:
+255.             xfail("[NOTRUN] " + xfailed.reason)
+256. 
+257.     yield
+258. 
+259. 
+260. @hookimpl(hookwrapper=True)
+261. def pytest_runtest_makereport(item: Item, call: CallInfo[None]):
+262.     outcome = yield
+263.     rep = outcome.get_result()
+264.     xfailed = item._store.get(xfailed_key, None)
+265.     # unittest special case, see setting of unexpectedsuccess_key
+266.     if unexpectedsuccess_key in item._store and rep.when == "call":
+267.         reason = item._store[unexpectedsuccess_key]
+268.         if reason:
+269.             rep.longrepr = "Unexpected success: {}".format(reason)
+270.         else:
+271.             rep.longrepr = "Unexpected success"
+272.         rep.outcome = "failed"
+273.     elif item.config.option.runxfail:
+274.         pass  # don't interfere
+275.     elif call.excinfo and isinstance(call.excinfo.value, xfail.Exception):
+276.         assert call.excinfo.value.msg is not None
+277.         rep.wasxfail = "reason: " + call.excinfo.value.msg
+278.         rep.outcome = "skipped"
+279.     elif not rep.skipped and xfailed:
+280.         if call.excinfo:
+281.             raises = xfailed.raises
+282.             if raises is not None and not isinstance(call.excinfo.value, raises):
+283.                 rep.outcome = "failed"
+284.             else:
+285.                 rep.outcome = "skipped"
+286.                 rep.wasxfail = xfailed.reason
+287.         elif call.when == "call":
+288.             if xfailed.strict:
+289.                 rep.outcome = "failed"
+290.                 rep.longrepr = "[XPASS(strict)] " + xfailed.reason
+291.             else:
+292.                 rep.outcome = "passed"
+293.                 rep.wasxfail = xfailed.reason
+294.     elif (
+295.         item._store.get(skipped_by_mark_key, True)
+296.         and rep.skipped
+297.         and type(rep.longrepr) is tuple
+298.     ):
+299.         # skipped by mark.skipif; change the location of the failure
+300.         # to point to the item definition, otherwise it will display
+301.         # the location of where the skip exception was raised within pytest
+302.         _, _, reason = rep.longrepr
+303.         filename, line = item.reportinfo()[:2]
+304.         assert line is not None
+305.         rep.longrepr = str(filename), line + 1, reason
+306. 
+307. 
+308. def pytest_report_teststatus(report: BaseReport) -> Optional[Tuple[str, str, str]]:
+309.     if hasattr(report, "wasxfail"):
+310.         if report.skipped:
+311.             return "xfailed", "x", "XFAIL"
+312.         elif report.passed:
+313.             return "xpassed", "X", "XPASS"
+314.     return None
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 02:15:35,876 - thread-134624585975488.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="I have analyzed the provided `src/_pytest/skipping.py` file and the user's description of the issue. The root cause of the bug is clearly identifiable within the `pytest_runtest_makereport` function. The `elif item.config.option.runxfail: pass` statement prematurely exits the conditional logic, preventing the code that corrects the skip location from executing. The provided context is sufficient to understand the problem and validate the proposed fix. No further information about other parts of the codebase is necessary." query='' extra_requirements='' purpose=''
+2025-12-21 02:15:35,877 - thread-134624585975488.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

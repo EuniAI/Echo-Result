@@ -1,0 +1,4174 @@
+2025-12-20 19:42:41,087 - thread-124421297669824.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Consider MRO when obtaining marks for classes
+
+Description: When using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.
+
+If it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.
+
+```python
+import itertools
+import pytest
+
+class BaseMeta(type):
+    @property
+    def pytestmark(self):
+        return (
+            getattr(self, "_pytestmark", []) +
+            list(itertools.chain.from_iterable(getattr(x, "_pytestmark", []) for x in self.__mro__))
+        )
+
+    @pytestmark.setter
+    def pytestmark(self, value):
+        self._pytestmark = value
+
+
+class Base(object):
+    # Without this metaclass, foo and bar markers override each other, and test_dings
+    # will only have one marker
+    # With the metaclass, test_dings will have both
+    __metaclass__ = BaseMeta
+
+@pytest.mark.foo
+class Foo(Base):
+    pass
+
+
+@pytest.mark.bar
+class Bar(Base):
+    pass
+
+class TestDings(Foo, Bar):
+    def test_dings(self):
+        # This test should have both markers, foo and bar.
+        # In practice markers are resolved using MRO (so foo wins), unless the
+        # metaclass is applied
+        pass
+```
+
+I'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.
+
+Please note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)
+Consider MRO when obtaining marks for classes
+When using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.
+
+If it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.
+
+```python
+import itertools
+import pytest
+
+class BaseMeta(type):
+    @property
+    def pytestmark(self):
+        return (
+            getattr(self, "_pytestmark", []) +
+            list(itertools.chain.from_iterable(getattr(x, "_pytestmark", []) for x in self.__mro__))
+        )
+
+    @pytestmark.setter
+    def pytestmark(self, value):
+        self._pytestmark = value
+
+
+class Base(object):
+    # Without this metaclass, foo and bar markers override each other, and test_dings
+    # will only have one marker
+    # With the metaclass, test_dings will have both
+    __metaclass__ = BaseMeta
+
+@pytest.mark.foo
+class Foo(Base):
+    pass
+
+
+@pytest.mark.bar
+class Bar(Base):
+    pass
+
+class TestDings(Foo, Bar):
+    def test_dings(self):
+        # This test should have both markers, foo and bar.
+        # In practice markers are resolved using MRO (so foo wins), unless the
+        # metaclass is applied
+        pass
+```
+
+I'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.
+
+Please note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)
+Fix missing marks when inheritance from multiple classes
+
+<!--
+Thanks for submitting a PR, your contribution is really appreciated!
+
+Here is a quick checklist that should be present in PRs.
+
+- [] Include documentation when adding new features.
+- [ ] Include new tests or update existing tests when applicable.
+- [X] Allow maintainers to push and squash when merging my commits. Please uncheck this if you prefer to squash the commits yourself.
+
+If this change fixes an issue, please:
+
+- [x] Add text like ``closes #XYZW`` to the PR description and/or commits (where ``XYZW`` is the issue number). See the [github docs](https://help.github.com/en/github/managing-your-work-on-github/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword) for more information.
+
+Unless your change is trivial or a small documentation fix (e.g., a typo or reword of a small section) please:
+
+- [x] Create a new changelog file in the `changelog` folder, with a name like `<ISSUE NUMBER>.<TYPE>.rst`. See [changelog/README.rst](https://github.com/pytest-dev/pytest/blob/main/changelog/README.rst) for details.
+
+  Write sentences in the **past or present tense**, examples:
+
+  * *Improved verbose diff output with sequences.*
+  * *Terminal summary statistics now use multiple colors.*
+
+  Also make sure to end the sentence with a `.`.
+
+- [x] Add yourself to `AUTHORS` in alphabetical order.
+-->
+
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index 34d96c2bc..0f80a75ed 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -299,6 +299,7 @@ or multiple markers::
+ 
+     pytestmark = [pytest.mark.webtest, pytest.mark.slowtest]
+ 
++When using multiple inheritance, class-level markers from all base classes are merged following the class hierarchy (MRO). A derived class inherits markers from all its bases; markers are not deduplicated.
+ 
+ Due to legacy reasons, before class decorators were introduced, it is possible to set the
+ :globalvar:`pytestmark` attribute on a test class like this:
+diff --git a/doc/en/how-to/mark.rst b/doc/en/how-to/mark.rst
+index 33f9d18bf..ce0dfd1b8 100644
+--- a/doc/en/how-to/mark.rst
++++ b/doc/en/how-to/mark.rst
+@@ -23,6 +23,8 @@ It's easy to create custom markers or to apply markers
+ to whole test classes or modules. Those markers can be used by plugins, and also
+ are commonly used to :ref:`select tests <mark run>` on the command-line with the ``-m`` option.
+ 
++When applying marks to classes, marks defined on base classes are merged across the full inheritance hierarchy (MRO).
++
+ See :ref:`mark examples` for examples which also serve as documentation.
+ 
+ .. note::
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..8f6dc81a2 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -356,11 +356,24 @@ class MarkDecorator:
+ 
+ 
+ def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+-    """Obtain the unpacked marks that are stored on an object."""
+-    mark_list = getattr(obj, "pytestmark", [])
+-    if not isinstance(mark_list, list):
+-        mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    """Obtain the unpacked marks that are stored on an object.
++
++    For classes, merge marks from the entire MRO by reading only
++    class-local pytestmark attributes from each class in the hierarchy.
++    """
++    if inspect.isclass(obj):
++        for cls in reversed(obj.__mro__):
++            mark_list = getattr(cls, "__dict__", {}).get("pytestmark", [])
++            if not isinstance(mark_list, list):
++                mark_list = [mark_list]
++            for m in normalize_mark_list(mark_list):
++                yield m
++    else:
++        mark_list = getattr(obj, "pytestmark", [])
++        if not isinstance(mark_list, list):
++            mark_list = [mark_list]
++        for m in normalize_mark_list(mark_list):
++            yield m
+ 
+ 
+ def normalize_mark_list(
+@@ -388,7 +401,11 @@ def store_mark(obj, mark: Mark) -> None:
+     assert isinstance(mark, Mark), mark
+     # Always reassign name to avoid updating pytestmark in a reference that
+     # was only borrowed.
+-    obj.pytestmark = [*get_unpacked_marks(obj), mark]
++    # Only consider locally set pytestmark to avoid copying inherited marks.
++    current = getattr(obj, "__dict__", {}).get("pytestmark", [])
++    if not isinstance(current, list):
++        current = [current]
++    obj.pytestmark = [*normalize_mark_list(current), mark]
+ 
+ 
+ # Typing for builtin pytest marks. This is cheating; it gives builtin marks
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-20 19:42:41,146 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 10012.deprecation.rst
+|   ├── 10150.bugfix.rst
+|   ├── 10218.improvement.rst
+|   ├── 10313.trivial.rst
+|   ├── 4562.deprecation.rst
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9159.bugfix.rst
+|   ├── 9248.doc.rst
+|   ├── 9291.doc.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9877.bugfix.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   ├── release-7.1.3.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   └── get_issues.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Consider MRO when obtaining marks for classes
+
+Description: When using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.
+
+If it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.
+
+```python
+import itertools
+import pytest
+
+class BaseMeta(type):
+    @property
+    def pytestmark(self):
+        return (
+            getattr(self, "_pytestmark", []) +
+            list(itertools.chain.from_iterable(getattr(x, "_pytestmark", []) for x in self.__mro__))
+        )
+
+    @pytestmark.setter
+    def pytestmark(self, value):
+        self._pytestmark = value
+
+
+class Base(object):
+    # Without this metaclass, foo and bar markers override each other, and test_dings
+    # will only have one marker
+    # With the metaclass, test_dings will have both
+    __metaclass__ = BaseMeta
+
+@pytest.mark.foo
+class Foo(Base):
+    pass
+
+
+@pytest.mark.bar
+class Bar(Base):
+    pass
+
+class TestDings(Foo, Bar):
+    def test_dings(self):
+        # This test should have both markers, foo and bar.
+        # In practice markers are resolved using MRO (so foo wins), unless the
+        # metaclass is applied
+        pass
+```
+
+I'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.
+
+Please note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)
+Consider MRO when obtaining marks for classes
+When using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.
+
+If it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.
+
+```python
+import itertools
+import pytest
+
+class BaseMeta(type):
+    @property
+    def pytestmark(self):
+        return (
+            getattr(self, "_pytestmark", []) +
+            list(itertools.chain.from_iterable(getattr(x, "_pytestmark", []) for x in self.__mro__))
+        )
+
+    @pytestmark.setter
+    def pytestmark(self, value):
+        self._pytestmark = value
+
+
+class Base(object):
+    # Without this metaclass, foo and bar markers override each other, and test_dings
+    # will only have one marker
+    # With the metaclass, test_dings will have both
+    __metaclass__ = BaseMeta
+
+@pytest.mark.foo
+class Foo(Base):
+    pass
+
+
+@pytest.mark.bar
+class Bar(Base):
+    pass
+
+class TestDings(Foo, Bar):
+    def test_dings(self):
+        # This test should have both markers, foo and bar.
+        # In practice markers are resolved using MRO (so foo wins), unless the
+        # metaclass is applied
+        pass
+```
+
+I'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.
+
+Please note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)
+Fix missing marks when inheritance from multiple classes
+
+<!--
+Thanks for submitting a PR, your contribution is really appreciated!
+
+Here is a quick checklist that should be present in PRs.
+
+- [] Include documentation when adding new features.
+- [ ] Include new tests or update existing tests when applicable.
+- [X] Allow maintainers to push and squash when merging my commits. Please uncheck this if you prefer to squash the commits yourself.
+
+If this change fixes an issue, please:
+
+- [x] Add text like ``closes #XYZW`` to the PR description and/or commits (where ``XYZW`` is the issue number). See the [github docs](https://help.github.com/en/github/managing-your-work-on-github/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword) for more information.
+
+Unless your change is trivial or a small documentation fix (e.g., a typo or reword of a small section) please:
+
+- [x] Create a new changelog file in the `changelog` folder, with a name like `<ISSUE NUMBER>.<TYPE>.rst`. See [changelog/README.rst](https://github.com/pytest-dev/pytest/blob/main/changelog/README.rst) for details.
+
+  Write sentences in the **past or present tense**, examples:
+
+  * *Improved verbose diff output with sequences.*
+  * *Terminal summary statistics now use multiple colors.*
+
+  Also make sure to end the sentence with a `.`.
+
+- [x] Add yourself to `AUTHORS` in alphabetical order.
+-->
+
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index 34d96c2bc..0f80a75ed 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -299,6 +299,7 @@ or multiple markers::
+ 
+     pytestmark = [pytest.mark.webtest, pytest.mark.slowtest]
+ 
++When using multiple inheritance, class-level markers from all base classes are merged following the class hierarchy (MRO). A derived class inherits markers from all its bases; markers are not deduplicated.
+ 
+ Due to legacy reasons, before class decorators were introduced, it is possible to set the
+ :globalvar:`pytestmark` attribute on a test class like this:
+diff --git a/doc/en/how-to/mark.rst b/doc/en/how-to/mark.rst
+index 33f9d18bf..ce0dfd1b8 100644
+--- a/doc/en/how-to/mark.rst
++++ b/doc/en/how-to/mark.rst
+@@ -23,6 +23,8 @@ It's easy to create custom markers or to apply markers
+ to whole test classes or modules. Those markers can be used by plugins, and also
+ are commonly used to :ref:`select tests <mark run>` on the command-line with the ``-m`` option.
+ 
++When applying marks to classes, marks defined on base classes are merged across the full inheritance hierarchy (MRO).
++
+ See :ref:`mark examples` for examples which also serve as documentation.
+ 
+ .. note::
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..8f6dc81a2 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -356,11 +356,24 @@ class MarkDecorator:
+ 
+ 
+ def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+-    """Obtain the unpacked marks that are stored on an object."""
+-    mark_list = getattr(obj, "pytestmark", [])
+-    if not isinstance(mark_list, list):
+-        mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    """Obtain the unpacked marks that are stored on an object.
++
++    For classes, merge marks from the entire MRO by reading only
++    class-local pytestmark attributes from each class in the hierarchy.
++    """
++    if inspect.isclass(obj):
++        for cls in reversed(obj.__mro__):
++            mark_list = getattr(cls, "__dict__", {}).get("pytestmark", [])
++            if not isinstance(mark_list, list):
++                mark_list = [mark_list]
++            for m in normalize_mark_list(mark_list):
++                yield m
++    else:
++        mark_list = getattr(obj, "pytestmark", [])
++        if not isinstance(mark_list, list):
++            mark_list = [mark_list]
++        for m in normalize_mark_list(mark_list):
++            yield m
+ 
+ 
+ def normalize_mark_list(
+@@ -388,7 +401,11 @@ def store_mark(obj, mark: Mark) -> None:
+     assert isinstance(mark, Mark), mark
+     # Always reassign name to avoid updating pytestmark in a reference that
+     # was only borrowed.
+-    obj.pytestmark = [*get_unpacked_marks(obj), mark]
++    # Only consider locally set pytestmark to avoid copying inherited marks.
++    current = getattr(obj, "__dict__", {}).get("pytestmark", [])
++    if not isinstance(current, list):
++        current = [current]
++    obj.pytestmark = [*normalize_mark_list(current), mark]
+ 
+ 
+ # Typing for builtin pytest marks. This is cheating; it gives builtin marks
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 19:42:52,841 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to find test cases related to marker inheritance in classes, specifically in a multiple inheritance scenario as described in the bug report. The file `testing/test_mark.py` is the most logical place to find such tests, but its content is not available in the current context. Therefore, I need to request the content of this file to identify relevant test cases that cover marker application and inheritance on classes.' query='Please provide the full content of testing/test_mark.py.' extra_requirements='' purpose='I need the content of this file to find existing tests related to marker inheritance and identify 3 relevant examples for the user.'
+2025-12-20 19:42:52,843 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of testing/test_mark.py.
+2025-12-20 19:42:52,843 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-20 19:42:52,843 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-20 19:42:52,844 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-20 19:42:52,844 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of testing/test_mark.py.
+Purpose: I need the content of this file to find existing tests related to marker inheritance and identify 3 relevant examples for the user.
+2025-12-20 19:42:57,363 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have read the full content of the `testing/test_mark.py` file. I will now analyze this content to find existing tests related to marker inheritance and identify three relevant examples for you.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/test_mark.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2038, 'candidates_token_count': 62, 'total_token_count': 2485, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2038}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 62}], 'thoughts_token_count': 385, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.4791479725991526, 'model_name': 'gemini-2.5-pro'} id='run--bd636fe1-b08a-4b34-808f-acccc93d1a77-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/test_mark.py'}, 'id': '334a64ab-b66b-4d86-a0be-043b36f23ece', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2038, 'output_tokens': 62, 'total_tokens': 2485, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 385}}
+2025-12-20 19:43:02,738 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have reviewed the content of `testing/test_mark.py` to identify tests related to marker inheritance. My analysis focused on how markers are applied and inherited between classes and methods. I have found several relevant examples and will now provide a summary of my findings.' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"relative_path": "testing/test_mark.py", "start_line": 501.0, "end_line": 1000.0}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 8568, 'candidates_token_count': 81, 'total_token_count': 9087, 'cached_content_token_count': 1801, 'prompt_tokens_details': [{'modality': 1, 'token_count': 8568}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1801}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 81}], 'thoughts_token_count': 438}, 'finish_reason': 'STOP', 'avg_logprobs': -0.8037553952064043, 'model_name': 'gemini-2.5-pro'} id='run--abc2cc22-9e38-4b23-a780-a6449b24e5af-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'relative_path': 'testing/test_mark.py', 'start_line': 501.0, 'end_line': 1000.0}, 'id': '5ff8df92-b3e8-4191-9d9d-61f786130726', 'type': 'tool_call'}] usage_metadata={'input_tokens': 8568, 'output_tokens': 81, 'total_tokens': 9087, 'input_token_details': {'cache_read': 1801}, 'output_token_details': {'reasoning': 438}}
+2025-12-20 19:43:10,534 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content="I have read the requested file, `testing/test_mark.py`, to find tests related to marker inheritance. After analyzing the file's contents, I have identified three relevant examples that demonstrate how markers are inherited and applied in different scenarios. These examples are from the `TestFunctional` class within the file." additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 15543, 'candidates_token_count': 64, 'total_token_count': 16299, 'cached_content_token_count': 7478, 'prompt_tokens_details': [{'modality': 1, 'token_count': 15543}], 'cache_tokens_details': [{'modality': 1, 'token_count': 7478}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 64}], 'thoughts_token_count': 692}, 'finish_reason': 'STOP', 'avg_logprobs': -0.9647067189216614, 'model_name': 'gemini-2.5-pro'} id='run--4ffaea9f-de93-4530-96dd-4d31d2e53953-0' usage_metadata={'input_tokens': 15543, 'output_tokens': 64, 'total_tokens': 16299, 'input_token_details': {'cache_read': 7478}, 'output_token_details': {'reasoning': 692}}
+2025-12-20 19:43:10,538 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of testing/test_mark.py.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the content of this file to find existing tests related to marker inheritance and identify 3 relevant examples for the user.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/test_mark.py
+Line number range: 1 - 500
+Content:
+1. import os
+2. import sys
+3. from typing import List
+4. from typing import Optional
+5. from unittest import mock
+6. 
+7. import pytest
+8. from _pytest.config import ExitCode
+9. from _pytest.mark import MarkGenerator
+10. from _pytest.mark.structures import EMPTY_PARAMETERSET_OPTION
+11. from _pytest.nodes import Collector
+12. from _pytest.nodes import Node
+13. from _pytest.pytester import Pytester
+14. 
+15. 
+16. class TestMark:
+17.     @pytest.mark.parametrize("attr", ["mark", "param"])
+18.     def test_pytest_exists_in_namespace_all(self, attr: str) -> None:
+19.         module = sys.modules["pytest"]
+20.         assert attr in module.__all__  # type: ignore
+21. 
+22.     def test_pytest_mark_notcallable(self) -> None:
+23.         mark = MarkGenerator(_ispytest=True)
+24.         with pytest.raises(TypeError):
+25.             mark()  # type: ignore[operator]
+26. 
+27.     def test_mark_with_param(self):
+28.         def some_function(abc):
+29.             pass
+30. 
+31.         class SomeClass:
+32.             pass
+33. 
+34.         assert pytest.mark.foo(some_function) is some_function
+35.         marked_with_args = pytest.mark.foo.with_args(some_function)
+36.         assert marked_with_args is not some_function  # type: ignore[comparison-overlap]
+37. 
+38.         assert pytest.mark.foo(SomeClass) is SomeClass
+39.         assert pytest.mark.foo.with_args(SomeClass) is not SomeClass  # type: ignore[comparison-overlap]
+40. 
+41.     def test_pytest_mark_name_starts_with_underscore(self) -> None:
+42.         mark = MarkGenerator(_ispytest=True)
+43.         with pytest.raises(AttributeError):
+44.             mark._some_name
+45. 
+46. 
+47. def test_marked_class_run_twice(pytester: Pytester) -> None:
+48.     """Test fails file is run twice that contains marked class.
+49.     See issue#683.
+50.     """
+51.     py_file = pytester.makepyfile(
+52.         """
+53.     import pytest
+54.     @pytest.mark.parametrize('abc', [1, 2, 3])
+55.     class Test1(object):
+56.         def test_1(self, abc):
+57.             assert abc in [1, 2, 3]
+58.     """
+59.     )
+60.     file_name = os.path.basename(py_file)
+61.     rec = pytester.inline_run(file_name, file_name)
+62.     rec.assertoutcome(passed=6)
+63. 
+64. 
+65. def test_ini_markers(pytester: Pytester) -> None:
+66.     pytester.makeini(
+67.         """
+68.         [pytest]
+69.         markers =
+70.             a1: this is a webtest marker
+71.             a2: this is a smoke marker
+72.     """
+73.     )
+74.     pytester.makepyfile(
+75.         """
+76.         def test_markers(pytestconfig):
+77.             markers = pytestconfig.getini("markers")
+78.             print(markers)
+79.             assert len(markers) >= 2
+80.             assert markers[0].startswith("a1:")
+81.             assert markers[1].startswith("a2:")
+82.     """
+83.     )
+84.     rec = pytester.inline_run()
+85.     rec.assertoutcome(passed=1)
+86. 
+87. 
+88. def test_markers_option(pytester: Pytester) -> None:
+89.     pytester.makeini(
+90.         """
+91.         [pytest]
+92.         markers =
+93.             a1: this is a webtest marker
+94.             a1some: another marker
+95.             nodescription
+96.     """
+97.     )
+98.     result = pytester.runpytest("--markers")
+99.     result.stdout.fnmatch_lines(
+100.         ["*a1*this is a webtest*", "*a1some*another marker", "*nodescription*"]
+101.     )
+102. 
+103. 
+104. def test_ini_markers_whitespace(pytester: Pytester) -> None:
+105.     pytester.makeini(
+106.         """
+107.         [pytest]
+108.         markers =
+109.             a1 : this is a whitespace marker
+110.     """
+111.     )
+112.     pytester.makepyfile(
+113.         """
+114.         import pytest
+115. 
+116.         @pytest.mark.a1
+117.         def test_markers():
+118.             assert True
+119.     """
+120.     )
+121.     rec = pytester.inline_run("--strict-markers", "-m", "a1")
+122.     rec.assertoutcome(passed=1)
+123. 
+124. 
+125. def test_marker_without_description(pytester: Pytester) -> None:
+126.     pytester.makefile(
+127.         ".cfg",
+128.         setup="""
+129.         [tool:pytest]
+130.         markers=slow
+131.     """,
+132.     )
+133.     pytester.makeconftest(
+134.         """
+135.         import pytest
+136.         pytest.mark.xfail('FAIL')
+137.     """
+138.     )
+139.     ftdir = pytester.mkdir("ft1_dummy")
+140.     pytester.path.joinpath("conftest.py").replace(ftdir.joinpath("conftest.py"))
+141.     rec = pytester.runpytest("--strict-markers")
+142.     rec.assert_outcomes()
+143. 
+144. 
+145. def test_markers_option_with_plugin_in_current_dir(pytester: Pytester) -> None:
+146.     pytester.makeconftest('pytest_plugins = "flip_flop"')
+147.     pytester.makepyfile(
+148.         flip_flop="""\
+149.         def pytest_configure(config):
+150.             config.addinivalue_line("markers", "flip:flop")
+151. 
+152.         def pytest_generate_tests(metafunc):
+153.             try:
+154.                 mark = metafunc.function.flipper
+155.             except AttributeError:
+156.                 return
+157.             metafunc.parametrize("x", (10, 20))"""
+158.     )
+159.     pytester.makepyfile(
+160.         """\
+161.         import pytest
+162.         @pytest.mark.flipper
+163.         def test_example(x):
+164.             assert x"""
+165.     )
+166. 
+167.     result = pytester.runpytest("--markers")
+168.     result.stdout.fnmatch_lines(["*flip*flop*"])
+169. 
+170. 
+171. def test_mark_on_pseudo_function(pytester: Pytester) -> None:
+172.     pytester.makepyfile(
+173.         """
+174.         import pytest
+175. 
+176.         @pytest.mark.r(lambda x: 0/0)
+177.         def test_hello():
+178.             pass
+179.     """
+180.     )
+181.     reprec = pytester.inline_run()
+182.     reprec.assertoutcome(passed=1)
+183. 
+184. 
+185. @pytest.mark.parametrize("option_name", ["--strict-markers", "--strict"])
+186. def test_strict_prohibits_unregistered_markers(
+187.     pytester: Pytester, option_name: str
+188. ) -> None:
+189.     pytester.makepyfile(
+190.         """
+191.         import pytest
+192.         @pytest.mark.unregisteredmark
+193.         def test_hello():
+194.             pass
+195.     """
+196.     )
+197.     result = pytester.runpytest(option_name)
+198.     assert result.ret != 0
+199.     result.stdout.fnmatch_lines(
+200.         ["'unregisteredmark' not found in `markers` configuration option"]
+201.     )
+202. 
+203. 
+204. @pytest.mark.parametrize(
+205.     ("expr", "expected_passed"),
+206.     [
+207.         ("xyz", ["test_one"]),
+208.         ("(((  xyz))  )", ["test_one"]),
+209.         ("not not xyz", ["test_one"]),
+210.         ("xyz and xyz2", []),
+211.         ("xyz2", ["test_two"]),
+212.         ("xyz or xyz2", ["test_one", "test_two"]),
+213.     ],
+214. )
+215. def test_mark_option(
+216.     expr: str, expected_passed: List[Optional[str]], pytester: Pytester
+217. ) -> None:
+218.     pytester.makepyfile(
+219.         """
+220.         import pytest
+221.         @pytest.mark.xyz
+222.         def test_one():
+223.             pass
+224.         @pytest.mark.xyz2
+225.         def test_two():
+226.             pass
+227.     """
+228.     )
+229.     rec = pytester.inline_run("-m", expr)
+230.     passed, skipped, fail = rec.listoutcomes()
+231.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+232.     assert passed_str == expected_passed
+233. 
+234. 
+235. @pytest.mark.parametrize(
+236.     ("expr", "expected_passed"),
+237.     [("interface", ["test_interface"]), ("not interface", ["test_nointer"])],
+238. )
+239. def test_mark_option_custom(
+240.     expr: str, expected_passed: List[str], pytester: Pytester
+241. ) -> None:
+242.     pytester.makeconftest(
+243.         """
+244.         import pytest
+245.         def pytest_collection_modifyitems(items):
+246.             for item in items:
+247.                 if "interface" in item.nodeid:
+248.                     item.add_marker(pytest.mark.interface)
+249.     """
+250.     )
+251.     pytester.makepyfile(
+252.         """
+253.         def test_interface():
+254.             pass
+255.         def test_nointer():
+256.             pass
+257.     """
+258.     )
+259.     rec = pytester.inline_run("-m", expr)
+260.     passed, skipped, fail = rec.listoutcomes()
+261.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+262.     assert passed_str == expected_passed
+263. 
+264. 
+265. @pytest.mark.parametrize(
+266.     ("expr", "expected_passed"),
+267.     [
+268.         ("interface", ["test_interface"]),
+269.         ("not interface", ["test_nointer", "test_pass", "test_1", "test_2"]),
+270.         ("pass", ["test_pass"]),
+271.         ("not pass", ["test_interface", "test_nointer", "test_1", "test_2"]),
+272.         ("not not not (pass)", ["test_interface", "test_nointer", "test_1", "test_2"]),
+273.         ("1 or 2", ["test_1", "test_2"]),
+274.         ("not (1 or 2)", ["test_interface", "test_nointer", "test_pass"]),
+275.     ],
+276. )
+277. def test_keyword_option_custom(
+278.     expr: str, expected_passed: List[str], pytester: Pytester
+279. ) -> None:
+280.     pytester.makepyfile(
+281.         """
+282.         def test_interface():
+283.             pass
+284.         def test_nointer():
+285.             pass
+286.         def test_pass():
+287.             pass
+288.         def test_1():
+289.             pass
+290.         def test_2():
+291.             pass
+292.     """
+293.     )
+294.     rec = pytester.inline_run("-k", expr)
+295.     passed, skipped, fail = rec.listoutcomes()
+296.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+297.     assert passed_str == expected_passed
+298. 
+299. 
+300. def test_keyword_option_considers_mark(pytester: Pytester) -> None:
+301.     pytester.copy_example("marks/marks_considered_keywords")
+302.     rec = pytester.inline_run("-k", "foo")
+303.     passed = rec.listoutcomes()[0]
+304.     assert len(passed) == 1
+305. 
+306. 
+307. @pytest.mark.parametrize(
+308.     ("expr", "expected_passed"),
+309.     [
+310.         ("None", ["test_func[None]"]),
+311.         ("[1.3]", ["test_func[1.3]"]),
+312.         ("2-3", ["test_func[2-3]"]),
+313.     ],
+314. )
+315. def test_keyword_option_parametrize(
+316.     expr: str, expected_passed: List[str], pytester: Pytester
+317. ) -> None:
+318.     pytester.makepyfile(
+319.         """
+320.         import pytest
+321.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+322.         def test_func(arg):
+323.             pass
+324.     """
+325.     )
+326.     rec = pytester.inline_run("-k", expr)
+327.     passed, skipped, fail = rec.listoutcomes()
+328.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+329.     assert passed_str == expected_passed
+330. 
+331. 
+332. def test_parametrize_with_module(pytester: Pytester) -> None:
+333.     pytester.makepyfile(
+334.         """
+335.         import pytest
+336.         @pytest.mark.parametrize("arg", [pytest,])
+337.         def test_func(arg):
+338.             pass
+339.     """
+340.     )
+341.     rec = pytester.inline_run()
+342.     passed, skipped, fail = rec.listoutcomes()
+343.     expected_id = "test_func[" + pytest.__name__ + "]"
+344.     assert passed[0].nodeid.split("::")[-1] == expected_id
+345. 
+346. 
+347. @pytest.mark.parametrize(
+348.     ("expr", "expected_error"),
+349.     [
+350.         (
+351.             "foo or",
+352.             "at column 7: expected not OR left parenthesis OR identifier; got end of input",
+353.         ),
+354.         (
+355.             "foo or or",
+356.             "at column 8: expected not OR left parenthesis OR identifier; got or",
+357.         ),
+358.         (
+359.             "(foo",
+360.             "at column 5: expected right parenthesis; got end of input",
+361.         ),
+362.         (
+363.             "foo bar",
+364.             "at column 5: expected end of input; got identifier",
+365.         ),
+366.         (
+367.             "or or",
+368.             "at column 1: expected not OR left parenthesis OR identifier; got or",
+369.         ),
+370.         (
+371.             "not or",
+372.             "at column 5: expected not OR left parenthesis OR identifier; got or",
+373.         ),
+374.     ],
+375. )
+376. def test_keyword_option_wrong_arguments(
+377.     expr: str, expected_error: str, pytester: Pytester, capsys
+378. ) -> None:
+379.     pytester.makepyfile(
+380.         """
+381.             def test_func(arg):
+382.                 pass
+383.         """
+384.     )
+385.     pytester.inline_run("-k", expr)
+386.     err = capsys.readouterr().err
+387.     assert expected_error in err
+388. 
+389. 
+390. def test_parametrized_collected_from_command_line(pytester: Pytester) -> None:
+391.     """Parametrized test not collected if test named specified in command
+392.     line issue#649."""
+393.     py_file = pytester.makepyfile(
+394.         """
+395.         import pytest
+396.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+397.         def test_func(arg):
+398.             pass
+399.     """
+400.     )
+401.     file_name = os.path.basename(py_file)
+402.     rec = pytester.inline_run(file_name + "::" + "test_func")
+403.     rec.assertoutcome(passed=3)
+404. 
+405. 
+406. def test_parametrized_collect_with_wrong_args(pytester: Pytester) -> None:
+407.     """Test collect parametrized func with wrong number of args."""
+408.     py_file = pytester.makepyfile(
+409.         """
+410.         import pytest
+411. 
+412.         @pytest.mark.parametrize('foo, bar', [(1, 2, 3)])
+413.         def test_func(foo, bar):
+414.             pass
+415.     """
+416.     )
+417. 
+418.     result = pytester.runpytest(py_file)
+419.     result.stdout.fnmatch_lines(
+420.         [
+421.             'test_parametrized_collect_with_wrong_args.py::test_func: in "parametrize" the number of names (2):',
+422.             "  ['foo', 'bar']",
+423.             "must be equal to the number of values (3):",
+424.             "  (1, 2, 3)",
+425.         ]
+426.     )
+427. 
+428. 
+429. def test_parametrized_with_kwargs(pytester: Pytester) -> None:
+430.     """Test collect parametrized func with wrong number of args."""
+431.     py_file = pytester.makepyfile(
+432.         """
+433.         import pytest
+434. 
+435.         @pytest.fixture(params=[1,2])
+436.         def a(request):
+437.             return request.param
+438. 
+439.         @pytest.mark.parametrize(argnames='b', argvalues=[1, 2])
+440.         def test_func(a, b):
+441.             pass
+442.     """
+443.     )
+444. 
+445.     result = pytester.runpytest(py_file)
+446.     assert result.ret == 0
+447. 
+448. 
+449. def test_parametrize_iterator(pytester: Pytester) -> None:
+450.     """`parametrize` should work with generators (#5354)."""
+451.     py_file = pytester.makepyfile(
+452.         """\
+453.         import pytest
+454. 
+455.         def gen():
+456.             yield 1
+457.             yield 2
+458.             yield 3
+459. 
+460.         @pytest.mark.parametrize('a', gen())
+461.         def test(a):
+462.             assert a >= 1
+463.         """
+464.     )
+465.     result = pytester.runpytest(py_file)
+466.     assert result.ret == 0
+467.     # should not skip any tests
+468.     result.stdout.fnmatch_lines(["*3 passed*"])
+469. 
+470. 
+471. class TestFunctional:
+472.     def test_merging_markers_deep(self, pytester: Pytester) -> None:
+473.         # issue 199 - propagate markers into nested classes
+474.         p = pytester.makepyfile(
+475.             """
+476.             import pytest
+477.             class TestA(object):
+478.                 pytestmark = pytest.mark.a
+479.                 def test_b(self):
+480.                     assert True
+481.                 class TestC(object):
+482.                     # this one didn't get marked
+483.                     def test_d(self):
+484.                         assert True
+485.         """
+486.         )
+487.         items, rec = pytester.inline_genitems(p)
+488.         for item in items:
+489.             print(item, item.keywords)
+490.             assert [x for x in item.iter_markers() if x.name == "a"]
+491. 
+492.     def test_mark_decorator_subclass_does_not_propagate_to_base(
+493.         self, pytester: Pytester
+494.     ) -> None:
+495.         p = pytester.makepyfile(
+496.             """
+497.             import pytest
+498. 
+499.             @pytest.mark.a
+500.             class Base(object): pass
+
+
+File: testing/test_mark.py
+Line number range: 501 - 1000
+Content:
+501. 
+502.             @pytest.mark.b
+503.             class Test1(Base):
+504.                 def test_foo(self): pass
+505. 
+506.             class Test2(Base):
+507.                 def test_bar(self): pass
+508.         """
+509.         )
+510.         items, rec = pytester.inline_genitems(p)
+511.         self.assert_markers(items, test_foo=("a", "b"), test_bar=("a",))
+512. 
+513.     def test_mark_should_not_pass_to_siebling_class(self, pytester: Pytester) -> None:
+514.         """#568"""
+515.         p = pytester.makepyfile(
+516.             """
+517.             import pytest
+518. 
+519.             class TestBase(object):
+520.                 def test_foo(self):
+521.                     pass
+522. 
+523.             @pytest.mark.b
+524.             class TestSub(TestBase):
+525.                 pass
+526. 
+527. 
+528.             class TestOtherSub(TestBase):
+529.                 pass
+530. 
+531.         """
+532.         )
+533.         items, rec = pytester.inline_genitems(p)
+534.         base_item, sub_item, sub_item_other = items
+535.         print(items, [x.nodeid for x in items])
+536.         # new api segregates
+537.         assert not list(base_item.iter_markers(name="b"))
+538.         assert not list(sub_item_other.iter_markers(name="b"))
+539.         assert list(sub_item.iter_markers(name="b"))
+540. 
+541.     def test_mark_decorator_baseclasses_merged(self, pytester: Pytester) -> None:
+542.         p = pytester.makepyfile(
+543.             """
+544.             import pytest
+545. 
+546.             @pytest.mark.a
+547.             class Base(object): pass
+548. 
+549.             @pytest.mark.b
+550.             class Base2(Base): pass
+551. 
+552.             @pytest.mark.c
+553.             class Test1(Base2):
+554.                 def test_foo(self): pass
+555. 
+556.             class Test2(Base2):
+557.                 @pytest.mark.d
+558.                 def test_bar(self): pass
+559.         """
+560.         )
+561.         items, rec = pytester.inline_genitems(p)
+562.         self.assert_markers(items, test_foo=("a", "b", "c"), test_bar=("a", "b", "d"))
+563. 
+564.     def test_mark_closest(self, pytester: Pytester) -> None:
+565.         p = pytester.makepyfile(
+566.             """
+567.             import pytest
+568. 
+569.             @pytest.mark.c(location="class")
+570.             class Test:
+571.                 @pytest.mark.c(location="function")
+572.                 def test_has_own(self):
+573.                     pass
+574. 
+575.                 def test_has_inherited(self):
+576.                     pass
+577. 
+578.         """
+579.         )
+580.         items, rec = pytester.inline_genitems(p)
+581.         has_own, has_inherited = items
+582.         has_own_marker = has_own.get_closest_marker("c")
+583.         has_inherited_marker = has_inherited.get_closest_marker("c")
+584.         assert has_own_marker is not None
+585.         assert has_inherited_marker is not None
+586.         assert has_own_marker.kwargs == {"location": "function"}
+587.         assert has_inherited_marker.kwargs == {"location": "class"}
+588.         assert has_own.get_closest_marker("missing") is None
+589. 
+590.     def test_mark_with_wrong_marker(self, pytester: Pytester) -> None:
+591.         reprec = pytester.inline_runsource(
+592.             """
+593.                 import pytest
+594.                 class pytestmark(object):
+595.                     pass
+596.                 def test_func():
+597.                     pass
+598.         """
+599.         )
+600.         values = reprec.getfailedcollections()
+601.         assert len(values) == 1
+602.         assert "TypeError" in str(values[0].longrepr)
+603. 
+604.     def test_mark_dynamically_in_funcarg(self, pytester: Pytester) -> None:
+605.         pytester.makeconftest(
+606.             """
+607.             import pytest
+608.             @pytest.fixture
+609.             def arg(request):
+610.                 request.applymarker(pytest.mark.hello)
+611.             def pytest_terminal_summary(terminalreporter):
+612.                 values = terminalreporter.stats['passed']
+613.                 terminalreporter._tw.line("keyword: %s" % values[0].keywords)
+614.         """
+615.         )
+616.         pytester.makepyfile(
+617.             """
+618.             def test_func(arg):
+619.                 pass
+620.         """
+621.         )
+622.         result = pytester.runpytest()
+623.         result.stdout.fnmatch_lines(["keyword: *hello*"])
+624. 
+625.     def test_no_marker_match_on_unmarked_names(self, pytester: Pytester) -> None:
+626.         p = pytester.makepyfile(
+627.             """
+628.             import pytest
+629.             @pytest.mark.shouldmatch
+630.             def test_marked():
+631.                 assert 1
+632. 
+633.             def test_unmarked():
+634.                 assert 1
+635.         """
+636.         )
+637.         reprec = pytester.inline_run("-m", "test_unmarked", p)
+638.         passed, skipped, failed = reprec.listoutcomes()
+639.         assert len(passed) + len(skipped) + len(failed) == 0
+640.         dlist = reprec.getcalls("pytest_deselected")
+641.         deselected_tests = dlist[0].items
+642.         assert len(deselected_tests) == 2
+643. 
+644.     def test_keywords_at_node_level(self, pytester: Pytester) -> None:
+645.         pytester.makepyfile(
+646.             """
+647.             import pytest
+648.             @pytest.fixture(scope="session", autouse=True)
+649.             def some(request):
+650.                 request.keywords["hello"] = 42
+651.                 assert "world" not in request.keywords
+652. 
+653.             @pytest.fixture(scope="function", autouse=True)
+654.             def funcsetup(request):
+655.                 assert "world" in request.keywords
+656.                 assert "hello" in  request.keywords
+657. 
+658.             @pytest.mark.world
+659.             def test_function():
+660.                 pass
+661.         """
+662.         )
+663.         reprec = pytester.inline_run()
+664.         reprec.assertoutcome(passed=1)
+665. 
+666.     def test_keyword_added_for_session(self, pytester: Pytester) -> None:
+667.         pytester.makeconftest(
+668.             """
+669.             import pytest
+670.             def pytest_collection_modifyitems(session):
+671.                 session.add_marker("mark1")
+672.                 session.add_marker(pytest.mark.mark2)
+673.                 session.add_marker(pytest.mark.mark3)
+674.                 pytest.raises(ValueError, lambda:
+675.                         session.add_marker(10))
+676.         """
+677.         )
+678.         pytester.makepyfile(
+679.             """
+680.             def test_some(request):
+681.                 assert "mark1" in request.keywords
+682.                 assert "mark2" in request.keywords
+683.                 assert "mark3" in request.keywords
+684.                 assert 10 not in request.keywords
+685.                 marker = request.node.get_closest_marker("mark1")
+686.                 assert marker.name == "mark1"
+687.                 assert marker.args == ()
+688.                 assert marker.kwargs == {}
+689.         """
+690.         )
+691.         reprec = pytester.inline_run("-m", "mark1")
+692.         reprec.assertoutcome(passed=1)
+693. 
+694.     def assert_markers(self, items, **expected) -> None:
+695.         """Assert that given items have expected marker names applied to them.
+696.         expected should be a dict of (item name -> seq of expected marker names).
+697. 
+698.         Note: this could be moved to ``pytester`` if proven to be useful
+699.         to other modules.
+700.         """
+701.         items = {x.name: x for x in items}
+702.         for name, expected_markers in expected.items():
+703.             markers = {m.name for m in items[name].iter_markers()}
+704.             assert markers == set(expected_markers)
+705. 
+706.     @pytest.mark.filterwarnings("ignore")
+707.     def test_mark_from_parameters(self, pytester: Pytester) -> None:
+708.         """#1540"""
+709.         pytester.makepyfile(
+710.             """
+711.             import pytest
+712. 
+713.             pytestmark = pytest.mark.skipif(True, reason='skip all')
+714. 
+715.             # skipifs inside fixture params
+716.             params = [pytest.mark.skipif(False, reason='dont skip')('parameter')]
+717. 
+718. 
+719.             @pytest.fixture(params=params)
+720.             def parameter(request):
+721.                 return request.param
+722. 
+723. 
+724.             def test_1(parameter):
+725.                 assert True
+726.         """
+727.         )
+728.         reprec = pytester.inline_run()
+729.         reprec.assertoutcome(skipped=1)
+730. 
+731.     def test_reevaluate_dynamic_expr(self, pytester: Pytester) -> None:
+732.         """#7360"""
+733.         py_file1 = pytester.makepyfile(
+734.             test_reevaluate_dynamic_expr1="""
+735.             import pytest
+736. 
+737.             skip = True
+738. 
+739.             @pytest.mark.skipif("skip")
+740.             def test_should_skip():
+741.                 assert True
+742.         """
+743.         )
+744.         py_file2 = pytester.makepyfile(
+745.             test_reevaluate_dynamic_expr2="""
+746.             import pytest
+747. 
+748.             skip = False
+749. 
+750.             @pytest.mark.skipif("skip")
+751.             def test_should_not_skip():
+752.                 assert True
+753.         """
+754.         )
+755. 
+756.         file_name1 = os.path.basename(py_file1)
+757.         file_name2 = os.path.basename(py_file2)
+758.         reprec = pytester.inline_run(file_name1, file_name2)
+759.         reprec.assertoutcome(passed=1, skipped=1)
+760. 
+761. 
+762. class TestKeywordSelection:
+763.     def test_select_simple(self, pytester: Pytester) -> None:
+764.         file_test = pytester.makepyfile(
+765.             """
+766.             def test_one():
+767.                 assert 0
+768.             class TestClass(object):
+769.                 def test_method_one(self):
+770.                     assert 42 == 43
+771.         """
+772.         )
+773. 
+774.         def check(keyword, name):
+775.             reprec = pytester.inline_run("-s", "-k", keyword, file_test)
+776.             passed, skipped, failed = reprec.listoutcomes()
+777.             assert len(failed) == 1
+778.             assert failed[0].nodeid.split("::")[-1] == name
+779.             assert len(reprec.getcalls("pytest_deselected")) == 1
+780. 
+781.         for keyword in ["test_one", "est_on"]:
+782.             check(keyword, "test_one")
+783.         check("TestClass and test", "test_method_one")
+784. 
+785.     @pytest.mark.parametrize(
+786.         "keyword",
+787.         [
+788.             "xxx",
+789.             "xxx and test_2",
+790.             "TestClass",
+791.             "xxx and not test_1",
+792.             "TestClass and test_2",
+793.             "xxx and TestClass and test_2",
+794.         ],
+795.     )
+796.     def test_select_extra_keywords(self, pytester: Pytester, keyword) -> None:
+797.         p = pytester.makepyfile(
+798.             test_select="""
+799.             def test_1():
+800.                 pass
+801.             class TestClass(object):
+802.                 def test_2(self):
+803.                     pass
+804.         """
+805.         )
+806.         pytester.makepyfile(
+807.             conftest="""
+808.             import pytest
+809.             @pytest.hookimpl(hookwrapper=True)
+810.             def pytest_pycollect_makeitem(name):
+811.                 outcome = yield
+812.                 if name == "TestClass":
+813.                     item = outcome.get_result()
+814.                     item.extra_keyword_matches.add("xxx")
+815.         """
+816.         )
+817.         reprec = pytester.inline_run(p.parent, "-s", "-k", keyword)
+818.         print("keyword", repr(keyword))
+819.         passed, skipped, failed = reprec.listoutcomes()
+820.         assert len(passed) == 1
+821.         assert passed[0].nodeid.endswith("test_2")
+822.         dlist = reprec.getcalls("pytest_deselected")
+823.         assert len(dlist) == 1
+824.         assert dlist[0].items[0].name == "test_1"
+825. 
+826.     def test_keyword_extra(self, pytester: Pytester) -> None:
+827.         p = pytester.makepyfile(
+828.             """
+829.            def test_one():
+830.                assert 0
+831.            test_one.mykeyword = True
+832.         """
+833.         )
+834.         reprec = pytester.inline_run("-k", "mykeyword", p)
+835.         passed, skipped, failed = reprec.countoutcomes()
+836.         assert failed == 1
+837. 
+838.     @pytest.mark.xfail
+839.     def test_keyword_extra_dash(self, pytester: Pytester) -> None:
+840.         p = pytester.makepyfile(
+841.             """
+842.            def test_one():
+843.                assert 0
+844.            test_one.mykeyword = True
+845.         """
+846.         )
+847.         # with argparse the argument to an option cannot
+848.         # start with '-'
+849.         reprec = pytester.inline_run("-k", "-mykeyword", p)
+850.         passed, skipped, failed = reprec.countoutcomes()
+851.         assert passed + skipped + failed == 0
+852. 
+853.     @pytest.mark.parametrize(
+854.         "keyword",
+855.         ["__", "+", ".."],
+856.     )
+857.     def test_no_magic_values(self, pytester: Pytester, keyword: str) -> None:
+858.         """Make sure the tests do not match on magic values,
+859.         no double underscored values, like '__dict__' and '+'.
+860.         """
+861.         p = pytester.makepyfile(
+862.             """
+863.             def test_one(): assert 1
+864.         """
+865.         )
+866. 
+867.         reprec = pytester.inline_run("-k", keyword, p)
+868.         passed, skipped, failed = reprec.countoutcomes()
+869.         dlist = reprec.getcalls("pytest_deselected")
+870.         assert passed + skipped + failed == 0
+871.         deselected_tests = dlist[0].items
+872.         assert len(deselected_tests) == 1
+873. 
+874.     def test_no_match_directories_outside_the_suite(self, pytester: Pytester) -> None:
+875.         """`-k` should not match against directories containing the test suite (#7040)."""
+876.         test_contents = """
+877.             def test_aaa(): pass
+878.             def test_ddd(): pass
+879.         """
+880.         pytester.makepyfile(
+881.             **{"ddd/tests/__init__.py": "", "ddd/tests/test_foo.py": test_contents}
+882.         )
+883. 
+884.         def get_collected_names(*args):
+885.             _, rec = pytester.inline_genitems(*args)
+886.             calls = rec.getcalls("pytest_collection_finish")
+887.             assert len(calls) == 1
+888.             return [x.name for x in calls[0].session.items]
+889. 
+890.         # sanity check: collect both tests in normal runs
+891.         assert get_collected_names() == ["test_aaa", "test_ddd"]
+892. 
+893.         # do not collect anything based on names outside the collection tree
+894.         assert get_collected_names("-k", pytester._name) == []
+895. 
+896.         # "-k ddd" should only collect "test_ddd", but not
+897.         # 'test_aaa' just because one of its parent directories is named "ddd";
+898.         # this was matched previously because Package.name would contain the full path
+899.         # to the package
+900.         assert get_collected_names("-k", "ddd") == ["test_ddd"]
+901. 
+902. 
+903. class TestMarkDecorator:
+904.     @pytest.mark.parametrize(
+905.         "lhs, rhs, expected",
+906.         [
+907.             (pytest.mark.foo(), pytest.mark.foo(), True),
+908.             (pytest.mark.foo(), pytest.mark.bar(), False),
+909.             (pytest.mark.foo(), "bar", False),
+910.             ("foo", pytest.mark.bar(), False),
+911.         ],
+912.     )
+913.     def test__eq__(self, lhs, rhs, expected) -> None:
+914.         assert (lhs == rhs) == expected
+915. 
+916.     def test_aliases(self) -> None:
+917.         md = pytest.mark.foo(1, "2", three=3)
+918.         assert md.name == "foo"
+919.         assert md.args == (1, "2")
+920.         assert md.kwargs == {"three": 3}
+921. 
+922. 
+923. @pytest.mark.parametrize("mark", [None, "", "skip", "xfail"])
+924. def test_parameterset_for_parametrize_marks(
+925.     pytester: Pytester, mark: Optional[str]
+926. ) -> None:
+927.     if mark is not None:
+928.         pytester.makeini(
+929.             """
+930.         [pytest]
+931.         {}={}
+932.         """.format(
+933.                 EMPTY_PARAMETERSET_OPTION, mark
+934.             )
+935.         )
+936. 
+937.     config = pytester.parseconfig()
+938.     from _pytest.mark import pytest_configure, get_empty_parameterset_mark
+939. 
+940.     pytest_configure(config)
+941.     result_mark = get_empty_parameterset_mark(config, ["a"], all)
+942.     if mark in (None, ""):
+943.         # normalize to the requested name
+944.         mark = "skip"
+945.     assert result_mark.name == mark
+946.     assert result_mark.kwargs["reason"].startswith("got empty parameter set ")
+947.     if mark == "xfail":
+948.         assert result_mark.kwargs.get("run") is False
+949. 
+950. 
+951. def test_parameterset_for_fail_at_collect(pytester: Pytester) -> None:
+952.     pytester.makeini(
+953.         """
+954.     [pytest]
+955.     {}=fail_at_collect
+956.     """.format(
+957.             EMPTY_PARAMETERSET_OPTION
+958.         )
+959.     )
+960. 
+961.     config = pytester.parseconfig()
+962.     from _pytest.mark import pytest_configure, get_empty_parameterset_mark
+963. 
+964.     pytest_configure(config)
+965. 
+966.     with pytest.raises(
+967.         Collector.CollectError,
+968.         match=r"Empty parameter set in 'pytest_configure' at line \d\d+",
+969.     ):
+970.         get_empty_parameterset_mark(config, ["a"], pytest_configure)
+971. 
+972.     p1 = pytester.makepyfile(
+973.         """
+974.         import pytest
+975. 
+976.         @pytest.mark.parametrize("empty", [])
+977.         def test():
+978.             pass
+979.         """
+980.     )
+981.     result = pytester.runpytest(str(p1))
+982.     result.stdout.fnmatch_lines(
+983.         [
+984.             "collected 0 items / 1 error",
+985.             "* ERROR collecting test_parameterset_for_fail_at_collect.py *",
+986.             "Empty parameter set in 'test' at line 3",
+987.             "*= 1 error in *",
+988.         ]
+989.     )
+990.     assert result.ret == ExitCode.INTERRUPTED
+991. 
+992. 
+993. def test_parameterset_for_parametrize_bad_markname(pytester: Pytester) -> None:
+994.     with pytest.raises(pytest.UsageError):
+995.         test_parameterset_for_parametrize_marks(pytester, "bad")
+996. 
+997. 
+998. def test_mark_expressions_no_smear(pytester: Pytester) -> None:
+999.     pytester.makepyfile(
+1000.         """
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-20 19:43:15,693 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='1. Query requirement analysis:\n   - The user explicitly requested the full content of the file `testing/test_mark.py`.\n\n2. Extended relevance:\n   - The purpose is to analyze the entire file for tests related to marker inheritance. Providing the full content is necessary to fulfill this purpose.', relative_path='testing/test_mark.py', start_line=1, end_line=1000)]
+2025-12-20 19:43:15,696 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of testing/test_mark.py.
+2025-12-20 19:43:15,697 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-20 19:43:15,697 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-20 19:43:15,698 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-20 19:43:15,698 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-20 19:43:15,699 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 10012.deprecation.rst
+|   ├── 10150.bugfix.rst
+|   ├── 10218.improvement.rst
+|   ├── 10313.trivial.rst
+|   ├── 4562.deprecation.rst
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9159.bugfix.rst
+|   ├── 9248.doc.rst
+|   ├── 9291.doc.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9877.bugfix.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   ├── release-7.1.3.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   └── get_issues.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Consider MRO when obtaining marks for classes
+
+Description: When using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.
+
+If it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.
+
+```python
+import itertools
+import pytest
+
+class BaseMeta(type):
+    @property
+    def pytestmark(self):
+        return (
+            getattr(self, "_pytestmark", []) +
+            list(itertools.chain.from_iterable(getattr(x, "_pytestmark", []) for x in self.__mro__))
+        )
+
+    @pytestmark.setter
+    def pytestmark(self, value):
+        self._pytestmark = value
+
+
+class Base(object):
+    # Without this metaclass, foo and bar markers override each other, and test_dings
+    # will only have one marker
+    # With the metaclass, test_dings will have both
+    __metaclass__ = BaseMeta
+
+@pytest.mark.foo
+class Foo(Base):
+    pass
+
+
+@pytest.mark.bar
+class Bar(Base):
+    pass
+
+class TestDings(Foo, Bar):
+    def test_dings(self):
+        # This test should have both markers, foo and bar.
+        # In practice markers are resolved using MRO (so foo wins), unless the
+        # metaclass is applied
+        pass
+```
+
+I'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.
+
+Please note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)
+Consider MRO when obtaining marks for classes
+When using pytest markers in two baseclasses `Foo` and `Bar`, inheriting from both of those baseclasses will lose the markers of one of those classes. This behavior is present in pytest 3-6, and I think it may as well have been intended. I am still filing it as a bug because I am not sure if this edge case was ever explicitly considered.
+
+If it is widely understood that all markers are part of a single attribute, I guess you could say that this is just expected behavior as per MRO. However, I'd argue that it would be more intuitive to attempt to merge marker values into one, possibly deduplicating marker names by MRO.
+
+```python
+import itertools
+import pytest
+
+class BaseMeta(type):
+    @property
+    def pytestmark(self):
+        return (
+            getattr(self, "_pytestmark", []) +
+            list(itertools.chain.from_iterable(getattr(x, "_pytestmark", []) for x in self.__mro__))
+        )
+
+    @pytestmark.setter
+    def pytestmark(self, value):
+        self._pytestmark = value
+
+
+class Base(object):
+    # Without this metaclass, foo and bar markers override each other, and test_dings
+    # will only have one marker
+    # With the metaclass, test_dings will have both
+    __metaclass__ = BaseMeta
+
+@pytest.mark.foo
+class Foo(Base):
+    pass
+
+
+@pytest.mark.bar
+class Bar(Base):
+    pass
+
+class TestDings(Foo, Bar):
+    def test_dings(self):
+        # This test should have both markers, foo and bar.
+        # In practice markers are resolved using MRO (so foo wins), unless the
+        # metaclass is applied
+        pass
+```
+
+I'd expect `foo` and `bar` to be markers for `test_dings`, but this only actually is the case with this metaclass.
+
+Please note that the repro case is Python 2/3 compatible excluding how metaclasses are added to `Base` (this needs to be taken care of to repro this issue on pytest 6)
+Fix missing marks when inheritance from multiple classes
+
+<!--
+Thanks for submitting a PR, your contribution is really appreciated!
+
+Here is a quick checklist that should be present in PRs.
+
+- [] Include documentation when adding new features.
+- [ ] Include new tests or update existing tests when applicable.
+- [X] Allow maintainers to push and squash when merging my commits. Please uncheck this if you prefer to squash the commits yourself.
+
+If this change fixes an issue, please:
+
+- [x] Add text like ``closes #XYZW`` to the PR description and/or commits (where ``XYZW`` is the issue number). See the [github docs](https://help.github.com/en/github/managing-your-work-on-github/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword) for more information.
+
+Unless your change is trivial or a small documentation fix (e.g., a typo or reword of a small section) please:
+
+- [x] Create a new changelog file in the `changelog` folder, with a name like `<ISSUE NUMBER>.<TYPE>.rst`. See [changelog/README.rst](https://github.com/pytest-dev/pytest/blob/main/changelog/README.rst) for details.
+
+  Write sentences in the **past or present tense**, examples:
+
+  * *Improved verbose diff output with sequences.*
+  * *Terminal summary statistics now use multiple colors.*
+
+  Also make sure to end the sentence with a `.`.
+
+- [x] Add yourself to `AUTHORS` in alphabetical order.
+-->
+
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index 34d96c2bc..0f80a75ed 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -299,6 +299,7 @@ or multiple markers::
+ 
+     pytestmark = [pytest.mark.webtest, pytest.mark.slowtest]
+ 
++When using multiple inheritance, class-level markers from all base classes are merged following the class hierarchy (MRO). A derived class inherits markers from all its bases; markers are not deduplicated.
+ 
+ Due to legacy reasons, before class decorators were introduced, it is possible to set the
+ :globalvar:`pytestmark` attribute on a test class like this:
+diff --git a/doc/en/how-to/mark.rst b/doc/en/how-to/mark.rst
+index 33f9d18bf..ce0dfd1b8 100644
+--- a/doc/en/how-to/mark.rst
++++ b/doc/en/how-to/mark.rst
+@@ -23,6 +23,8 @@ It's easy to create custom markers or to apply markers
+ to whole test classes or modules. Those markers can be used by plugins, and also
+ are commonly used to :ref:`select tests <mark run>` on the command-line with the ``-m`` option.
+ 
++When applying marks to classes, marks defined on base classes are merged across the full inheritance hierarchy (MRO).
++
+ See :ref:`mark examples` for examples which also serve as documentation.
+ 
+ .. note::
+diff --git a/src/_pytest/mark/structures.py b/src/_pytest/mark/structures.py
+index 800a25c92..8f6dc81a2 100644
+--- a/src/_pytest/mark/structures.py
++++ b/src/_pytest/mark/structures.py
+@@ -356,11 +356,24 @@ class MarkDecorator:
+ 
+ 
+ def get_unpacked_marks(obj: object) -> Iterable[Mark]:
+-    """Obtain the unpacked marks that are stored on an object."""
+-    mark_list = getattr(obj, "pytestmark", [])
+-    if not isinstance(mark_list, list):
+-        mark_list = [mark_list]
+-    return normalize_mark_list(mark_list)
++    """Obtain the unpacked marks that are stored on an object.
++
++    For classes, merge marks from the entire MRO by reading only
++    class-local pytestmark attributes from each class in the hierarchy.
++    """
++    if inspect.isclass(obj):
++        for cls in reversed(obj.__mro__):
++            mark_list = getattr(cls, "__dict__", {}).get("pytestmark", [])
++            if not isinstance(mark_list, list):
++                mark_list = [mark_list]
++            for m in normalize_mark_list(mark_list):
++                yield m
++    else:
++        mark_list = getattr(obj, "pytestmark", [])
++        if not isinstance(mark_list, list):
++            mark_list = [mark_list]
++        for m in normalize_mark_list(mark_list):
++            yield m
+ 
+ 
+ def normalize_mark_list(
+@@ -388,7 +401,11 @@ def store_mark(obj, mark: Mark) -> None:
+     assert isinstance(mark, Mark), mark
+     # Always reassign name to avoid updating pytestmark in a reference that
+     # was only borrowed.
+-    obj.pytestmark = [*get_unpacked_marks(obj), mark]
++    # Only consider locally set pytestmark to avoid copying inherited marks.
++    current = getattr(obj, "__dict__", {}).get("pytestmark", [])
++    if not isinstance(current, list):
++        current = [current]
++    obj.pytestmark = [*normalize_mark_list(current), mark]
+ 
+ 
+ # Typing for builtin pytest marks. This is cheating; it gives builtin marks
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of testing/test_mark.py.
+Extra Requirements: 
+Purpose: I need the content of this file to find existing tests related to marker inheritance and identify 3 relevant examples for the user.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/test_mark.py
+Line number range: 1 - 1000
+Content:
+1. import os
+2. import sys
+3. from typing import List
+4. from typing import Optional
+5. from unittest import mock
+6. 
+7. import pytest
+8. from _pytest.config import ExitCode
+9. from _pytest.mark import MarkGenerator
+10. from _pytest.mark.structures import EMPTY_PARAMETERSET_OPTION
+11. from _pytest.nodes import Collector
+12. from _pytest.nodes import Node
+13. from _pytest.pytester import Pytester
+14. 
+15. 
+16. class TestMark:
+17.     @pytest.mark.parametrize("attr", ["mark", "param"])
+18.     def test_pytest_exists_in_namespace_all(self, attr: str) -> None:
+19.         module = sys.modules["pytest"]
+20.         assert attr in module.__all__  # type: ignore
+21. 
+22.     def test_pytest_mark_notcallable(self) -> None:
+23.         mark = MarkGenerator(_ispytest=True)
+24.         with pytest.raises(TypeError):
+25.             mark()  # type: ignore[operator]
+26. 
+27.     def test_mark_with_param(self):
+28.         def some_function(abc):
+29.             pass
+30. 
+31.         class SomeClass:
+32.             pass
+33. 
+34.         assert pytest.mark.foo(some_function) is some_function
+35.         marked_with_args = pytest.mark.foo.with_args(some_function)
+36.         assert marked_with_args is not some_function  # type: ignore[comparison-overlap]
+37. 
+38.         assert pytest.mark.foo(SomeClass) is SomeClass
+39.         assert pytest.mark.foo.with_args(SomeClass) is not SomeClass  # type: ignore[comparison-overlap]
+40. 
+41.     def test_pytest_mark_name_starts_with_underscore(self) -> None:
+42.         mark = MarkGenerator(_ispytest=True)
+43.         with pytest.raises(AttributeError):
+44.             mark._some_name
+45. 
+46. 
+47. def test_marked_class_run_twice(pytester: Pytester) -> None:
+48.     """Test fails file is run twice that contains marked class.
+49.     See issue#683.
+50.     """
+51.     py_file = pytester.makepyfile(
+52.         """
+53.     import pytest
+54.     @pytest.mark.parametrize('abc', [1, 2, 3])
+55.     class Test1(object):
+56.         def test_1(self, abc):
+57.             assert abc in [1, 2, 3]
+58.     """
+59.     )
+60.     file_name = os.path.basename(py_file)
+61.     rec = pytester.inline_run(file_name, file_name)
+62.     rec.assertoutcome(passed=6)
+63. 
+64. 
+65. def test_ini_markers(pytester: Pytester) -> None:
+66.     pytester.makeini(
+67.         """
+68.         [pytest]
+69.         markers =
+70.             a1: this is a webtest marker
+71.             a2: this is a smoke marker
+72.     """
+73.     )
+74.     pytester.makepyfile(
+75.         """
+76.         def test_markers(pytestconfig):
+77.             markers = pytestconfig.getini("markers")
+78.             print(markers)
+79.             assert len(markers) >= 2
+80.             assert markers[0].startswith("a1:")
+81.             assert markers[1].startswith("a2:")
+82.     """
+83.     )
+84.     rec = pytester.inline_run()
+85.     rec.assertoutcome(passed=1)
+86. 
+87. 
+88. def test_markers_option(pytester: Pytester) -> None:
+89.     pytester.makeini(
+90.         """
+91.         [pytest]
+92.         markers =
+93.             a1: this is a webtest marker
+94.             a1some: another marker
+95.             nodescription
+96.     """
+97.     )
+98.     result = pytester.runpytest("--markers")
+99.     result.stdout.fnmatch_lines(
+100.         ["*a1*this is a webtest*", "*a1some*another marker", "*nodescription*"]
+101.     )
+102. 
+103. 
+104. def test_ini_markers_whitespace(pytester: Pytester) -> None:
+105.     pytester.makeini(
+106.         """
+107.         [pytest]
+108.         markers =
+109.             a1 : this is a whitespace marker
+110.     """
+111.     )
+112.     pytester.makepyfile(
+113.         """
+114.         import pytest
+115. 
+116.         @pytest.mark.a1
+117.         def test_markers():
+118.             assert True
+119.     """
+120.     )
+121.     rec = pytester.inline_run("--strict-markers", "-m", "a1")
+122.     rec.assertoutcome(passed=1)
+123. 
+124. 
+125. def test_marker_without_description(pytester: Pytester) -> None:
+126.     pytester.makefile(
+127.         ".cfg",
+128.         setup="""
+129.         [tool:pytest]
+130.         markers=slow
+131.     """,
+132.     )
+133.     pytester.makeconftest(
+134.         """
+135.         import pytest
+136.         pytest.mark.xfail('FAIL')
+137.     """
+138.     )
+139.     ftdir = pytester.mkdir("ft1_dummy")
+140.     pytester.path.joinpath("conftest.py").replace(ftdir.joinpath("conftest.py"))
+141.     rec = pytester.runpytest("--strict-markers")
+142.     rec.assert_outcomes()
+143. 
+144. 
+145. def test_markers_option_with_plugin_in_current_dir(pytester: Pytester) -> None:
+146.     pytester.makeconftest('pytest_plugins = "flip_flop"')
+147.     pytester.makepyfile(
+148.         flip_flop="""\
+149.         def pytest_configure(config):
+150.             config.addinivalue_line("markers", "flip:flop")
+151. 
+152.         def pytest_generate_tests(metafunc):
+153.             try:
+154.                 mark = metafunc.function.flipper
+155.             except AttributeError:
+156.                 return
+157.             metafunc.parametrize("x", (10, 20))"""
+158.     )
+159.     pytester.makepyfile(
+160.         """\
+161.         import pytest
+162.         @pytest.mark.flipper
+163.         def test_example(x):
+164.             assert x"""
+165.     )
+166. 
+167.     result = pytester.runpytest("--markers")
+168.     result.stdout.fnmatch_lines(["*flip*flop*"])
+169. 
+170. 
+171. def test_mark_on_pseudo_function(pytester: Pytester) -> None:
+172.     pytester.makepyfile(
+173.         """
+174.         import pytest
+175. 
+176.         @pytest.mark.r(lambda x: 0/0)
+177.         def test_hello():
+178.             pass
+179.     """
+180.     )
+181.     reprec = pytester.inline_run()
+182.     reprec.assertoutcome(passed=1)
+183. 
+184. 
+185. @pytest.mark.parametrize("option_name", ["--strict-markers", "--strict"])
+186. def test_strict_prohibits_unregistered_markers(
+187.     pytester: Pytester, option_name: str
+188. ) -> None:
+189.     pytester.makepyfile(
+190.         """
+191.         import pytest
+192.         @pytest.mark.unregisteredmark
+193.         def test_hello():
+194.             pass
+195.     """
+196.     )
+197.     result = pytester.runpytest(option_name)
+198.     assert result.ret != 0
+199.     result.stdout.fnmatch_lines(
+200.         ["'unregisteredmark' not found in `markers` configuration option"]
+201.     )
+202. 
+203. 
+204. @pytest.mark.parametrize(
+205.     ("expr", "expected_passed"),
+206.     [
+207.         ("xyz", ["test_one"]),
+208.         ("(((  xyz))  )", ["test_one"]),
+209.         ("not not xyz", ["test_one"]),
+210.         ("xyz and xyz2", []),
+211.         ("xyz2", ["test_two"]),
+212.         ("xyz or xyz2", ["test_one", "test_two"]),
+213.     ],
+214. )
+215. def test_mark_option(
+216.     expr: str, expected_passed: List[Optional[str]], pytester: Pytester
+217. ) -> None:
+218.     pytester.makepyfile(
+219.         """
+220.         import pytest
+221.         @pytest.mark.xyz
+222.         def test_one():
+223.             pass
+224.         @pytest.mark.xyz2
+225.         def test_two():
+226.             pass
+227.     """
+228.     )
+229.     rec = pytester.inline_run("-m", expr)
+230.     passed, skipped, fail = rec.listoutcomes()
+231.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+232.     assert passed_str == expected_passed
+233. 
+234. 
+235. @pytest.mark.parametrize(
+236.     ("expr", "expected_passed"),
+237.     [("interface", ["test_interface"]), ("not interface", ["test_nointer"])],
+238. )
+239. def test_mark_option_custom(
+240.     expr: str, expected_passed: List[str], pytester: Pytester
+241. ) -> None:
+242.     pytester.makeconftest(
+243.         """
+244.         import pytest
+245.         def pytest_collection_modifyitems(items):
+246.             for item in items:
+247.                 if "interface" in item.nodeid:
+248.                     item.add_marker(pytest.mark.interface)
+249.     """
+250.     )
+251.     pytester.makepyfile(
+252.         """
+253.         def test_interface():
+254.             pass
+255.         def test_nointer():
+256.             pass
+257.     """
+258.     )
+259.     rec = pytester.inline_run("-m", expr)
+260.     passed, skipped, fail = rec.listoutcomes()
+261.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+262.     assert passed_str == expected_passed
+263. 
+264. 
+265. @pytest.mark.parametrize(
+266.     ("expr", "expected_passed"),
+267.     [
+268.         ("interface", ["test_interface"]),
+269.         ("not interface", ["test_nointer", "test_pass", "test_1", "test_2"]),
+270.         ("pass", ["test_pass"]),
+271.         ("not pass", ["test_interface", "test_nointer", "test_1", "test_2"]),
+272.         ("not not not (pass)", ["test_interface", "test_nointer", "test_1", "test_2"]),
+273.         ("1 or 2", ["test_1", "test_2"]),
+274.         ("not (1 or 2)", ["test_interface", "test_nointer", "test_pass"]),
+275.     ],
+276. )
+277. def test_keyword_option_custom(
+278.     expr: str, expected_passed: List[str], pytester: Pytester
+279. ) -> None:
+280.     pytester.makepyfile(
+281.         """
+282.         def test_interface():
+283.             pass
+284.         def test_nointer():
+285.             pass
+286.         def test_pass():
+287.             pass
+288.         def test_1():
+289.             pass
+290.         def test_2():
+291.             pass
+292.     """
+293.     )
+294.     rec = pytester.inline_run("-k", expr)
+295.     passed, skipped, fail = rec.listoutcomes()
+296.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+297.     assert passed_str == expected_passed
+298. 
+299. 
+300. def test_keyword_option_considers_mark(pytester: Pytester) -> None:
+301.     pytester.copy_example("marks/marks_considered_keywords")
+302.     rec = pytester.inline_run("-k", "foo")
+303.     passed = rec.listoutcomes()[0]
+304.     assert len(passed) == 1
+305. 
+306. 
+307. @pytest.mark.parametrize(
+308.     ("expr", "expected_passed"),
+309.     [
+310.         ("None", ["test_func[None]"]),
+311.         ("[1.3]", ["test_func[1.3]"]),
+312.         ("2-3", ["test_func[2-3]"]),
+313.     ],
+314. )
+315. def test_keyword_option_parametrize(
+316.     expr: str, expected_passed: List[str], pytester: Pytester
+317. ) -> None:
+318.     pytester.makepyfile(
+319.         """
+320.         import pytest
+321.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+322.         def test_func(arg):
+323.             pass
+324.     """
+325.     )
+326.     rec = pytester.inline_run("-k", expr)
+327.     passed, skipped, fail = rec.listoutcomes()
+328.     passed_str = [x.nodeid.split("::")[-1] for x in passed]
+329.     assert passed_str == expected_passed
+330. 
+331. 
+332. def test_parametrize_with_module(pytester: Pytester) -> None:
+333.     pytester.makepyfile(
+334.         """
+335.         import pytest
+336.         @pytest.mark.parametrize("arg", [pytest,])
+337.         def test_func(arg):
+338.             pass
+339.     """
+340.     )
+341.     rec = pytester.inline_run()
+342.     passed, skipped, fail = rec.listoutcomes()
+343.     expected_id = "test_func[" + pytest.__name__ + "]"
+344.     assert passed[0].nodeid.split("::")[-1] == expected_id
+345. 
+346. 
+347. @pytest.mark.parametrize(
+348.     ("expr", "expected_error"),
+349.     [
+350.         (
+351.             "foo or",
+352.             "at column 7: expected not OR left parenthesis OR identifier; got end of input",
+353.         ),
+354.         (
+355.             "foo or or",
+356.             "at column 8: expected not OR left parenthesis OR identifier; got or",
+357.         ),
+358.         (
+359.             "(foo",
+360.             "at column 5: expected right parenthesis; got end of input",
+361.         ),
+362.         (
+363.             "foo bar",
+364.             "at column 5: expected end of input; got identifier",
+365.         ),
+366.         (
+367.             "or or",
+368.             "at column 1: expected not OR left parenthesis OR identifier; got or",
+369.         ),
+370.         (
+371.             "not or",
+372.             "at column 5: expected not OR left parenthesis OR identifier; got or",
+373.         ),
+374.     ],
+375. )
+376. def test_keyword_option_wrong_arguments(
+377.     expr: str, expected_error: str, pytester: Pytester, capsys
+378. ) -> None:
+379.     pytester.makepyfile(
+380.         """
+381.             def test_func(arg):
+382.                 pass
+383.         """
+384.     )
+385.     pytester.inline_run("-k", expr)
+386.     err = capsys.readouterr().err
+387.     assert expected_error in err
+388. 
+389. 
+390. def test_parametrized_collected_from_command_line(pytester: Pytester) -> None:
+391.     """Parametrized test not collected if test named specified in command
+392.     line issue#649."""
+393.     py_file = pytester.makepyfile(
+394.         """
+395.         import pytest
+396.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+397.         def test_func(arg):
+398.             pass
+399.     """
+400.     )
+401.     file_name = os.path.basename(py_file)
+402.     rec = pytester.inline_run(file_name + "::" + "test_func")
+403.     rec.assertoutcome(passed=3)
+404. 
+405. 
+406. def test_parametrized_collect_with_wrong_args(pytester: Pytester) -> None:
+407.     """Test collect parametrized func with wrong number of args."""
+408.     py_file = pytester.makepyfile(
+409.         """
+410.         import pytest
+411. 
+412.         @pytest.mark.parametrize('foo, bar', [(1, 2, 3)])
+413.         def test_func(foo, bar):
+414.             pass
+415.     """
+416.     )
+417. 
+418.     result = pytester.runpytest(py_file)
+419.     result.stdout.fnmatch_lines(
+420.         [
+421.             'test_parametrized_collect_with_wrong_args.py::test_func: in "parametrize" the number of names (2):',
+422.             "  ['foo', 'bar']",
+423.             "must be equal to the number of values (3):",
+424.             "  (1, 2, 3)",
+425.         ]
+426.     )
+427. 
+428. 
+429. def test_parametrized_with_kwargs(pytester: Pytester) -> None:
+430.     """Test collect parametrized func with wrong number of args."""
+431.     py_file = pytester.makepyfile(
+432.         """
+433.         import pytest
+434. 
+435.         @pytest.fixture(params=[1,2])
+436.         def a(request):
+437.             return request.param
+438. 
+439.         @pytest.mark.parametrize(argnames='b', argvalues=[1, 2])
+440.         def test_func(a, b):
+441.             pass
+442.     """
+443.     )
+444. 
+445.     result = pytester.runpytest(py_file)
+446.     assert result.ret == 0
+447. 
+448. 
+449. def test_parametrize_iterator(pytester: Pytester) -> None:
+450.     """`parametrize` should work with generators (#5354)."""
+451.     py_file = pytester.makepyfile(
+452.         """\
+453.         import pytest
+454. 
+455.         def gen():
+456.             yield 1
+457.             yield 2
+458.             yield 3
+459. 
+460.         @pytest.mark.parametrize('a', gen())
+461.         def test(a):
+462.             assert a >= 1
+463.         """
+464.     )
+465.     result = pytester.runpytest(py_file)
+466.     assert result.ret == 0
+467.     # should not skip any tests
+468.     result.stdout.fnmatch_lines(["*3 passed*"])
+469. 
+470. 
+471. class TestFunctional:
+472.     def test_merging_markers_deep(self, pytester: Pytester) -> None:
+473.         # issue 199 - propagate markers into nested classes
+474.         p = pytester.makepyfile(
+475.             """
+476.             import pytest
+477.             class TestA(object):
+478.                 pytestmark = pytest.mark.a
+479.                 def test_b(self):
+480.                     assert True
+481.                 class TestC(object):
+482.                     # this one didn't get marked
+483.                     def test_d(self):
+484.                         assert True
+485.         """
+486.         )
+487.         items, rec = pytester.inline_genitems(p)
+488.         for item in items:
+489.             print(item, item.keywords)
+490.             assert [x for x in item.iter_markers() if x.name == "a"]
+491. 
+492.     def test_mark_decorator_subclass_does_not_propagate_to_base(
+493.         self, pytester: Pytester
+494.     ) -> None:
+495.         p = pytester.makepyfile(
+496.             """
+497.             import pytest
+498. 
+499.             @pytest.mark.a
+500.             class Base(object): pass
+501. 
+502.             @pytest.mark.b
+503.             class Test1(Base):
+504.                 def test_foo(self): pass
+505. 
+506.             class Test2(Base):
+507.                 def test_bar(self): pass
+508.         """
+509.         )
+510.         items, rec = pytester.inline_genitems(p)
+511.         self.assert_markers(items, test_foo=("a", "b"), test_bar=("a",))
+512. 
+513.     def test_mark_should_not_pass_to_siebling_class(self, pytester: Pytester) -> None:
+514.         """#568"""
+515.         p = pytester.makepyfile(
+516.             """
+517.             import pytest
+518. 
+519.             class TestBase(object):
+520.                 def test_foo(self):
+521.                     pass
+522. 
+523.             @pytest.mark.b
+524.             class TestSub(TestBase):
+525.                 pass
+526. 
+527. 
+528.             class TestOtherSub(TestBase):
+529.                 pass
+530. 
+531.         """
+532.         )
+533.         items, rec = pytester.inline_genitems(p)
+534.         base_item, sub_item, sub_item_other = items
+535.         print(items, [x.nodeid for x in items])
+536.         # new api segregates
+537.         assert not list(base_item.iter_markers(name="b"))
+538.         assert not list(sub_item_other.iter_markers(name="b"))
+539.         assert list(sub_item.iter_markers(name="b"))
+540. 
+541.     def test_mark_decorator_baseclasses_merged(self, pytester: Pytester) -> None:
+542.         p = pytester.makepyfile(
+543.             """
+544.             import pytest
+545. 
+546.             @pytest.mark.a
+547.             class Base(object): pass
+548. 
+549.             @pytest.mark.b
+550.             class Base2(Base): pass
+551. 
+552.             @pytest.mark.c
+553.             class Test1(Base2):
+554.                 def test_foo(self): pass
+555. 
+556.             class Test2(Base2):
+557.                 @pytest.mark.d
+558.                 def test_bar(self): pass
+559.         """
+560.         )
+561.         items, rec = pytester.inline_genitems(p)
+562.         self.assert_markers(items, test_foo=("a", "b", "c"), test_bar=("a", "b", "d"))
+563. 
+564.     def test_mark_closest(self, pytester: Pytester) -> None:
+565.         p = pytester.makepyfile(
+566.             """
+567.             import pytest
+568. 
+569.             @pytest.mark.c(location="class")
+570.             class Test:
+571.                 @pytest.mark.c(location="function")
+572.                 def test_has_own(self):
+573.                     pass
+574. 
+575.                 def test_has_inherited(self):
+576.                     pass
+577. 
+578.         """
+579.         )
+580.         items, rec = pytester.inline_genitems(p)
+581.         has_own, has_inherited = items
+582.         has_own_marker = has_own.get_closest_marker("c")
+583.         has_inherited_marker = has_inherited.get_closest_marker("c")
+584.         assert has_own_marker is not None
+585.         assert has_inherited_marker is not None
+586.         assert has_own_marker.kwargs == {"location": "function"}
+587.         assert has_inherited_marker.kwargs == {"location": "class"}
+588.         assert has_own.get_closest_marker("missing") is None
+589. 
+590.     def test_mark_with_wrong_marker(self, pytester: Pytester) -> None:
+591.         reprec = pytester.inline_runsource(
+592.             """
+593.                 import pytest
+594.                 class pytestmark(object):
+595.                     pass
+596.                 def test_func():
+597.                     pass
+598.         """
+599.         )
+600.         values = reprec.getfailedcollections()
+601.         assert len(values) == 1
+602.         assert "TypeError" in str(values[0].longrepr)
+603. 
+604.     def test_mark_dynamically_in_funcarg(self, pytester: Pytester) -> None:
+605.         pytester.makeconftest(
+606.             """
+607.             import pytest
+608.             @pytest.fixture
+609.             def arg(request):
+610.                 request.applymarker(pytest.mark.hello)
+611.             def pytest_terminal_summary(terminalreporter):
+612.                 values = terminalreporter.stats['passed']
+613.                 terminalreporter._tw.line("keyword: %s" % values[0].keywords)
+614.         """
+615.         )
+616.         pytester.makepyfile(
+617.             """
+618.             def test_func(arg):
+619.                 pass
+620.         """
+621.         )
+622.         result = pytester.runpytest()
+623.         result.stdout.fnmatch_lines(["keyword: *hello*"])
+624. 
+625.     def test_no_marker_match_on_unmarked_names(self, pytester: Pytester) -> None:
+626.         p = pytester.makepyfile(
+627.             """
+628.             import pytest
+629.             @pytest.mark.shouldmatch
+630.             def test_marked():
+631.                 assert 1
+632. 
+633.             def test_unmarked():
+634.                 assert 1
+635.         """
+636.         )
+637.         reprec = pytester.inline_run("-m", "test_unmarked", p)
+638.         passed, skipped, failed = reprec.listoutcomes()
+639.         assert len(passed) + len(skipped) + len(failed) == 0
+640.         dlist = reprec.getcalls("pytest_deselected")
+641.         deselected_tests = dlist[0].items
+642.         assert len(deselected_tests) == 2
+643. 
+644.     def test_keywords_at_node_level(self, pytester: Pytester) -> None:
+645.         pytester.makepyfile(
+646.             """
+647.             import pytest
+648.             @pytest.fixture(scope="session", autouse=True)
+649.             def some(request):
+650.                 request.keywords["hello"] = 42
+651.                 assert "world" not in request.keywords
+652. 
+653.             @pytest.fixture(scope="function", autouse=True)
+654.             def funcsetup(request):
+655.                 assert "world" in request.keywords
+656.                 assert "hello" in  request.keywords
+657. 
+658.             @pytest.mark.world
+659.             def test_function():
+660.                 pass
+661.         """
+662.         )
+663.         reprec = pytester.inline_run()
+664.         reprec.assertoutcome(passed=1)
+665. 
+666.     def test_keyword_added_for_session(self, pytester: Pytester) -> None:
+667.         pytester.makeconftest(
+668.             """
+669.             import pytest
+670.             def pytest_collection_modifyitems(session):
+671.                 session.add_marker("mark1")
+672.                 session.add_marker(pytest.mark.mark2)
+673.                 session.add_marker(pytest.mark.mark3)
+674.                 pytest.raises(ValueError, lambda:
+675.                         session.add_marker(10))
+676.         """
+677.         )
+678.         pytester.makepyfile(
+679.             """
+680.             def test_some(request):
+681.                 assert "mark1" in request.keywords
+682.                 assert "mark2" in request.keywords
+683.                 assert "mark3" in request.keywords
+684.                 assert 10 not in request.keywords
+685.                 marker = request.node.get_closest_marker("mark1")
+686.                 assert marker.name == "mark1"
+687.                 assert marker.args == ()
+688.                 assert marker.kwargs == {}
+689.         """
+690.         )
+691.         reprec = pytester.inline_run("-m", "mark1")
+692.         reprec.assertoutcome(passed=1)
+693. 
+694.     def assert_markers(self, items, **expected) -> None:
+695.         """Assert that given items have expected marker names applied to them.
+696.         expected should be a dict of (item name -> seq of expected marker names).
+697. 
+698.         Note: this could be moved to ``pytester`` if proven to be useful
+699.         to other modules.
+700.         """
+701.         items = {x.name: x for x in items}
+702.         for name, expected_markers in expected.items():
+703.             markers = {m.name for m in items[name].iter_markers()}
+704.             assert markers == set(expected_markers)
+705. 
+706.     @pytest.mark.filterwarnings("ignore")
+707.     def test_mark_from_parameters(self, pytester: Pytester) -> None:
+708.         """#1540"""
+709.         pytester.makepyfile(
+710.             """
+711.             import pytest
+712. 
+713.             pytestmark = pytest.mark.skipif(True, reason='skip all')
+714. 
+715.             # skipifs inside fixture params
+716.             params = [pytest.mark.skipif(False, reason='dont skip')('parameter')]
+717. 
+718. 
+719.             @pytest.fixture(params=params)
+720.             def parameter(request):
+721.                 return request.param
+722. 
+723. 
+724.             def test_1(parameter):
+725.                 assert True
+726.         """
+727.         )
+728.         reprec = pytester.inline_run()
+729.         reprec.assertoutcome(skipped=1)
+730. 
+731.     def test_reevaluate_dynamic_expr(self, pytester: Pytester) -> None:
+732.         """#7360"""
+733.         py_file1 = pytester.makepyfile(
+734.             test_reevaluate_dynamic_expr1="""
+735.             import pytest
+736. 
+737.             skip = True
+738. 
+739.             @pytest.mark.skipif("skip")
+740.             def test_should_skip():
+741.                 assert True
+742.         """
+743.         )
+744.         py_file2 = pytester.makepyfile(
+745.             test_reevaluate_dynamic_expr2="""
+746.             import pytest
+747. 
+748.             skip = False
+749. 
+750.             @pytest.mark.skipif("skip")
+751.             def test_should_not_skip():
+752.                 assert True
+753.         """
+754.         )
+755. 
+756.         file_name1 = os.path.basename(py_file1)
+757.         file_name2 = os.path.basename(py_file2)
+758.         reprec = pytester.inline_run(file_name1, file_name2)
+759.         reprec.assertoutcome(passed=1, skipped=1)
+760. 
+761. 
+762. class TestKeywordSelection:
+763.     def test_select_simple(self, pytester: Pytester) -> None:
+764.         file_test = pytester.makepyfile(
+765.             """
+766.             def test_one():
+767.                 assert 0
+768.             class TestClass(object):
+769.                 def test_method_one(self):
+770.                     assert 42 == 43
+771.         """
+772.         )
+773. 
+774.         def check(keyword, name):
+775.             reprec = pytester.inline_run("-s", "-k", keyword, file_test)
+776.             passed, skipped, failed = reprec.listoutcomes()
+777.             assert len(failed) == 1
+778.             assert failed[0].nodeid.split("::")[-1] == name
+779.             assert len(reprec.getcalls("pytest_deselected")) == 1
+780. 
+781.         for keyword in ["test_one", "est_on"]:
+782.             check(keyword, "test_one")
+783.         check("TestClass and test", "test_method_one")
+784. 
+785.     @pytest.mark.parametrize(
+786.         "keyword",
+787.         [
+788.             "xxx",
+789.             "xxx and test_2",
+790.             "TestClass",
+791.             "xxx and not test_1",
+792.             "TestClass and test_2",
+793.             "xxx and TestClass and test_2",
+794.         ],
+795.     )
+796.     def test_select_extra_keywords(self, pytester: Pytester, keyword) -> None:
+797.         p = pytester.makepyfile(
+798.             test_select="""
+799.             def test_1():
+800.                 pass
+801.             class TestClass(object):
+802.                 def test_2(self):
+803.                     pass
+804.         """
+805.         )
+806.         pytester.makepyfile(
+807.             conftest="""
+808.             import pytest
+809.             @pytest.hookimpl(hookwrapper=True)
+810.             def pytest_pycollect_makeitem(name):
+811.                 outcome = yield
+812.                 if name == "TestClass":
+813.                     item = outcome.get_result()
+814.                     item.extra_keyword_matches.add("xxx")
+815.         """
+816.         )
+817.         reprec = pytester.inline_run(p.parent, "-s", "-k", keyword)
+818.         print("keyword", repr(keyword))
+819.         passed, skipped, failed = reprec.listoutcomes()
+820.         assert len(passed) == 1
+821.         assert passed[0].nodeid.endswith("test_2")
+822.         dlist = reprec.getcalls("pytest_deselected")
+823.         assert len(dlist) == 1
+824.         assert dlist[0].items[0].name == "test_1"
+825. 
+826.     def test_keyword_extra(self, pytester: Pytester) -> None:
+827.         p = pytester.makepyfile(
+828.             """
+829.            def test_one():
+830.                assert 0
+831.            test_one.mykeyword = True
+832.         """
+833.         )
+834.         reprec = pytester.inline_run("-k", "mykeyword", p)
+835.         passed, skipped, failed = reprec.countoutcomes()
+836.         assert failed == 1
+837. 
+838.     @pytest.mark.xfail
+839.     def test_keyword_extra_dash(self, pytester: Pytester) -> None:
+840.         p = pytester.makepyfile(
+841.             """
+842.            def test_one():
+843.                assert 0
+844.            test_one.mykeyword = True
+845.         """
+846.         )
+847.         # with argparse the argument to an option cannot
+848.         # start with '-'
+849.         reprec = pytester.inline_run("-k", "-mykeyword", p)
+850.         passed, skipped, failed = reprec.countoutcomes()
+851.         assert passed + skipped + failed == 0
+852. 
+853.     @pytest.mark.parametrize(
+854.         "keyword",
+855.         ["__", "+", ".."],
+856.     )
+857.     def test_no_magic_values(self, pytester: Pytester, keyword: str) -> None:
+858.         """Make sure the tests do not match on magic values,
+859.         no double underscored values, like '__dict__' and '+'.
+860.         """
+861.         p = pytester.makepyfile(
+862.             """
+863.             def test_one(): assert 1
+864.         """
+865.         )
+866. 
+867.         reprec = pytester.inline_run("-k", keyword, p)
+868.         passed, skipped, failed = reprec.countoutcomes()
+869.         dlist = reprec.getcalls("pytest_deselected")
+870.         assert passed + skipped + failed == 0
+871.         deselected_tests = dlist[0].items
+872.         assert len(deselected_tests) == 1
+873. 
+874.     def test_no_match_directories_outside_the_suite(self, pytester: Pytester) -> None:
+875.         """`-k` should not match against directories containing the test suite (#7040)."""
+876.         test_contents = """
+877.             def test_aaa(): pass
+878.             def test_ddd(): pass
+879.         """
+880.         pytester.makepyfile(
+881.             **{"ddd/tests/__init__.py": "", "ddd/tests/test_foo.py": test_contents}
+882.         )
+883. 
+884.         def get_collected_names(*args):
+885.             _, rec = pytester.inline_genitems(*args)
+886.             calls = rec.getcalls("pytest_collection_finish")
+887.             assert len(calls) == 1
+888.             return [x.name for x in calls[0].session.items]
+889. 
+890.         # sanity check: collect both tests in normal runs
+891.         assert get_collected_names() == ["test_aaa", "test_ddd"]
+892. 
+893.         # do not collect anything based on names outside the collection tree
+894.         assert get_collected_names("-k", pytester._name) == []
+895. 
+896.         # "-k ddd" should only collect "test_ddd", but not
+897.         # 'test_aaa' just because one of its parent directories is named "ddd";
+898.         # this was matched previously because Package.name would contain the full path
+899.         # to the package
+900.         assert get_collected_names("-k", "ddd") == ["test_ddd"]
+901. 
+902. 
+903. class TestMarkDecorator:
+904.     @pytest.mark.parametrize(
+905.         "lhs, rhs, expected",
+906.         [
+907.             (pytest.mark.foo(), pytest.mark.foo(), True),
+908.             (pytest.mark.foo(), pytest.mark.bar(), False),
+909.             (pytest.mark.foo(), "bar", False),
+910.             ("foo", pytest.mark.bar(), False),
+911.         ],
+912.     )
+913.     def test__eq__(self, lhs, rhs, expected) -> None:
+914.         assert (lhs == rhs) == expected
+915. 
+916.     def test_aliases(self) -> None:
+917.         md = pytest.mark.foo(1, "2", three=3)
+918.         assert md.name == "foo"
+919.         assert md.args == (1, "2")
+920.         assert md.kwargs == {"three": 3}
+921. 
+922. 
+923. @pytest.mark.parametrize("mark", [None, "", "skip", "xfail"])
+924. def test_parameterset_for_parametrize_marks(
+925.     pytester: Pytester, mark: Optional[str]
+926. ) -> None:
+927.     if mark is not None:
+928.         pytester.makeini(
+929.             """
+930.         [pytest]
+931.         {}={}
+932.         """.format(
+933.                 EMPTY_PARAMETERSET_OPTION, mark
+934.             )
+935.         )
+936. 
+937.     config = pytester.parseconfig()
+938.     from _pytest.mark import pytest_configure, get_empty_parameterset_mark
+939. 
+940.     pytest_configure(config)
+941.     result_mark = get_empty_parameterset_mark(config, ["a"], all)
+942.     if mark in (None, ""):
+943.         # normalize to the requested name
+944.         mark = "skip"
+945.     assert result_mark.name == mark
+946.     assert result_mark.kwargs["reason"].startswith("got empty parameter set ")
+947.     if mark == "xfail":
+948.         assert result_mark.kwargs.get("run") is False
+949. 
+950. 
+951. def test_parameterset_for_fail_at_collect(pytester: Pytester) -> None:
+952.     pytester.makeini(
+953.         """
+954.     [pytest]
+955.     {}=fail_at_collect
+956.     """.format(
+957.             EMPTY_PARAMETERSET_OPTION
+958.         )
+959.     )
+960. 
+961.     config = pytester.parseconfig()
+962.     from _pytest.mark import pytest_configure, get_empty_parameterset_mark
+963. 
+964.     pytest_configure(config)
+965. 
+966.     with pytest.raises(
+967.         Collector.CollectError,
+968.         match=r"Empty parameter set in 'pytest_configure' at line \d\d+",
+969.     ):
+970.         get_empty_parameterset_mark(config, ["a"], pytest_configure)
+971. 
+972.     p1 = pytester.makepyfile(
+973.         """
+974.         import pytest
+975. 
+976.         @pytest.mark.parametrize("empty", [])
+977.         def test():
+978.             pass
+979.         """
+980.     )
+981.     result = pytester.runpytest(str(p1))
+982.     result.stdout.fnmatch_lines(
+983.         [
+984.             "collected 0 items / 1 error",
+985.             "* ERROR collecting test_parameterset_for_fail_at_collect.py *",
+986.             "Empty parameter set in 'test' at line 3",
+987.             "*= 1 error in *",
+988.         ]
+989.     )
+990.     assert result.ret == ExitCode.INTERRUPTED
+991. 
+992. 
+993. def test_parameterset_for_parametrize_bad_markname(pytester: Pytester) -> None:
+994.     with pytest.raises(pytest.UsageError):
+995.         test_parameterset_for_parametrize_marks(pytester, "bad")
+996. 
+997. 
+998. def test_mark_expressions_no_smear(pytester: Pytester) -> None:
+999.     pytester.makepyfile(
+1000.         """
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 19:43:36,488 - thread-124421297669824.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The provided file `testing/test_mark.py` contains sufficient test cases that cover marker inheritance and merging on classes. Although there isn't a test for multiple inheritance specifically, the existing tests for single inheritance chains and nested classes are relevant enough to demonstrate the functionality related to the bug. I have identified three such tests and the helper methods they use, and all necessary imports are present in the file. Therefore, no additional context is required." query='' extra_requirements='' purpose=''
+2025-12-20 19:43:36,489 - thread-124421297669824.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

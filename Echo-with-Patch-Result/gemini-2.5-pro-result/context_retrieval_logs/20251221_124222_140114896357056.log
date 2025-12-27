@@ -1,0 +1,4646 @@
+2025-12-21 12:42:22,496 - thread-140114896357056.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: `_check_homomorphism` is broken on PermutationGroups
+
+Description: ```python
+In [1]: from sympy.combinatorics import *
+   ...: from sympy.combinatorics.homomorphisms import homomorphism
+   ...: D3 = DihedralGroup(3)
+   ...: T = homomorphism(D3, D3, D3.generators, D3.generators)
+
+ValueError: The given images do not define a homomorphism
+```
+
+The issue is in the internal `_image()` function, where it handles the case of a `PermutationGroup`:
+
+https://github.com/sympy/sympy/blob/809c53c077485ca48a206cee78340389cb83b7f1/sympy/combinatorics/homomorphisms.py#L336-L337
+
+When `r[i]` is an inverted generator, the `in gens` test fails.
+
+I think the whole thing can be greatly simplified.
+
+Patch information:
+diff --git a/sympy/combinatorics/homomorphisms.py b/sympy/combinatorics/homomorphisms.py
+index bb7bdf32ba..b98a8cbe12 100644
+--- a/sympy/combinatorics/homomorphisms.py
++++ b/sympy/combinatorics/homomorphisms.py
+@@ -333,10 +333,13 @@ def _image(r):
+             # both indices
+             while i < len(r):
+                 power = r_arr[j][1]
+-                if isinstance(domain, PermutationGroup) and r[i] in gens:
+-                    s = domain.generators[gens.index(r[i])]
+-                else:
+-                    s = r[i]
++                s = r[i]
++                if isinstance(domain, PermutationGroup):
++                    # Handle both positive and inverted generators
++                    if s in gens:
++                        s = domain.generators[gens.index(s)]
++                    elif s**-1 in gens:
++                        s = domain.generators[gens.index(s**-1)]**-1
+                 if s in images:
+                     w = w*images[s]**power
+                 elif s**-1 in images:
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-21 12:42:22,567 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── README.rst
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .circleci
+|   └── config.yml
+├── .github
+|   └── workflows
+|       ├── checkconflict.yml
+|       ├── ci-sage.yml
+|       ├── comment-on-pr.yml
+|       ├── docs-preview.yml
+|       ├── release.yml
+|       └── runtests.yml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.md
+├── bin
+|   ├── ask_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_check.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_executable.py
+|   ├── test_external_imports.py
+|   ├── test_import.py
+|   ├── test_optional_dependencies.py
+|   ├── test_py2_import.py
+|   ├── test_setup.py
+|   ├── test_sphinx.sh
+|   ├── test_submodule_imports.py
+|   ├── test_symengine.py
+|   └── test_tensorflow.py
+├── codecov.yml
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── aptinstall.sh
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── convert-svg-to-pdf.py
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   └── numpydoc.py
+|   ├── generate_logos.py
+|   ├── man
+|   |   └── isympy.xml
+|   ├── requirements.txt
+|   └── src
+|       ├── _pygments
+|       |   └── styles.py
+|       ├── _static
+|       |   └── custom.css
+|       ├── _templates
+|       |   └── sidebar
+|       |       └── versions.html
+|       ├── citing.md
+|       ├── conf.py
+|       ├── contributing
+|       |   ├── build-docs.rst
+|       |   ├── debug.rst
+|       |   ├── dependencies.md
+|       |   ├── deprecations.md
+|       |   ├── dev-setup.rst
+|       |   ├── docstring.rst
+|       |   ├── documentation-style-guide.rst
+|       |   ├── index.rst
+|       |   └── make-a-contribution.rst
+|       ├── explanation
+|       |   ├── active-deprecations.md
+|       |   ├── glossary.md
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── solve_output.rst
+|       |   └── special_topics
+|       |       ├── classification.rst
+|       |       ├── finite_diff_derivatives.rst
+|       |       └── index.rst
+|       ├── guides
+|       |   ├── assumptions.rst
+|       |   ├── booleans.rst
+|       |   ├── custom-functions.md
+|       |   ├── index.rst
+|       |   └── solving
+|       |       ├── find-roots-polynomial.md
+|       |       ├── index.md
+|       |       ├── reduce-inequalities-algebraically.md
+|       |       ├── solve-diophantine-equation.md
+|       |       ├── solve-equation-algebraically.md
+|       |       ├── solve-matrix-equation.md
+|       |       ├── solve-numerically.md
+|       |       ├── solve-ode.md
+|       |       ├── solve-system-of-equations-algebraically.md
+|       |       └── solving-guidance.md
+|       ├── index.rst
+|       ├── install.md
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── abc.rst
+|       |   ├── algebras.rst
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── index.rst
+|       |   |   ├── predicates.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── group_numbers.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── pc_groups.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── discrete.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internal.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   ├── index.rst
+|       |   |   └── integrals.rst
+|       |   ├── interactive.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── common.rst
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── normalforms.rst
+|       |   |   ├── sparse.rst
+|       |   |   └── sparsetools.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── control
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── domainmatrix.rst
+|       |   |   ├── domainsintro.rst
+|       |   |   ├── domainsref.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── numberfields.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── fu.rst
+|       |   |   ├── hyperexpand.rst
+|       |   |   ├── index.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── index.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── array_expressions.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   ├── tensor.rst
+|       |   |   └── toperators.rst
+|       |   ├── testing
+|       |   |   ├── index.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   └── runtests.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── exceptions.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       ├── intro.rst
+|       |       └── vector_integration.rst
+|       ├── pics
+|       ├── reference
+|       |   ├── index.rst
+|       |   └── public
+|       |       ├── basics
+|       |       ├── codegeneration
+|       |       ├── logic
+|       |       ├── matrices
+|       |       ├── numbertheory
+|       |       ├── physics
+|       |       ├── topics
+|       |       └── utilities
+|       └── tutorials
+|           ├── index.rst
+|           └── intro-tutorial
+|               ├── basic_operations.rst
+|               ├── calculus.rst
+|               ├── features.rst
+|               ├── gotchas.rst
+|               ├── index.rst
+|               ├── intro.rst
+|               ├── manipulation.rst
+|               ├── matrices.rst
+|               ├── next.rst
+|               ├── preliminaries.rst
+|               ├── printing.rst
+|               ├── simplification.rst
+|               └── solvers.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── isympy.py
+├── release
+|   ├── README.md
+|   ├── authors.py
+|   ├── build_docs.py
+|   ├── ci_release_script.sh
+|   ├── compare_tar_against_git.py
+|   ├── github_release.py
+|   ├── helpers.py
+|   ├── releasecheck.py
+|   ├── sha256.py
+|   └── update_docs.py
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── cnf.py
+    |   ├── facts.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── predicates
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── relation
+    |   |   ├── __init__.py
+    |   |   ├── binrel.py
+    |   |   └── equality.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_assumptions_2.py
+    |   |   ├── test_context.py
+    |   |   ├── test_matrices.py
+    |   |   ├── test_query.py
+    |   |   ├── test_refine.py
+    |   |   ├── test_satask.py
+    |   |   ├── test_sathandlers.py
+    |   |   └── test_wrapper.py
+    |   └── wrapper.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── accumulationbounds.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_accumulationbounds.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── abstract_nodes.py
+    |   ├── algorithms.py
+    |   ├── approximations.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── cnodes.py
+    |   ├── cutils.py
+    |   ├── cxxnodes.py
+    |   ├── fnodes.py
+    |   ├── futils.py
+    |   ├── matrix_nodes.py
+    |   ├── numpy_nodes.py
+    |   ├── pynodes.py
+    |   ├── pyutils.py
+    |   ├── rewriting.py
+    |   ├── scipy_nodes.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_abstract_nodes.py
+    |       ├── test_algorithms.py
+    |       ├── test_applications.py
+    |       ├── test_approximations.py
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_cnodes.py
+    |       ├── test_cxxnodes.py
+    |       ├── test_fnodes.py
+    |       ├── test_numpy_nodes.py
+    |       ├── test_pynodes.py
+    |       ├── test_pyutils.py
+    |       ├── test_rewriting.py
+    |       └── test_scipy_nodes.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── group_numbers.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── pc_groups.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── rewritingsystem_fsm.py
+    |   ├── schur_number.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_group_numbers.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_pc_groups.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_schur_number.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── _print_helpers.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── assumptions_generated.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── kind.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── parameters.py
+    |   ├── power.py
+    |   ├── random.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── sorting.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_kind.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_multidimensional.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_parameters.py
+    |   |   ├── test_power.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_random.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_singleton.py
+    |   |   ├── test_sorting.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_traversal.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   ├── trace.py
+    |   └── traversal.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── discrete
+    |   ├── __init__.py
+    |   ├── convolutions.py
+    |   ├── recurrences.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_convolutions.py
+    |   |   ├── test_recurrences.py
+    |   |   └── test_transforms.py
+    |   └── transforms.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── gmpy.py
+    |   ├── importtools.py
+    |   ├── pythonmpq.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_pythonmpq.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_interactive.py
+    |   |   └── test_ipython.py
+    |   └── traversal.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   ├── dpll2.py
+    |   |   ├── minisat22_wrapper.py
+    |   |   └── pycosat_wrapper.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── decompositions.py
+    |   ├── dense.py
+    |   ├── determinant.py
+    |   ├── eigen.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── applyfunc.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── companion.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── kronecker.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── permutation.py
+    |   |   ├── sets.py
+    |   |   ├── slice.py
+    |   |   ├── special.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_applyfunc.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_companion.py
+    |   |   |   ├── test_derivatives.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_kronecker.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_permutation.py
+    |   |   |   ├── test_sets.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_special.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── graph.py
+    |   ├── immutable.py
+    |   ├── inverse.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── reductions.py
+    |   ├── repmatrix.py
+    |   ├── solvers.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   ├── subspaces.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_commonmatrix.py
+    |   |   ├── test_decompositions.py
+    |   |   ├── test_determinant.py
+    |   |   ├── test_eigen.py
+    |   |   ├── test_graph.py
+    |   |   ├── test_immutable.py
+    |   |   ├── test_interactions.py
+    |   |   ├── test_matrices.py
+    |   |   ├── test_normalforms.py
+    |   |   ├── test_reductions.py
+    |   |   ├── test_solvers.py
+    |   |   ├── test_sparse.py
+    |   |   ├── test_sparsetools.py
+    |   |   └── test_subspaces.py
+    |   └── utilities.py
+    ├── multipledispatch
+    |   ├── __init__.py
+    |   ├── conflict.py
+    |   ├── core.py
+    |   ├── dispatcher.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_conflict.py
+    |   |   ├── test_core.py
+    |   |   └── test_dispatcher.py
+    |   └── utils.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── digits.py
+    |   ├── ecm.py
+    |   ├── egyptian_fraction.py
+    |   ├── elliptic_curve.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── qs.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_digits.py
+    |       ├── test_ecm.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_elliptic_curve.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       ├── test_qs.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── autolev
+    |   |   ├── __init__.py
+    |   |   ├── _antlr
+    |   |   |   ├── __init__.py
+    |   |   |   ├── autolevlexer.py
+    |   |   |   ├── autolevlistener.py
+    |   |   |   └── autolevparser.py
+    |   |   ├── _build_autolev_antlr.py
+    |   |   ├── _listener_autolev_antlr.py
+    |   |   ├── _parse_autolev_antlr.py
+    |   |   └── test-examples
+    |   |       ├── README.txt
+    |   |       ├── pydy-example-repo
+    |   |       ├── ruletest1.py
+    |   |       ├── ruletest10.py
+    |   |       ├── ruletest11.py
+    |   |       ├── ruletest12.py
+    |   |       ├── ruletest2.py
+    |   |       ├── ruletest3.py
+    |   |       ├── ruletest4.py
+    |   |       ├── ruletest5.py
+    |   |       ├── ruletest6.py
+    |   |       ├── ruletest7.py
+    |   |       ├── ruletest8.py
+    |   |       └── ruletest9.py
+    |   ├── c
+    |   |   ├── __init__.py
+    |   |   └── c_parser.py
+    |   ├── fortran
+    |   |   ├── __init__.py
+    |   |   └── fortran_parser.py
+    |   ├── latex
+    |   |   ├── LICENSE.txt
+    |   |   ├── __init__.py
+    |   |   ├── _antlr
+    |   |   |   ├── __init__.py
+    |   |   |   ├── latexlexer.py
+    |   |   |   └── latexparser.py
+    |   |   ├── _build_latex_antlr.py
+    |   |   ├── _parse_latex_antlr.py
+    |   |   └── errors.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sym_expr.py
+    |   ├── sympy_parser.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_ast_parser.py
+    |       ├── test_autolev.py
+    |       ├── test_c_parser.py
+    |       ├── test_fortran_parser.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_latex.py
+    |       ├── test_latex_deps.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       ├── test_sym_expr.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_beam.py
+    |   |   |   └── test_truss.py
+    |   |   └── truss.py
+    |   ├── control
+    |   |   ├── __init__.py
+    |   |   ├── control_plots.py
+    |   |   ├── lti.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_control_plots.py
+    |   |       └── test_lti.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── joint.py
+    |   |   ├── jointsmethod.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── method.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_joint.py
+    |   |       ├── test_jointsmethod.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_kane4.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_method.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── polarization.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_polarization.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_anticommutator.py
+    |   |   |   ├── test_boson.py
+    |   |   |   ├── test_cartesian.py
+    |   |   |   ├── test_cg.py
+    |   |   |   ├── test_circuitplot.py
+    |   |   |   ├── test_circuitutils.py
+    |   |   |   ├── test_commutator.py
+    |   |   |   ├── test_constants.py
+    |   |   |   ├── test_dagger.py
+    |   |   |   ├── test_density.py
+    |   |   |   ├── test_fermion.py
+    |   |   |   ├── test_gate.py
+    |   |   |   ├── test_grover.py
+    |   |   |   ├── test_hilbert.py
+    |   |   |   ├── test_identitysearch.py
+    |   |   |   ├── test_innerproduct.py
+    |   |   |   ├── test_matrixutils.py
+    |   |   |   ├── test_operator.py
+    |   |   |   ├── test_operatorordering.py
+    |   |   |   ├── test_operatorset.py
+    |   |   |   ├── test_pauli.py
+    |   |   |   ├── test_piab.py
+    |   |   |   ├── test_printing.py
+    |   |   |   ├── test_qapply.py
+    |   |   |   ├── test_qasm.py
+    |   |   |   ├── test_qexpr.py
+    |   |   |   ├── test_qft.py
+    |   |   |   ├── test_qubit.py
+    |   |   |   ├── test_represent.py
+    |   |   |   ├── test_sho1d.py
+    |   |   |   ├── test_shor.py
+    |   |   |   ├── test_spin.py
+    |   |   |   ├── test_state.py
+    |   |   |   ├── test_tensorproduct.py
+    |   |   |   └── test_trace.py
+    |   |   └── trace.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions
+    |   |   |   ├── __init__.py
+    |   |   |   ├── dimension_definitions.py
+    |   |   |   └── unit_definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── cgs.py
+    |   |   |   ├── length_weight_time.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unit_system_cgs_gauss.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── interval_membership.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       ├── test_interval_membership.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_experimental_lambdify.py
+    |   |   ├── test_plot.py
+    |   |   ├── test_plot_implicit.py
+    |   |   └── test_textplot.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── extensions.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_extensions.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── appellseqs.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domainmatrix.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── expressionrawdomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gaussiandomains.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── matrices
+    |   |   ├── __init__.py
+    |   |   ├── ddm.py
+    |   |   ├── dense.py
+    |   |   ├── domainmatrix.py
+    |   |   ├── domainscalar.py
+    |   |   ├── eigen.py
+    |   |   ├── exceptions.py
+    |   |   ├── linsolve.py
+    |   |   ├── normalforms.py
+    |   |   ├── sdm.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_ddm.py
+    |   |       ├── test_dense.py
+    |   |       ├── test_domainmatrix.py
+    |   |       ├── test_domainscalar.py
+    |   |       ├── test_eigen.py
+    |   |       ├── test_linsolve.py
+    |   |       ├── test_normalforms.py
+    |   |       └── test_sdm.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── multivariate_resultants.py
+    |   ├── numberfields
+    |   |   ├── __init__.py
+    |   |   ├── basis.py
+    |   |   ├── exceptions.py
+    |   |   ├── minpoly.py
+    |   |   ├── modules.py
+    |   |   ├── primes.py
+    |   |   ├── subfield.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_basis.py
+    |   |   |   ├── test_minpoly.py
+    |   |   |   ├── test_modules.py
+    |   |   |   ├── test_numbers.py
+    |   |   |   ├── test_primes.py
+    |   |   |   ├── test_subfield.py
+    |   |   |   └── test_utilities.py
+    |   |   └── utilities.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_appellseqs.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_multivariate_resultants.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── aesaracode.py
+    |   ├── c.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxx.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fortran.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── maple.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── numpy.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── smtlib.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tensorflow.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_aesaracode.py
+    |   |   ├── test_c.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cupy.py
+    |   |   ├── test_cxx.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fortran.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jax.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_maple.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_smtlib.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   ├── test_tensorflow.py
+    |   |   ├── test_theanocode.py
+    |   |   └── test_tree.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── aseries.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_aseries.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── add.py
+    |   |   ├── comparison.py
+    |   |   ├── functions.py
+    |   |   ├── intersection.py
+    |   |   ├── issubset.py
+    |   |   ├── mul.py
+    |   |   ├── power.py
+    |   |   └── union.py
+    |   ├── ordinals.py
+    |   ├── powerset.py
+    |   ├── setexpr.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       ├── test_ordinals.py
+    |       ├── test_powerset.py
+    |       ├── test_setexpr.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine
+    |   |   ├── __init__.py
+    |   |   ├── diophantine.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode
+    |   |   ├── __init__.py
+    |   |   ├── hypergeometric.py
+    |   |   ├── lie_group.py
+    |   |   ├── nonhomogeneous.py
+    |   |   ├── ode.py
+    |   |   ├── riccati.py
+    |   |   ├── single.py
+    |   |   ├── subscheck.py
+    |   |   ├── systems.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_lie_group.py
+    |   |       ├── test_ode.py
+    |   |       ├── test_riccati.py
+    |   |       ├── test_single.py
+    |   |       ├── test_subscheck.py
+    |   |       └── test_systems.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── compound_rv.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── joint_rv.py
+    |   ├── joint_rv_types.py
+    |   ├── matrix_distributions.py
+    |   ├── random_matrix.py
+    |   ├── random_matrix_models.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── sampling
+    |   |   ├── __init__.py
+    |   |   ├── sample_numpy.py
+    |   |   ├── sample_pymc.py
+    |   |   ├── sample_scipy.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_sample_continuous_rv.py
+    |   |       ├── test_sample_discrete_rv.py
+    |   |       └── test_sample_finite_rv.py
+    |   ├── stochastic_process.py
+    |   ├── stochastic_process_types.py
+    |   ├── symbolic_multivariate_probability.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_compound_rv.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_joint_rv.py
+    |       ├── test_matrix_distributions.py
+    |       ├── test_mix.py
+    |       ├── test_random_matrix.py
+    |       ├── test_rv.py
+    |       ├── test_stochastic_process.py
+    |       ├── test_symbolic_multivariate.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── array_comprehension.py
+    |   |   ├── array_derivatives.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── expressions
+    |   |   |   ├── __init__.py
+    |   |   |   ├── array_expressions.py
+    |   |   |   ├── arrayexpr_derivatives.py
+    |   |   |   ├── conv_array_to_indexed.py
+    |   |   |   ├── conv_array_to_matrix.py
+    |   |   |   ├── conv_indexed_to_array.py
+    |   |   |   ├── conv_matrix_to_array.py
+    |   |   |   ├── from_array_to_indexed.py
+    |   |   |   ├── from_array_to_matrix.py
+    |   |   |   ├── from_indexed_to_array.py
+    |   |   |   ├── from_matrix_to_array.py
+    |   |   |   ├── tests
+    |   |   |   └── utils.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_array_comprehension.py
+    |   |       ├── test_array_derivatives.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       ├── test_mutable_ndim_array.py
+    |   |       ├── test_ndim_array.py
+    |   |       └── test_ndim_array_conversions.py
+    |   ├── functions.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_functions.py
+    |   |   ├── test_index_methods.py
+    |   |   ├── test_indexed.py
+    |   |   ├── test_tensor.py
+    |   |   ├── test_tensor_element.py
+    |   |   └── test_tensor_operators.py
+    |   └── toperators.py
+    ├── testing
+    |   ├── __init__.py
+    |   ├── matrices.py
+    |   ├── pytest.py
+    |   ├── quality_unicode.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_deprecated.py
+    |   |   ├── test_module_imports.py
+    |   |   └── test_pytest.py
+    |   └── tmpfiles.py
+    ├── this.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── _compilation
+    |   |   ├── __init__.py
+    |   |   ├── availability.py
+    |   |   ├── compilation.py
+    |   |   ├── runners.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_compilation.py
+    |   |   └── util.py
+    |   ├── autowrap.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── matchpy_connector.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_deprecated.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_exceptions.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_matchpy_connector.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   ├── timeutils.py
+    |   └── tmpfiles.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── implicitregion.py
+        ├── integrals.py
+        ├── operators.py
+        ├── orienters.py
+        ├── parametricregion.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_implicitregion.py
+        |   ├── test_integrals.py
+        |   ├── test_operators.py
+        |   ├── test_parametricregion.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: `_check_homomorphism` is broken on PermutationGroups
+
+Description: ```python
+In [1]: from sympy.combinatorics import *
+   ...: from sympy.combinatorics.homomorphisms import homomorphism
+   ...: D3 = DihedralGroup(3)
+   ...: T = homomorphism(D3, D3, D3.generators, D3.generators)
+
+ValueError: The given images do not define a homomorphism
+```
+
+The issue is in the internal `_image()` function, where it handles the case of a `PermutationGroup`:
+
+https://github.com/sympy/sympy/blob/809c53c077485ca48a206cee78340389cb83b7f1/sympy/combinatorics/homomorphisms.py#L336-L337
+
+When `r[i]` is an inverted generator, the `in gens` test fails.
+
+I think the whole thing can be greatly simplified.
+
+Patch information:
+diff --git a/sympy/combinatorics/homomorphisms.py b/sympy/combinatorics/homomorphisms.py
+index bb7bdf32ba..b98a8cbe12 100644
+--- a/sympy/combinatorics/homomorphisms.py
++++ b/sympy/combinatorics/homomorphisms.py
+@@ -333,10 +333,13 @@ def _image(r):
+             # both indices
+             while i < len(r):
+                 power = r_arr[j][1]
+-                if isinstance(domain, PermutationGroup) and r[i] in gens:
+-                    s = domain.generators[gens.index(r[i])]
+-                else:
+-                    s = r[i]
++                s = r[i]
++                if isinstance(domain, PermutationGroup):
++                    # Handle both positive and inverted generators
++                    if s in gens:
++                        s = domain.generators[gens.index(s)]
++                    elif s**-1 in gens:
++                        s = domain.generators[gens.index(s**-1)]**-1
+                 if s in images:
+                     w = w*images[s]**power
+                 elif s**-1 in images:
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 12:42:33,045 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to find relevant test cases for a bug in `_check_homomorphism` when used with `PermutationGroups`. The most relevant tests will be in the file that tests this functionality. Based on the file structure, `sympy/combinatorics/tests/test_homomorphisms.py` is the dedicated test file for the `homomorphisms` module where the bug is located. I need the content of this file to identify tests involving `PermutationGroup` and homomorphism creation.' query='Please provide the full content of the file sympy/combinatorics/tests/test_homomorphisms.py.' extra_requirements='' purpose='To find relevant test cases for `homomorphism` with `PermutationGroup` instances.'
+2025-12-21 12:42:33,046 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file sympy/combinatorics/tests/test_homomorphisms.py.
+2025-12-21 12:42:33,047 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 12:42:33,047 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 12:42:33,048 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 12:42:33,048 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file sympy/combinatorics/tests/test_homomorphisms.py.
+Purpose: To find relevant test cases for `homomorphism` with `PermutationGroup` instances.
+2025-12-21 12:42:35,351 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the file `sympy/combinatorics/tests/test_homomorphisms.py` as requested. This will allow you to examine the test cases for homomorphisms involving `PermutationGroup` instances.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "sympy/combinatorics/tests/test_homomorphisms.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2083, 'candidates_token_count': 73, 'total_token_count': 2254, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2083}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 73}], 'thoughts_token_count': 98, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.0729462153291049, 'model_name': 'gemini-2.5-pro'} id='run--46eaebe2-7378-40a8-8b9f-d01c00adb585-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'sympy/combinatorics/tests/test_homomorphisms.py'}, 'id': '2d964f06-da7e-477c-8b88-655b8114ca9d', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2083, 'output_tokens': 73, 'total_tokens': 2254, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 98}}
+2025-12-21 12:42:39,062 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the file `sympy/combinatorics/tests/test_homomorphisms.py` as requested. This will allow you to examine the test cases for homomorphisms involving `PermutationGroup` instances.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 4112, 'candidates_token_count': 46, 'total_token_count': 4459, 'cached_content_token_count': 1682, 'prompt_tokens_details': [{'modality': 1, 'token_count': 4112}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1682}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 46}], 'thoughts_token_count': 301}, 'finish_reason': 'STOP', 'avg_logprobs': -0.32933027847953467, 'model_name': 'gemini-2.5-pro'} id='run--bf0624bc-77fd-48e0-91f2-5c6a136191f3-0' usage_metadata={'input_tokens': 4112, 'output_tokens': 46, 'total_tokens': 4459, 'input_token_details': {'cache_read': 1682}, 'output_token_details': {'reasoning': 301}}
+2025-12-21 12:42:39,063 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file sympy/combinatorics/tests/test_homomorphisms.py.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+To find relevant test cases for `homomorphism` with `PermutationGroup` instances.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: sympy/combinatorics/tests/test_homomorphisms.py
+Line number range: 1 - 109
+Content:
+1. from sympy.combinatorics import Permutation
+2. from sympy.combinatorics.perm_groups import PermutationGroup
+3. from sympy.combinatorics.homomorphisms import homomorphism, group_isomorphism, is_isomorphic
+4. from sympy.combinatorics.free_groups import free_group
+5. from sympy.combinatorics.fp_groups import FpGroup
+6. from sympy.combinatorics.named_groups import AlternatingGroup, DihedralGroup, CyclicGroup
+7. from sympy.testing.pytest import raises
+8. 
+9. def test_homomorphism():
+10.     # FpGroup -> PermutationGroup
+11.     F, a, b = free_group("a, b")
+12.     G = FpGroup(F, [a**3, b**3, (a*b)**2])
+13. 
+14.     c = Permutation(3)(0, 1, 2)
+15.     d = Permutation(3)(1, 2, 3)
+16.     A = AlternatingGroup(4)
+17.     T = homomorphism(G, A, [a, b], [c, d])
+18.     assert T(a*b**2*a**-1) == c*d**2*c**-1
+19.     assert T.is_isomorphism()
+20.     assert T(T.invert(Permutation(3)(0, 2, 3))) == Permutation(3)(0, 2, 3)
+21. 
+22.     T = homomorphism(G, AlternatingGroup(4), G.generators)
+23.     assert T.is_trivial()
+24.     assert T.kernel().order() == G.order()
+25. 
+26.     E, e = free_group("e")
+27.     G = FpGroup(E, [e**8])
+28.     P = PermutationGroup([Permutation(0, 1, 2, 3), Permutation(0, 2)])
+29.     T = homomorphism(G, P, [e], [Permutation(0, 1, 2, 3)])
+30.     assert T.image().order() == 4
+31.     assert T(T.invert(Permutation(0, 2)(1, 3))) == Permutation(0, 2)(1, 3)
+32. 
+33.     T = homomorphism(E, AlternatingGroup(4), E.generators, [c])
+34.     assert T.invert(c**2) == e**-1 #order(c) == 3 so c**2 == c**-1
+35. 
+36.     # FreeGroup -> FreeGroup
+37.     T = homomorphism(F, E, [a], [e])
+38.     assert T(a**-2*b**4*a**2).is_identity
+39. 
+40.     # FreeGroup -> FpGroup
+41.     G = FpGroup(F, [a*b*a**-1*b**-1])
+42.     T = homomorphism(F, G, F.generators, G.generators)
+43.     assert T.invert(a**-1*b**-1*a**2) == a*b**-1
+44. 
+45.     # PermutationGroup -> PermutationGroup
+46.     D = DihedralGroup(8)
+47.     p = Permutation(0, 1, 2, 3, 4, 5, 6, 7)
+48.     P = PermutationGroup(p)
+49.     T = homomorphism(P, D, [p], [p])
+50.     assert T.is_injective()
+51.     assert not T.is_isomorphism()
+52.     assert T.invert(p**3) == p**3
+53. 
+54.     T2 = homomorphism(F, P, [F.generators[0]], P.generators)
+55.     T = T.compose(T2)
+56.     assert T.domain == F
+57.     assert T.codomain == D
+58.     assert T(a*b) == p
+59. 
+60. def test_isomorphisms():
+61. 
+62.     F, a, b = free_group("a, b")
+63.     E, c, d = free_group("c, d")
+64.     # Infinite groups with differently ordered relators.
+65.     G = FpGroup(F, [a**2, b**3])
+66.     H = FpGroup(F, [b**3, a**2])
+67.     assert is_isomorphic(G, H)
+68. 
+69.     # Trivial Case
+70.     # FpGroup -> FpGroup
+71.     H = FpGroup(F, [a**3, b**3, (a*b)**2])
+72.     F, c, d = free_group("c, d")
+73.     G = FpGroup(F, [c**3, d**3, (c*d)**2])
+74.     check, T =  group_isomorphism(G, H)
+75.     assert check
+76.     assert T(c**3*d**2) == a**3*b**2
+77. 
+78.     # FpGroup -> PermutationGroup
+79.     # FpGroup is converted to the equivalent isomorphic group.
+80.     F, a, b = free_group("a, b")
+81.     G = FpGroup(F, [a**3, b**3, (a*b)**2])
+82.     H = AlternatingGroup(4)
+83.     check, T = group_isomorphism(G, H)
+84.     assert check
+85.     assert T(b*a*b**-1*a**-1*b**-1) == Permutation(0, 2, 3)
+86.     assert T(b*a*b*a**-1*b**-1) == Permutation(0, 3, 2)
+87. 
+88.     # PermutationGroup -> PermutationGroup
+89.     D = DihedralGroup(8)
+90.     p = Permutation(0, 1, 2, 3, 4, 5, 6, 7)
+91.     P = PermutationGroup(p)
+92.     assert not is_isomorphic(D, P)
+93. 
+94.     A = CyclicGroup(5)
+95.     B = CyclicGroup(7)
+96.     assert not is_isomorphic(A, B)
+97. 
+98.     # Two groups of the same prime order are isomorphic to each other.
+99.     G = FpGroup(F, [a, b**5])
+100.     H = CyclicGroup(5)
+101.     assert G.order() == H.order()
+102.     assert is_isomorphic(G, H)
+103. 
+104. 
+105. def test_check_homomorphism():
+106.     a = Permutation(1,2,3,4)
+107.     b = Permutation(1,3)
+108.     G = PermutationGroup([a, b])
+109.     raises(ValueError, lambda: homomorphism(G, G, [a], [a]))
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 12:42:44,678 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asks for the full content of the file `sympy/combinatorics/tests/test_homomorphisms.py`.\n2. Extended relevance:\n   - The provided context contains the entire content of the requested file. Therefore, the whole file is relevant to fulfill the user's request.", relative_path='sympy/combinatorics/tests/test_homomorphisms.py', start_line=1, end_line=109)]
+2025-12-21 12:42:44,682 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the file sympy/combinatorics/tests/test_homomorphisms.py.
+2025-12-21 12:42:44,682 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 12:42:44,683 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 12:42:44,684 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 12:42:44,684 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 12:42:44,685 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sympy
+├── .ci
+|   ├── README.rst
+|   ├── generate_durations_log.sh
+|   └── parse_durations_log.py
+├── .circleci
+|   └── config.yml
+├── .github
+|   └── workflows
+|       ├── checkconflict.yml
+|       ├── ci-sage.yml
+|       ├── comment-on-pr.yml
+|       ├── docs-preview.yml
+|       ├── release.yml
+|       └── runtests.yml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── PULL_REQUEST_TEMPLATE.md
+├── README.md
+├── bin
+|   ├── ask_update.py
+|   ├── coverage_doctest.py
+|   ├── coverage_report.py
+|   ├── generate_module_list.py
+|   ├── generate_test_list.py
+|   ├── get_sympy.py
+|   ├── mailmap_check.py
+|   ├── sympy_time.py
+|   ├── sympy_time_cache.py
+|   ├── test_executable.py
+|   ├── test_external_imports.py
+|   ├── test_import.py
+|   ├── test_optional_dependencies.py
+|   ├── test_py2_import.py
+|   ├── test_setup.py
+|   ├── test_sphinx.sh
+|   ├── test_submodule_imports.py
+|   ├── test_symengine.py
+|   └── test_tensorflow.py
+├── codecov.yml
+├── conftest.py
+├── data
+|   └── TeXmacs
+|       ├── bin
+|       └── progs
+├── doc
+|   ├── README.rst
+|   ├── api
+|   |   ├── conf.py
+|   |   └── index.rst
+|   ├── aptinstall.sh
+|   ├── cheatsheet
+|   ├── ext
+|   |   ├── convert-svg-to-pdf.py
+|   |   ├── docscrape.py
+|   |   ├── docscrape_sphinx.py
+|   |   └── numpydoc.py
+|   ├── generate_logos.py
+|   ├── man
+|   |   └── isympy.xml
+|   ├── requirements.txt
+|   └── src
+|       ├── _pygments
+|       |   └── styles.py
+|       ├── _static
+|       |   └── custom.css
+|       ├── _templates
+|       |   └── sidebar
+|       |       └── versions.html
+|       ├── citing.md
+|       ├── conf.py
+|       ├── contributing
+|       |   ├── build-docs.rst
+|       |   ├── debug.rst
+|       |   ├── dependencies.md
+|       |   ├── deprecations.md
+|       |   ├── dev-setup.rst
+|       |   ├── docstring.rst
+|       |   ├── documentation-style-guide.rst
+|       |   ├── index.rst
+|       |   └── make-a-contribution.rst
+|       ├── explanation
+|       |   ├── active-deprecations.md
+|       |   ├── glossary.md
+|       |   ├── gotchas.rst
+|       |   ├── index.rst
+|       |   ├── solve_output.rst
+|       |   └── special_topics
+|       |       ├── classification.rst
+|       |       ├── finite_diff_derivatives.rst
+|       |       └── index.rst
+|       ├── guides
+|       |   ├── assumptions.rst
+|       |   ├── booleans.rst
+|       |   ├── custom-functions.md
+|       |   ├── index.rst
+|       |   └── solving
+|       |       ├── find-roots-polynomial.md
+|       |       ├── index.md
+|       |       ├── reduce-inequalities-algebraically.md
+|       |       ├── solve-diophantine-equation.md
+|       |       ├── solve-equation-algebraically.md
+|       |       ├── solve-matrix-equation.md
+|       |       ├── solve-numerically.md
+|       |       ├── solve-ode.md
+|       |       ├── solve-system-of-equations-algebraically.md
+|       |       └── solving-guidance.md
+|       ├── index.rst
+|       ├── install.md
+|       ├── logo
+|       |   └── info.txt
+|       ├── modules
+|       |   ├── abc.rst
+|       |   ├── algebras.rst
+|       |   ├── assumptions
+|       |   |   ├── ask.rst
+|       |   |   ├── assume.rst
+|       |   |   ├── index.rst
+|       |   |   ├── predicates.rst
+|       |   |   └── refine.rst
+|       |   ├── calculus
+|       |   |   └── index.rst
+|       |   ├── categories.rst
+|       |   ├── codegen.rst
+|       |   ├── combinatorics
+|       |   |   ├── fp_groups.rst
+|       |   |   ├── graycode.rst
+|       |   |   ├── group_constructs.rst
+|       |   |   ├── group_numbers.rst
+|       |   |   ├── index.rst
+|       |   |   ├── named_groups.rst
+|       |   |   ├── partitions.rst
+|       |   |   ├── pc_groups.rst
+|       |   |   ├── perm_groups.rst
+|       |   |   ├── permutations.rst
+|       |   |   ├── polyhedron.rst
+|       |   |   ├── prufer.rst
+|       |   |   ├── subsets.rst
+|       |   |   ├── tensor_can.rst
+|       |   |   ├── testutil.rst
+|       |   |   └── util.rst
+|       |   ├── concrete.rst
+|       |   ├── core.rst
+|       |   ├── crypto.rst
+|       |   ├── diffgeom.rst
+|       |   ├── discrete.rst
+|       |   ├── evalf.rst
+|       |   ├── functions
+|       |   |   ├── combinatorial.rst
+|       |   |   ├── elementary.rst
+|       |   |   ├── index.rst
+|       |   |   └── special.rst
+|       |   ├── geometry
+|       |   |   ├── curves.rst
+|       |   |   ├── ellipses.rst
+|       |   |   ├── entities.rst
+|       |   |   ├── index.rst
+|       |   |   ├── lines.rst
+|       |   |   ├── plane.rst
+|       |   |   ├── points.rst
+|       |   |   ├── polygons.rst
+|       |   |   └── utils.rst
+|       |   ├── holonomic
+|       |   |   ├── about.rst
+|       |   |   ├── convert.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internal.rst
+|       |   |   ├── operations.rst
+|       |   |   ├── represent.rst
+|       |   |   └── uses.rst
+|       |   ├── integrals
+|       |   |   ├── g-functions.rst
+|       |   |   ├── index.rst
+|       |   |   └── integrals.rst
+|       |   ├── interactive.rst
+|       |   ├── liealgebras
+|       |   |   └── index.rst
+|       |   ├── logic.rst
+|       |   ├── matrices
+|       |   |   ├── common.rst
+|       |   |   ├── dense.rst
+|       |   |   ├── expressions.rst
+|       |   |   ├── immutablematrices.rst
+|       |   |   ├── index.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── normalforms.rst
+|       |   |   ├── sparse.rst
+|       |   |   └── sparsetools.rst
+|       |   ├── ntheory.rst
+|       |   ├── numeric-computation.rst
+|       |   ├── parsing.rst
+|       |   ├── physics
+|       |   |   ├── continuum_mechanics
+|       |   |   ├── control
+|       |   |   ├── hep
+|       |   |   ├── hydrogen.rst
+|       |   |   ├── matrices.rst
+|       |   |   ├── mechanics
+|       |   |   ├── optics
+|       |   |   ├── paulialgebra.rst
+|       |   |   ├── qho_1d.rst
+|       |   |   ├── quantum
+|       |   |   ├── secondquant.rst
+|       |   |   ├── sho.rst
+|       |   |   ├── units
+|       |   |   ├── vector
+|       |   |   └── wigner.rst
+|       |   ├── plotting.rst
+|       |   ├── polys
+|       |   |   ├── agca.rst
+|       |   |   ├── basics.rst
+|       |   |   ├── domainmatrix.rst
+|       |   |   ├── domainsintro.rst
+|       |   |   ├── domainsref.rst
+|       |   |   ├── index.rst
+|       |   |   ├── internals.rst
+|       |   |   ├── literature.rst
+|       |   |   ├── numberfields.rst
+|       |   |   ├── reference.rst
+|       |   |   ├── ringseries.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── wester.rst
+|       |   ├── printing.rst
+|       |   ├── rewriting.rst
+|       |   ├── series
+|       |   |   ├── formal.rst
+|       |   |   ├── fourier.rst
+|       |   |   ├── index.rst
+|       |   |   ├── limitseq.rst
+|       |   |   ├── sequences.rst
+|       |   |   └── series.rst
+|       |   ├── sets.rst
+|       |   ├── simplify
+|       |   |   ├── fu.rst
+|       |   |   ├── hyperexpand.rst
+|       |   |   ├── index.rst
+|       |   |   └── simplify.rst
+|       |   ├── solvers
+|       |   |   ├── diophantine.rst
+|       |   |   ├── index.rst
+|       |   |   ├── inequalities.rst
+|       |   |   ├── ode.rst
+|       |   |   ├── pde.rst
+|       |   |   ├── solvers.rst
+|       |   |   └── solveset.rst
+|       |   ├── stats.rst
+|       |   ├── tensor
+|       |   |   ├── array.rst
+|       |   |   ├── array_expressions.rst
+|       |   |   ├── index.rst
+|       |   |   ├── index_methods.rst
+|       |   |   ├── indexed.rst
+|       |   |   ├── tensor.rst
+|       |   |   └── toperators.rst
+|       |   ├── testing
+|       |   |   ├── index.rst
+|       |   |   ├── pytest.rst
+|       |   |   ├── randtest.rst
+|       |   |   └── runtests.rst
+|       |   ├── utilities
+|       |   |   ├── autowrap.rst
+|       |   |   ├── codegen.rst
+|       |   |   ├── decorator.rst
+|       |   |   ├── enumerative.rst
+|       |   |   ├── exceptions.rst
+|       |   |   ├── index.rst
+|       |   |   ├── iterables.rst
+|       |   |   ├── lambdify.rst
+|       |   |   ├── memoization.rst
+|       |   |   ├── misc.rst
+|       |   |   ├── pkgdata.rst
+|       |   |   ├── source.rst
+|       |   |   └── timeutils.rst
+|       |   └── vector
+|       |       ├── api
+|       |       ├── basics.rst
+|       |       ├── coordsys.rst
+|       |       ├── examples.rst
+|       |       ├── fields.rst
+|       |       ├── index.rst
+|       |       ├── intro.rst
+|       |       └── vector_integration.rst
+|       ├── pics
+|       ├── reference
+|       |   ├── index.rst
+|       |   └── public
+|       |       ├── basics
+|       |       ├── codegeneration
+|       |       ├── logic
+|       |       ├── matrices
+|       |       ├── numbertheory
+|       |       ├── physics
+|       |       ├── topics
+|       |       └── utilities
+|       └── tutorials
+|           ├── index.rst
+|           └── intro-tutorial
+|               ├── basic_operations.rst
+|               ├── calculus.rst
+|               ├── features.rst
+|               ├── gotchas.rst
+|               ├── index.rst
+|               ├── intro.rst
+|               ├── manipulation.rst
+|               ├── matrices.rst
+|               ├── next.rst
+|               ├── preliminaries.rst
+|               ├── printing.rst
+|               ├── simplification.rst
+|               └── solvers.rst
+├── examples
+|   ├── advanced
+|   |   ├── autowrap_integrators.py
+|   |   ├── autowrap_ufuncify.py
+|   |   ├── curvilinear_coordinates.py
+|   |   ├── dense_coding_example.py
+|   |   ├── fem.py
+|   |   ├── gibbs_phenomenon.py
+|   |   ├── grover_example.py
+|   |   ├── hydrogen.py
+|   |   ├── pidigits.py
+|   |   ├── pyglet_plotting.py
+|   |   ├── qft.py
+|   |   └── relativity.py
+|   ├── all.py
+|   ├── beginner
+|   |   ├── basic.py
+|   |   ├── differentiation.py
+|   |   ├── expansion.py
+|   |   ├── functions.py
+|   |   ├── limits_examples.py
+|   |   ├── plot_examples.py
+|   |   ├── plotting_nice_plot.py
+|   |   ├── precision.py
+|   |   ├── print_pretty.py
+|   |   ├── series.py
+|   |   └── substitution.py
+|   ├── intermediate
+|   |   ├── coupled_cluster.py
+|   |   ├── differential_equations.py
+|   |   ├── infinite_1d_box.py
+|   |   ├── mplot2d.py
+|   |   ├── mplot3d.py
+|   |   ├── partial_differential_eqs.py
+|   |   ├── print_gtk.py
+|   |   ├── sample.py
+|   |   ├── trees.py
+|   |   └── vandermonde.py
+|   └── notebooks
+|       └── README.txt
+├── isympy.py
+├── release
+|   ├── README.md
+|   ├── authors.py
+|   ├── build_docs.py
+|   ├── ci_release_script.sh
+|   ├── compare_tar_against_git.py
+|   ├── github_release.py
+|   ├── helpers.py
+|   ├── releasecheck.py
+|   ├── sha256.py
+|   └── update_docs.py
+├── setup.py
+├── setupegg.py
+└── sympy
+    ├── __init__.py
+    ├── abc.py
+    ├── algebras
+    |   ├── __init__.py
+    |   ├── quaternion.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_quaternion.py
+    ├── assumptions
+    |   ├── __init__.py
+    |   ├── ask.py
+    |   ├── ask_generated.py
+    |   ├── assume.py
+    |   ├── cnf.py
+    |   ├── facts.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── predicates
+    |   |   ├── __init__.py
+    |   |   ├── calculus.py
+    |   |   ├── common.py
+    |   |   ├── matrices.py
+    |   |   ├── ntheory.py
+    |   |   ├── order.py
+    |   |   └── sets.py
+    |   ├── refine.py
+    |   ├── relation
+    |   |   ├── __init__.py
+    |   |   ├── binrel.py
+    |   |   └── equality.py
+    |   ├── satask.py
+    |   ├── sathandlers.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_assumptions_2.py
+    |   |   ├── test_context.py
+    |   |   ├── test_matrices.py
+    |   |   ├── test_query.py
+    |   |   ├── test_refine.py
+    |   |   ├── test_satask.py
+    |   |   ├── test_sathandlers.py
+    |   |   └── test_wrapper.py
+    |   └── wrapper.py
+    ├── benchmarks
+    |   ├── __init__.py
+    |   ├── bench_discrete_log.py
+    |   ├── bench_meijerint.py
+    |   └── bench_symbench.py
+    ├── calculus
+    |   ├── __init__.py
+    |   ├── accumulationbounds.py
+    |   ├── euler.py
+    |   ├── finite_diff.py
+    |   ├── singularities.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_accumulationbounds.py
+    |   |   ├── test_euler.py
+    |   |   ├── test_finite_diff.py
+    |   |   ├── test_singularities.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── categories
+    |   ├── __init__.py
+    |   ├── baseclasses.py
+    |   ├── diagram_drawing.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_baseclasses.py
+    |       └── test_drawing.py
+    ├── codegen
+    |   ├── __init__.py
+    |   ├── abstract_nodes.py
+    |   ├── algorithms.py
+    |   ├── approximations.py
+    |   ├── ast.py
+    |   ├── cfunctions.py
+    |   ├── cnodes.py
+    |   ├── cutils.py
+    |   ├── cxxnodes.py
+    |   ├── fnodes.py
+    |   ├── futils.py
+    |   ├── matrix_nodes.py
+    |   ├── numpy_nodes.py
+    |   ├── pynodes.py
+    |   ├── pyutils.py
+    |   ├── rewriting.py
+    |   ├── scipy_nodes.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_abstract_nodes.py
+    |       ├── test_algorithms.py
+    |       ├── test_applications.py
+    |       ├── test_approximations.py
+    |       ├── test_ast.py
+    |       ├── test_cfunctions.py
+    |       ├── test_cnodes.py
+    |       ├── test_cxxnodes.py
+    |       ├── test_fnodes.py
+    |       ├── test_numpy_nodes.py
+    |       ├── test_pynodes.py
+    |       ├── test_pyutils.py
+    |       ├── test_rewriting.py
+    |       └── test_scipy_nodes.py
+    ├── combinatorics
+    |   ├── __init__.py
+    |   ├── coset_table.py
+    |   ├── fp_groups.py
+    |   ├── free_groups.py
+    |   ├── generators.py
+    |   ├── graycode.py
+    |   ├── group_constructs.py
+    |   ├── group_numbers.py
+    |   ├── homomorphisms.py
+    |   ├── named_groups.py
+    |   ├── partitions.py
+    |   ├── pc_groups.py
+    |   ├── perm_groups.py
+    |   ├── permutations.py
+    |   ├── polyhedron.py
+    |   ├── prufer.py
+    |   ├── rewritingsystem.py
+    |   ├── rewritingsystem_fsm.py
+    |   ├── schur_number.py
+    |   ├── subsets.py
+    |   ├── tensor_can.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_coset_table.py
+    |   |   ├── test_fp_groups.py
+    |   |   ├── test_free_groups.py
+    |   |   ├── test_generators.py
+    |   |   ├── test_graycode.py
+    |   |   ├── test_group_constructs.py
+    |   |   ├── test_group_numbers.py
+    |   |   ├── test_homomorphisms.py
+    |   |   ├── test_named_groups.py
+    |   |   ├── test_partitions.py
+    |   |   ├── test_pc_groups.py
+    |   |   ├── test_perm_groups.py
+    |   |   ├── test_permutations.py
+    |   |   ├── test_polyhedron.py
+    |   |   ├── test_prufer.py
+    |   |   ├── test_rewriting.py
+    |   |   ├── test_schur_number.py
+    |   |   ├── test_subsets.py
+    |   |   ├── test_tensor_can.py
+    |   |   ├── test_testutil.py
+    |   |   └── test_util.py
+    |   ├── testutil.py
+    |   └── util.py
+    ├── concrete
+    |   ├── __init__.py
+    |   ├── delta.py
+    |   ├── expr_with_intlimits.py
+    |   ├── expr_with_limits.py
+    |   ├── gosper.py
+    |   ├── guess.py
+    |   ├── products.py
+    |   ├── summations.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_delta.py
+    |       ├── test_gosper.py
+    |       ├── test_guess.py
+    |       ├── test_products.py
+    |       └── test_sums_products.py
+    ├── conftest.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── _print_helpers.py
+    |   ├── add.py
+    |   ├── alphabets.py
+    |   ├── assumptions.py
+    |   ├── assumptions_generated.py
+    |   ├── backend.py
+    |   ├── basic.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_arit.py
+    |   |   ├── bench_assumptions.py
+    |   |   ├── bench_basic.py
+    |   |   ├── bench_expand.py
+    |   |   ├── bench_numbers.py
+    |   |   └── bench_sympify.py
+    |   ├── cache.py
+    |   ├── compatibility.py
+    |   ├── containers.py
+    |   ├── core.py
+    |   ├── coreerrors.py
+    |   ├── decorators.py
+    |   ├── evalf.py
+    |   ├── expr.py
+    |   ├── exprtools.py
+    |   ├── facts.py
+    |   ├── function.py
+    |   ├── kind.py
+    |   ├── logic.py
+    |   ├── mod.py
+    |   ├── mul.py
+    |   ├── multidimensional.py
+    |   ├── numbers.py
+    |   ├── operations.py
+    |   ├── parameters.py
+    |   ├── power.py
+    |   ├── random.py
+    |   ├── relational.py
+    |   ├── rules.py
+    |   ├── singleton.py
+    |   ├── sorting.py
+    |   ├── symbol.py
+    |   ├── sympify.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_args.py
+    |   |   ├── test_arit.py
+    |   |   ├── test_assumptions.py
+    |   |   ├── test_basic.py
+    |   |   ├── test_cache.py
+    |   |   ├── test_compatibility.py
+    |   |   ├── test_complex.py
+    |   |   ├── test_constructor_postprocessor.py
+    |   |   ├── test_containers.py
+    |   |   ├── test_count_ops.py
+    |   |   ├── test_diff.py
+    |   |   ├── test_equal.py
+    |   |   ├── test_eval.py
+    |   |   ├── test_evalf.py
+    |   |   ├── test_expand.py
+    |   |   ├── test_expr.py
+    |   |   ├── test_exprtools.py
+    |   |   ├── test_facts.py
+    |   |   ├── test_function.py
+    |   |   ├── test_kind.py
+    |   |   ├── test_logic.py
+    |   |   ├── test_match.py
+    |   |   ├── test_multidimensional.py
+    |   |   ├── test_noncommutative.py
+    |   |   ├── test_numbers.py
+    |   |   ├── test_operations.py
+    |   |   ├── test_parameters.py
+    |   |   ├── test_power.py
+    |   |   ├── test_priority.py
+    |   |   ├── test_random.py
+    |   |   ├── test_relational.py
+    |   |   ├── test_rules.py
+    |   |   ├── test_singleton.py
+    |   |   ├── test_sorting.py
+    |   |   ├── test_subs.py
+    |   |   ├── test_symbol.py
+    |   |   ├── test_sympify.py
+    |   |   ├── test_traversal.py
+    |   |   ├── test_truediv.py
+    |   |   └── test_var.py
+    |   ├── trace.py
+    |   └── traversal.py
+    ├── crypto
+    |   ├── __init__.py
+    |   ├── crypto.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_crypto.py
+    ├── diffgeom
+    |   ├── __init__.py
+    |   ├── diffgeom.py
+    |   ├── rn.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_class_structure.py
+    |       ├── test_diffgeom.py
+    |       ├── test_function_diffgeom_book.py
+    |       └── test_hyperbolic_space.py
+    ├── discrete
+    |   ├── __init__.py
+    |   ├── convolutions.py
+    |   ├── recurrences.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_convolutions.py
+    |   |   ├── test_recurrences.py
+    |   |   └── test_transforms.py
+    |   └── transforms.py
+    ├── external
+    |   ├── __init__.py
+    |   ├── gmpy.py
+    |   ├── importtools.py
+    |   ├── pythonmpq.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_autowrap.py
+    |       ├── test_codegen.py
+    |       ├── test_importtools.py
+    |       ├── test_numpy.py
+    |       ├── test_pythonmpq.py
+    |       └── test_scipy.py
+    ├── functions
+    |   ├── __init__.py
+    |   ├── combinatorial
+    |   |   ├── __init__.py
+    |   |   ├── factorials.py
+    |   |   ├── numbers.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_comb_factorials.py
+    |   |       └── test_comb_numbers.py
+    |   ├── elementary
+    |   |   ├── __init__.py
+    |   |   ├── benchmarks
+    |   |   |   ├── __init__.py
+    |   |   |   └── bench_exp.py
+    |   |   ├── complexes.py
+    |   |   ├── exponential.py
+    |   |   ├── hyperbolic.py
+    |   |   ├── integers.py
+    |   |   ├── miscellaneous.py
+    |   |   ├── piecewise.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_complexes.py
+    |   |   |   ├── test_exponential.py
+    |   |   |   ├── test_hyperbolic.py
+    |   |   |   ├── test_integers.py
+    |   |   |   ├── test_interface.py
+    |   |   |   ├── test_miscellaneous.py
+    |   |   |   ├── test_piecewise.py
+    |   |   |   └── test_trigonometric.py
+    |   |   └── trigonometric.py
+    |   └── special
+    |       ├── __init__.py
+    |       ├── benchmarks
+    |       |   ├── __init__.py
+    |       |   └── bench_special.py
+    |       ├── bessel.py
+    |       ├── beta_functions.py
+    |       ├── bsplines.py
+    |       ├── delta_functions.py
+    |       ├── elliptic_integrals.py
+    |       ├── error_functions.py
+    |       ├── gamma_functions.py
+    |       ├── hyper.py
+    |       ├── mathieu_functions.py
+    |       ├── polynomials.py
+    |       ├── singularity_functions.py
+    |       ├── spherical_harmonics.py
+    |       ├── tensor_functions.py
+    |       ├── tests
+    |       |   ├── __init__.py
+    |       |   ├── test_bessel.py
+    |       |   ├── test_beta_functions.py
+    |       |   ├── test_bsplines.py
+    |       |   ├── test_delta_functions.py
+    |       |   ├── test_elliptic_integrals.py
+    |       |   ├── test_error_functions.py
+    |       |   ├── test_gamma_functions.py
+    |       |   ├── test_hyper.py
+    |       |   ├── test_mathieu.py
+    |       |   ├── test_singularity_functions.py
+    |       |   ├── test_spec_polynomials.py
+    |       |   ├── test_spherical_harmonics.py
+    |       |   ├── test_tensor_functions.py
+    |       |   └── test_zeta_functions.py
+    |       └── zeta_functions.py
+    ├── galgebra.py
+    ├── geometry
+    |   ├── __init__.py
+    |   ├── curve.py
+    |   ├── ellipse.py
+    |   ├── entity.py
+    |   ├── exceptions.py
+    |   ├── line.py
+    |   ├── parabola.py
+    |   ├── plane.py
+    |   ├── point.py
+    |   ├── polygon.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_curve.py
+    |   |   ├── test_ellipse.py
+    |   |   ├── test_entity.py
+    |   |   ├── test_geometrysets.py
+    |   |   ├── test_line.py
+    |   |   ├── test_parabola.py
+    |   |   ├── test_plane.py
+    |   |   ├── test_point.py
+    |   |   ├── test_polygon.py
+    |   |   └── test_util.py
+    |   └── util.py
+    ├── holonomic
+    |   ├── __init__.py
+    |   ├── holonomic.py
+    |   ├── holonomicerrors.py
+    |   ├── numerical.py
+    |   ├── recurrence.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_holonomic.py
+    |       └── test_recurrence.py
+    ├── integrals
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_integrate.py
+    |   |   └── bench_trigintegrate.py
+    |   ├── deltafunctions.py
+    |   ├── heurisch.py
+    |   ├── integrals.py
+    |   ├── intpoly.py
+    |   ├── manualintegrate.py
+    |   ├── meijerint.py
+    |   ├── meijerint_doc.py
+    |   ├── prde.py
+    |   ├── quadrature.py
+    |   ├── rationaltools.py
+    |   ├── rde.py
+    |   ├── risch.py
+    |   ├── singularityfunctions.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_deltafunctions.py
+    |   |   ├── test_failing_integrals.py
+    |   |   ├── test_heurisch.py
+    |   |   ├── test_integrals.py
+    |   |   ├── test_intpoly.py
+    |   |   ├── test_lineintegrals.py
+    |   |   ├── test_manual.py
+    |   |   ├── test_meijerint.py
+    |   |   ├── test_prde.py
+    |   |   ├── test_quadrature.py
+    |   |   ├── test_rationaltools.py
+    |   |   ├── test_rde.py
+    |   |   ├── test_risch.py
+    |   |   ├── test_singularityfunctions.py
+    |   |   ├── test_transforms.py
+    |   |   └── test_trigonometry.py
+    |   ├── transforms.py
+    |   └── trigonometry.py
+    ├── interactive
+    |   ├── __init__.py
+    |   ├── printing.py
+    |   ├── session.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_interactive.py
+    |   |   └── test_ipython.py
+    |   └── traversal.py
+    ├── liealgebras
+    |   ├── __init__.py
+    |   ├── cartan_matrix.py
+    |   ├── cartan_type.py
+    |   ├── dynkin_diagram.py
+    |   ├── root_system.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_cartan_matrix.py
+    |   |   ├── test_cartan_type.py
+    |   |   ├── test_dynkin_diagram.py
+    |   |   ├── test_root_system.py
+    |   |   ├── test_type_A.py
+    |   |   ├── test_type_B.py
+    |   |   ├── test_type_C.py
+    |   |   ├── test_type_D.py
+    |   |   ├── test_type_E.py
+    |   |   ├── test_type_F.py
+    |   |   ├── test_type_G.py
+    |   |   └── test_weyl_group.py
+    |   ├── type_a.py
+    |   ├── type_b.py
+    |   ├── type_c.py
+    |   ├── type_d.py
+    |   ├── type_e.py
+    |   ├── type_f.py
+    |   ├── type_g.py
+    |   └── weyl_group.py
+    ├── logic
+    |   ├── __init__.py
+    |   ├── algorithms
+    |   |   ├── __init__.py
+    |   |   ├── dpll.py
+    |   |   ├── dpll2.py
+    |   |   ├── minisat22_wrapper.py
+    |   |   └── pycosat_wrapper.py
+    |   ├── boolalg.py
+    |   ├── inference.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_boolalg.py
+    |   |   ├── test_dimacs.py
+    |   |   └── test_inference.py
+    |   └── utilities
+    |       ├── __init__.py
+    |       └── dimacs.py
+    ├── matrices
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_matrix.py
+    |   ├── common.py
+    |   ├── decompositions.py
+    |   ├── dense.py
+    |   ├── determinant.py
+    |   ├── eigen.py
+    |   ├── expressions
+    |   |   ├── __init__.py
+    |   |   ├── adjoint.py
+    |   |   ├── applyfunc.py
+    |   |   ├── blockmatrix.py
+    |   |   ├── companion.py
+    |   |   ├── determinant.py
+    |   |   ├── diagonal.py
+    |   |   ├── dotproduct.py
+    |   |   ├── factorizations.py
+    |   |   ├── fourier.py
+    |   |   ├── funcmatrix.py
+    |   |   ├── hadamard.py
+    |   |   ├── inverse.py
+    |   |   ├── kronecker.py
+    |   |   ├── matadd.py
+    |   |   ├── matexpr.py
+    |   |   ├── matmul.py
+    |   |   ├── matpow.py
+    |   |   ├── permutation.py
+    |   |   ├── sets.py
+    |   |   ├── slice.py
+    |   |   ├── special.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_adjoint.py
+    |   |   |   ├── test_applyfunc.py
+    |   |   |   ├── test_blockmatrix.py
+    |   |   |   ├── test_companion.py
+    |   |   |   ├── test_derivatives.py
+    |   |   |   ├── test_determinant.py
+    |   |   |   ├── test_diagonal.py
+    |   |   |   ├── test_dotproduct.py
+    |   |   |   ├── test_factorizations.py
+    |   |   |   ├── test_fourier.py
+    |   |   |   ├── test_funcmatrix.py
+    |   |   |   ├── test_hadamard.py
+    |   |   |   ├── test_indexing.py
+    |   |   |   ├── test_inverse.py
+    |   |   |   ├── test_kronecker.py
+    |   |   |   ├── test_matadd.py
+    |   |   |   ├── test_matexpr.py
+    |   |   |   ├── test_matmul.py
+    |   |   |   ├── test_matpow.py
+    |   |   |   ├── test_permutation.py
+    |   |   |   ├── test_sets.py
+    |   |   |   ├── test_slice.py
+    |   |   |   ├── test_special.py
+    |   |   |   ├── test_trace.py
+    |   |   |   └── test_transpose.py
+    |   |   ├── trace.py
+    |   |   └── transpose.py
+    |   ├── graph.py
+    |   ├── immutable.py
+    |   ├── inverse.py
+    |   ├── matrices.py
+    |   ├── normalforms.py
+    |   ├── reductions.py
+    |   ├── repmatrix.py
+    |   ├── solvers.py
+    |   ├── sparse.py
+    |   ├── sparsetools.py
+    |   ├── subspaces.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_commonmatrix.py
+    |   |   ├── test_decompositions.py
+    |   |   ├── test_determinant.py
+    |   |   ├── test_eigen.py
+    |   |   ├── test_graph.py
+    |   |   ├── test_immutable.py
+    |   |   ├── test_interactions.py
+    |   |   ├── test_matrices.py
+    |   |   ├── test_normalforms.py
+    |   |   ├── test_reductions.py
+    |   |   ├── test_solvers.py
+    |   |   ├── test_sparse.py
+    |   |   ├── test_sparsetools.py
+    |   |   └── test_subspaces.py
+    |   └── utilities.py
+    ├── multipledispatch
+    |   ├── __init__.py
+    |   ├── conflict.py
+    |   ├── core.py
+    |   ├── dispatcher.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_conflict.py
+    |   |   ├── test_core.py
+    |   |   └── test_dispatcher.py
+    |   └── utils.py
+    ├── ntheory
+    |   ├── __init__.py
+    |   ├── bbp_pi.py
+    |   ├── continued_fraction.py
+    |   ├── digits.py
+    |   ├── ecm.py
+    |   ├── egyptian_fraction.py
+    |   ├── elliptic_curve.py
+    |   ├── factor_.py
+    |   ├── generate.py
+    |   ├── modular.py
+    |   ├── multinomial.py
+    |   ├── partitions_.py
+    |   ├── primetest.py
+    |   ├── qs.py
+    |   ├── residue_ntheory.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_bbp_pi.py
+    |       ├── test_continued_fraction.py
+    |       ├── test_digits.py
+    |       ├── test_ecm.py
+    |       ├── test_egyptian_fraction.py
+    |       ├── test_elliptic_curve.py
+    |       ├── test_factor_.py
+    |       ├── test_generate.py
+    |       ├── test_modular.py
+    |       ├── test_multinomial.py
+    |       ├── test_partitions.py
+    |       ├── test_primetest.py
+    |       ├── test_qs.py
+    |       └── test_residue.py
+    ├── parsing
+    |   ├── __init__.py
+    |   ├── ast_parser.py
+    |   ├── autolev
+    |   |   ├── __init__.py
+    |   |   ├── _antlr
+    |   |   |   ├── __init__.py
+    |   |   |   ├── autolevlexer.py
+    |   |   |   ├── autolevlistener.py
+    |   |   |   └── autolevparser.py
+    |   |   ├── _build_autolev_antlr.py
+    |   |   ├── _listener_autolev_antlr.py
+    |   |   ├── _parse_autolev_antlr.py
+    |   |   └── test-examples
+    |   |       ├── README.txt
+    |   |       ├── pydy-example-repo
+    |   |       ├── ruletest1.py
+    |   |       ├── ruletest10.py
+    |   |       ├── ruletest11.py
+    |   |       ├── ruletest12.py
+    |   |       ├── ruletest2.py
+    |   |       ├── ruletest3.py
+    |   |       ├── ruletest4.py
+    |   |       ├── ruletest5.py
+    |   |       ├── ruletest6.py
+    |   |       ├── ruletest7.py
+    |   |       ├── ruletest8.py
+    |   |       └── ruletest9.py
+    |   ├── c
+    |   |   ├── __init__.py
+    |   |   └── c_parser.py
+    |   ├── fortran
+    |   |   ├── __init__.py
+    |   |   └── fortran_parser.py
+    |   ├── latex
+    |   |   ├── LICENSE.txt
+    |   |   ├── __init__.py
+    |   |   ├── _antlr
+    |   |   |   ├── __init__.py
+    |   |   |   ├── latexlexer.py
+    |   |   |   └── latexparser.py
+    |   |   ├── _build_latex_antlr.py
+    |   |   ├── _parse_latex_antlr.py
+    |   |   └── errors.py
+    |   ├── mathematica.py
+    |   ├── maxima.py
+    |   ├── sym_expr.py
+    |   ├── sympy_parser.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_ast_parser.py
+    |       ├── test_autolev.py
+    |       ├── test_c_parser.py
+    |       ├── test_fortran_parser.py
+    |       ├── test_implicit_multiplication_application.py
+    |       ├── test_latex.py
+    |       ├── test_latex_deps.py
+    |       ├── test_mathematica.py
+    |       ├── test_maxima.py
+    |       ├── test_sym_expr.py
+    |       └── test_sympy_parser.py
+    ├── physics
+    |   ├── __init__.py
+    |   ├── continuum_mechanics
+    |   |   ├── __init__.py
+    |   |   ├── beam.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_beam.py
+    |   |   |   └── test_truss.py
+    |   |   └── truss.py
+    |   ├── control
+    |   |   ├── __init__.py
+    |   |   ├── control_plots.py
+    |   |   ├── lti.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_control_plots.py
+    |   |       └── test_lti.py
+    |   ├── hep
+    |   |   ├── __init__.py
+    |   |   ├── gamma_matrices.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_gamma_matrices.py
+    |   ├── hydrogen.py
+    |   ├── matrices.py
+    |   ├── mechanics
+    |   |   ├── __init__.py
+    |   |   ├── body.py
+    |   |   ├── functions.py
+    |   |   ├── joint.py
+    |   |   ├── jointsmethod.py
+    |   |   ├── kane.py
+    |   |   ├── lagrange.py
+    |   |   ├── linearize.py
+    |   |   ├── method.py
+    |   |   ├── models.py
+    |   |   ├── particle.py
+    |   |   ├── rigidbody.py
+    |   |   ├── system.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_body.py
+    |   |       ├── test_functions.py
+    |   |       ├── test_joint.py
+    |   |       ├── test_jointsmethod.py
+    |   |       ├── test_kane.py
+    |   |       ├── test_kane2.py
+    |   |       ├── test_kane3.py
+    |   |       ├── test_kane4.py
+    |   |       ├── test_lagrange.py
+    |   |       ├── test_lagrange2.py
+    |   |       ├── test_linearize.py
+    |   |       ├── test_method.py
+    |   |       ├── test_models.py
+    |   |       ├── test_particle.py
+    |   |       ├── test_rigidbody.py
+    |   |       └── test_system.py
+    |   ├── optics
+    |   |   ├── __init__.py
+    |   |   ├── gaussopt.py
+    |   |   ├── medium.py
+    |   |   ├── polarization.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_gaussopt.py
+    |   |   |   ├── test_medium.py
+    |   |   |   ├── test_polarization.py
+    |   |   |   ├── test_utils.py
+    |   |   |   └── test_waves.py
+    |   |   ├── utils.py
+    |   |   └── waves.py
+    |   ├── paulialgebra.py
+    |   ├── pring.py
+    |   ├── qho_1d.py
+    |   ├── quantum
+    |   |   ├── __init__.py
+    |   |   ├── anticommutator.py
+    |   |   ├── boson.py
+    |   |   ├── cartesian.py
+    |   |   ├── cg.py
+    |   |   ├── circuitplot.py
+    |   |   ├── circuitutils.py
+    |   |   ├── commutator.py
+    |   |   ├── constants.py
+    |   |   ├── dagger.py
+    |   |   ├── density.py
+    |   |   ├── fermion.py
+    |   |   ├── gate.py
+    |   |   ├── grover.py
+    |   |   ├── hilbert.py
+    |   |   ├── identitysearch.py
+    |   |   ├── innerproduct.py
+    |   |   ├── matrixcache.py
+    |   |   ├── matrixutils.py
+    |   |   ├── operator.py
+    |   |   ├── operatorordering.py
+    |   |   ├── operatorset.py
+    |   |   ├── pauli.py
+    |   |   ├── piab.py
+    |   |   ├── qapply.py
+    |   |   ├── qasm.py
+    |   |   ├── qexpr.py
+    |   |   ├── qft.py
+    |   |   ├── qubit.py
+    |   |   ├── represent.py
+    |   |   ├── sho1d.py
+    |   |   ├── shor.py
+    |   |   ├── spin.py
+    |   |   ├── state.py
+    |   |   ├── tensorproduct.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_anticommutator.py
+    |   |   |   ├── test_boson.py
+    |   |   |   ├── test_cartesian.py
+    |   |   |   ├── test_cg.py
+    |   |   |   ├── test_circuitplot.py
+    |   |   |   ├── test_circuitutils.py
+    |   |   |   ├── test_commutator.py
+    |   |   |   ├── test_constants.py
+    |   |   |   ├── test_dagger.py
+    |   |   |   ├── test_density.py
+    |   |   |   ├── test_fermion.py
+    |   |   |   ├── test_gate.py
+    |   |   |   ├── test_grover.py
+    |   |   |   ├── test_hilbert.py
+    |   |   |   ├── test_identitysearch.py
+    |   |   |   ├── test_innerproduct.py
+    |   |   |   ├── test_matrixutils.py
+    |   |   |   ├── test_operator.py
+    |   |   |   ├── test_operatorordering.py
+    |   |   |   ├── test_operatorset.py
+    |   |   |   ├── test_pauli.py
+    |   |   |   ├── test_piab.py
+    |   |   |   ├── test_printing.py
+    |   |   |   ├── test_qapply.py
+    |   |   |   ├── test_qasm.py
+    |   |   |   ├── test_qexpr.py
+    |   |   |   ├── test_qft.py
+    |   |   |   ├── test_qubit.py
+    |   |   |   ├── test_represent.py
+    |   |   |   ├── test_sho1d.py
+    |   |   |   ├── test_shor.py
+    |   |   |   ├── test_spin.py
+    |   |   |   ├── test_state.py
+    |   |   |   ├── test_tensorproduct.py
+    |   |   |   └── test_trace.py
+    |   |   └── trace.py
+    |   ├── secondquant.py
+    |   ├── sho.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_clebsch_gordan.py
+    |   |   ├── test_hydrogen.py
+    |   |   ├── test_paulialgebra.py
+    |   |   ├── test_physics_matrices.py
+    |   |   ├── test_pring.py
+    |   |   ├── test_qho_1d.py
+    |   |   ├── test_secondquant.py
+    |   |   └── test_sho.py
+    |   ├── units
+    |   |   ├── __init__.py
+    |   |   ├── definitions
+    |   |   |   ├── __init__.py
+    |   |   |   ├── dimension_definitions.py
+    |   |   |   └── unit_definitions.py
+    |   |   ├── dimensions.py
+    |   |   ├── prefixes.py
+    |   |   ├── quantities.py
+    |   |   ├── systems
+    |   |   |   ├── __init__.py
+    |   |   |   ├── cgs.py
+    |   |   |   ├── length_weight_time.py
+    |   |   |   ├── mks.py
+    |   |   |   ├── mksa.py
+    |   |   |   ├── natural.py
+    |   |   |   └── si.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dimensions.py
+    |   |   |   ├── test_dimensionsystem.py
+    |   |   |   ├── test_prefixes.py
+    |   |   |   ├── test_quantities.py
+    |   |   |   ├── test_unit_system_cgs_gauss.py
+    |   |   |   ├── test_unitsystem.py
+    |   |   |   └── test_util.py
+    |   |   ├── unitsystem.py
+    |   |   └── util.py
+    |   ├── vector
+    |   |   ├── __init__.py
+    |   |   ├── dyadic.py
+    |   |   ├── fieldfunctions.py
+    |   |   ├── frame.py
+    |   |   ├── functions.py
+    |   |   ├── point.py
+    |   |   ├── printing.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_dyadic.py
+    |   |   |   ├── test_fieldfunctions.py
+    |   |   |   ├── test_frame.py
+    |   |   |   ├── test_functions.py
+    |   |   |   ├── test_output.py
+    |   |   |   ├── test_point.py
+    |   |   |   ├── test_printing.py
+    |   |   |   └── test_vector.py
+    |   |   └── vector.py
+    |   └── wigner.py
+    ├── plotting
+    |   ├── __init__.py
+    |   ├── experimental_lambdify.py
+    |   ├── intervalmath
+    |   |   ├── __init__.py
+    |   |   ├── interval_arithmetic.py
+    |   |   ├── interval_membership.py
+    |   |   ├── lib_interval.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_interval_functions.py
+    |   |       ├── test_interval_membership.py
+    |   |       └── test_intervalmath.py
+    |   ├── plot.py
+    |   ├── plot_implicit.py
+    |   ├── pygletplot
+    |   |   ├── __init__.py
+    |   |   ├── color_scheme.py
+    |   |   ├── managed_window.py
+    |   |   ├── plot.py
+    |   |   ├── plot_axes.py
+    |   |   ├── plot_camera.py
+    |   |   ├── plot_controller.py
+    |   |   ├── plot_curve.py
+    |   |   ├── plot_interval.py
+    |   |   ├── plot_mode.py
+    |   |   ├── plot_mode_base.py
+    |   |   ├── plot_modes.py
+    |   |   ├── plot_object.py
+    |   |   ├── plot_rotation.py
+    |   |   ├── plot_surface.py
+    |   |   ├── plot_window.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_plotting.py
+    |   |   └── util.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_experimental_lambdify.py
+    |   |   ├── test_plot.py
+    |   |   ├── test_plot_implicit.py
+    |   |   └── test_textplot.py
+    |   └── textplot.py
+    ├── polys
+    |   ├── __init__.py
+    |   ├── agca
+    |   |   ├── __init__.py
+    |   |   ├── extensions.py
+    |   |   ├── homomorphisms.py
+    |   |   ├── ideals.py
+    |   |   ├── modules.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_extensions.py
+    |   |       ├── test_homomorphisms.py
+    |   |       ├── test_ideals.py
+    |   |       └── test_modules.py
+    |   ├── appellseqs.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_galoispolys.py
+    |   |   ├── bench_groebnertools.py
+    |   |   └── bench_solvers.py
+    |   ├── compatibility.py
+    |   ├── constructor.py
+    |   ├── densearith.py
+    |   ├── densebasic.py
+    |   ├── densetools.py
+    |   ├── dispersion.py
+    |   ├── distributedmodules.py
+    |   ├── domainmatrix.py
+    |   ├── domains
+    |   |   ├── __init__.py
+    |   |   ├── algebraicfield.py
+    |   |   ├── characteristiczero.py
+    |   |   ├── complexfield.py
+    |   |   ├── compositedomain.py
+    |   |   ├── domain.py
+    |   |   ├── domainelement.py
+    |   |   ├── expressiondomain.py
+    |   |   ├── expressionrawdomain.py
+    |   |   ├── field.py
+    |   |   ├── finitefield.py
+    |   |   ├── fractionfield.py
+    |   |   ├── gaussiandomains.py
+    |   |   ├── gmpyfinitefield.py
+    |   |   ├── gmpyintegerring.py
+    |   |   ├── gmpyrationalfield.py
+    |   |   ├── groundtypes.py
+    |   |   ├── integerring.py
+    |   |   ├── modularinteger.py
+    |   |   ├── mpelements.py
+    |   |   ├── old_fractionfield.py
+    |   |   ├── old_polynomialring.py
+    |   |   ├── polynomialring.py
+    |   |   ├── pythonfinitefield.py
+    |   |   ├── pythonintegerring.py
+    |   |   ├── pythonrational.py
+    |   |   ├── pythonrationalfield.py
+    |   |   ├── quotientring.py
+    |   |   ├── rationalfield.py
+    |   |   ├── realfield.py
+    |   |   ├── ring.py
+    |   |   ├── simpledomain.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_domains.py
+    |   |       ├── test_polynomialring.py
+    |   |       └── test_quotientring.py
+    |   ├── euclidtools.py
+    |   ├── factortools.py
+    |   ├── fglmtools.py
+    |   ├── fields.py
+    |   ├── galoistools.py
+    |   ├── groebnertools.py
+    |   ├── heuristicgcd.py
+    |   ├── matrices
+    |   |   ├── __init__.py
+    |   |   ├── ddm.py
+    |   |   ├── dense.py
+    |   |   ├── domainmatrix.py
+    |   |   ├── domainscalar.py
+    |   |   ├── eigen.py
+    |   |   ├── exceptions.py
+    |   |   ├── linsolve.py
+    |   |   ├── normalforms.py
+    |   |   ├── sdm.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_ddm.py
+    |   |       ├── test_dense.py
+    |   |       ├── test_domainmatrix.py
+    |   |       ├── test_domainscalar.py
+    |   |       ├── test_eigen.py
+    |   |       ├── test_linsolve.py
+    |   |       ├── test_normalforms.py
+    |   |       └── test_sdm.py
+    |   ├── modulargcd.py
+    |   ├── monomials.py
+    |   ├── multivariate_resultants.py
+    |   ├── numberfields
+    |   |   ├── __init__.py
+    |   |   ├── basis.py
+    |   |   ├── exceptions.py
+    |   |   ├── minpoly.py
+    |   |   ├── modules.py
+    |   |   ├── primes.py
+    |   |   ├── subfield.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_basis.py
+    |   |   |   ├── test_minpoly.py
+    |   |   |   ├── test_modules.py
+    |   |   |   ├── test_numbers.py
+    |   |   |   ├── test_primes.py
+    |   |   |   ├── test_subfield.py
+    |   |   |   └── test_utilities.py
+    |   |   └── utilities.py
+    |   ├── orderings.py
+    |   ├── orthopolys.py
+    |   ├── partfrac.py
+    |   ├── polyclasses.py
+    |   ├── polyconfig.py
+    |   ├── polyerrors.py
+    |   ├── polyfuncs.py
+    |   ├── polymatrix.py
+    |   ├── polyoptions.py
+    |   ├── polyquinticconst.py
+    |   ├── polyroots.py
+    |   ├── polytools.py
+    |   ├── polyutils.py
+    |   ├── rationaltools.py
+    |   ├── ring_series.py
+    |   ├── rings.py
+    |   ├── rootisolation.py
+    |   ├── rootoftools.py
+    |   ├── solvers.py
+    |   ├── specialpolys.py
+    |   ├── sqfreetools.py
+    |   ├── subresultants_qq_zz.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_appellseqs.py
+    |       ├── test_constructor.py
+    |       ├── test_densearith.py
+    |       ├── test_densebasic.py
+    |       ├── test_densetools.py
+    |       ├── test_dispersion.py
+    |       ├── test_distributedmodules.py
+    |       ├── test_euclidtools.py
+    |       ├── test_factortools.py
+    |       ├── test_fields.py
+    |       ├── test_galoistools.py
+    |       ├── test_groebnertools.py
+    |       ├── test_heuristicgcd.py
+    |       ├── test_injections.py
+    |       ├── test_modulargcd.py
+    |       ├── test_monomials.py
+    |       ├── test_multivariate_resultants.py
+    |       ├── test_orderings.py
+    |       ├── test_orthopolys.py
+    |       ├── test_partfrac.py
+    |       ├── test_polyclasses.py
+    |       ├── test_polyfuncs.py
+    |       ├── test_polymatrix.py
+    |       ├── test_polyoptions.py
+    |       ├── test_polyroots.py
+    |       ├── test_polytools.py
+    |       ├── test_polyutils.py
+    |       ├── test_pythonrational.py
+    |       ├── test_rationaltools.py
+    |       ├── test_ring_series.py
+    |       ├── test_rings.py
+    |       ├── test_rootisolation.py
+    |       ├── test_rootoftools.py
+    |       ├── test_solvers.py
+    |       ├── test_specialpolys.py
+    |       ├── test_sqfreetools.py
+    |       └── test_subresultants_qq_zz.py
+    ├── printing
+    |   ├── __init__.py
+    |   ├── aesaracode.py
+    |   ├── c.py
+    |   ├── codeprinter.py
+    |   ├── conventions.py
+    |   ├── cxx.py
+    |   ├── defaults.py
+    |   ├── dot.py
+    |   ├── fortran.py
+    |   ├── glsl.py
+    |   ├── gtk.py
+    |   ├── jscode.py
+    |   ├── julia.py
+    |   ├── lambdarepr.py
+    |   ├── latex.py
+    |   ├── llvmjitcode.py
+    |   ├── maple.py
+    |   ├── mathematica.py
+    |   ├── mathml.py
+    |   ├── numpy.py
+    |   ├── octave.py
+    |   ├── precedence.py
+    |   ├── pretty
+    |   |   ├── __init__.py
+    |   |   ├── pretty.py
+    |   |   ├── pretty_symbology.py
+    |   |   ├── stringpict.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_pretty.py
+    |   ├── preview.py
+    |   ├── printer.py
+    |   ├── pycode.py
+    |   ├── python.py
+    |   ├── rcode.py
+    |   ├── repr.py
+    |   ├── rust.py
+    |   ├── smtlib.py
+    |   ├── str.py
+    |   ├── tableform.py
+    |   ├── tensorflow.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_aesaracode.py
+    |   |   ├── test_c.py
+    |   |   ├── test_codeprinter.py
+    |   |   ├── test_conventions.py
+    |   |   ├── test_cupy.py
+    |   |   ├── test_cxx.py
+    |   |   ├── test_dot.py
+    |   |   ├── test_fortran.py
+    |   |   ├── test_glsl.py
+    |   |   ├── test_gtk.py
+    |   |   ├── test_jax.py
+    |   |   ├── test_jscode.py
+    |   |   ├── test_julia.py
+    |   |   ├── test_lambdarepr.py
+    |   |   ├── test_latex.py
+    |   |   ├── test_llvmjit.py
+    |   |   ├── test_maple.py
+    |   |   ├── test_mathematica.py
+    |   |   ├── test_mathml.py
+    |   |   ├── test_numpy.py
+    |   |   ├── test_octave.py
+    |   |   ├── test_precedence.py
+    |   |   ├── test_preview.py
+    |   |   ├── test_pycode.py
+    |   |   ├── test_python.py
+    |   |   ├── test_rcode.py
+    |   |   ├── test_repr.py
+    |   |   ├── test_rust.py
+    |   |   ├── test_smtlib.py
+    |   |   ├── test_str.py
+    |   |   ├── test_tableform.py
+    |   |   ├── test_tensorflow.py
+    |   |   ├── test_theanocode.py
+    |   |   └── test_tree.py
+    |   ├── theanocode.py
+    |   └── tree.py
+    ├── release.py
+    ├── sandbox
+    |   ├── __init__.py
+    |   ├── indexed_integrals.py
+    |   └── tests
+    |       ├── __init__.py
+    |       └── test_indexed_integrals.py
+    ├── series
+    |   ├── __init__.py
+    |   ├── acceleration.py
+    |   ├── approximants.py
+    |   ├── aseries.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   ├── bench_limit.py
+    |   |   └── bench_order.py
+    |   ├── formal.py
+    |   ├── fourier.py
+    |   ├── gruntz.py
+    |   ├── kauers.py
+    |   ├── limits.py
+    |   ├── limitseq.py
+    |   ├── order.py
+    |   ├── residues.py
+    |   ├── sequences.py
+    |   ├── series.py
+    |   ├── series_class.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_approximants.py
+    |       ├── test_aseries.py
+    |       ├── test_demidovich.py
+    |       ├── test_formal.py
+    |       ├── test_fourier.py
+    |       ├── test_gruntz.py
+    |       ├── test_kauers.py
+    |       ├── test_limits.py
+    |       ├── test_limitseq.py
+    |       ├── test_lseries.py
+    |       ├── test_nseries.py
+    |       ├── test_order.py
+    |       ├── test_residues.py
+    |       ├── test_sequences.py
+    |       └── test_series.py
+    ├── sets
+    |   ├── __init__.py
+    |   ├── conditionset.py
+    |   ├── contains.py
+    |   ├── fancysets.py
+    |   ├── handlers
+    |   |   ├── __init__.py
+    |   |   ├── add.py
+    |   |   ├── comparison.py
+    |   |   ├── functions.py
+    |   |   ├── intersection.py
+    |   |   ├── issubset.py
+    |   |   ├── mul.py
+    |   |   ├── power.py
+    |   |   └── union.py
+    |   ├── ordinals.py
+    |   ├── powerset.py
+    |   ├── setexpr.py
+    |   ├── sets.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_conditionset.py
+    |       ├── test_contains.py
+    |       ├── test_fancysets.py
+    |       ├── test_ordinals.py
+    |       ├── test_powerset.py
+    |       ├── test_setexpr.py
+    |       └── test_sets.py
+    ├── simplify
+    |   ├── __init__.py
+    |   ├── combsimp.py
+    |   ├── cse_main.py
+    |   ├── cse_opts.py
+    |   ├── epathtools.py
+    |   ├── fu.py
+    |   ├── gammasimp.py
+    |   ├── hyperexpand.py
+    |   ├── hyperexpand_doc.py
+    |   ├── powsimp.py
+    |   ├── radsimp.py
+    |   ├── ratsimp.py
+    |   ├── simplify.py
+    |   ├── sqrtdenest.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_combsimp.py
+    |   |   ├── test_cse.py
+    |   |   ├── test_epathtools.py
+    |   |   ├── test_fu.py
+    |   |   ├── test_function.py
+    |   |   ├── test_gammasimp.py
+    |   |   ├── test_hyperexpand.py
+    |   |   ├── test_powsimp.py
+    |   |   ├── test_radsimp.py
+    |   |   ├── test_ratsimp.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_simplify.py
+    |   |   ├── test_sqrtdenest.py
+    |   |   └── test_trigsimp.py
+    |   ├── traversaltools.py
+    |   └── trigsimp.py
+    ├── solvers
+    |   ├── __init__.py
+    |   ├── benchmarks
+    |   |   ├── __init__.py
+    |   |   └── bench_solvers.py
+    |   ├── bivariate.py
+    |   ├── decompogen.py
+    |   ├── deutils.py
+    |   ├── diophantine
+    |   |   ├── __init__.py
+    |   |   ├── diophantine.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       └── test_diophantine.py
+    |   ├── inequalities.py
+    |   ├── ode
+    |   |   ├── __init__.py
+    |   |   ├── hypergeometric.py
+    |   |   ├── lie_group.py
+    |   |   ├── nonhomogeneous.py
+    |   |   ├── ode.py
+    |   |   ├── riccati.py
+    |   |   ├── single.py
+    |   |   ├── subscheck.py
+    |   |   ├── systems.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_lie_group.py
+    |   |       ├── test_ode.py
+    |   |       ├── test_riccati.py
+    |   |       ├── test_single.py
+    |   |       ├── test_subscheck.py
+    |   |       └── test_systems.py
+    |   ├── pde.py
+    |   ├── polysys.py
+    |   ├── recurr.py
+    |   ├── solvers.py
+    |   ├── solveset.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_constantsimp.py
+    |       ├── test_decompogen.py
+    |       ├── test_inequalities.py
+    |       ├── test_numeric.py
+    |       ├── test_pde.py
+    |       ├── test_polysys.py
+    |       ├── test_recurr.py
+    |       ├── test_solvers.py
+    |       └── test_solveset.py
+    ├── stats
+    |   ├── __init__.py
+    |   ├── compound_rv.py
+    |   ├── crv.py
+    |   ├── crv_types.py
+    |   ├── drv.py
+    |   ├── drv_types.py
+    |   ├── error_prop.py
+    |   ├── frv.py
+    |   ├── frv_types.py
+    |   ├── joint_rv.py
+    |   ├── joint_rv_types.py
+    |   ├── matrix_distributions.py
+    |   ├── random_matrix.py
+    |   ├── random_matrix_models.py
+    |   ├── rv.py
+    |   ├── rv_interface.py
+    |   ├── sampling
+    |   |   ├── __init__.py
+    |   |   ├── sample_numpy.py
+    |   |   ├── sample_pymc.py
+    |   |   ├── sample_scipy.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_sample_continuous_rv.py
+    |   |       ├── test_sample_discrete_rv.py
+    |   |       └── test_sample_finite_rv.py
+    |   ├── stochastic_process.py
+    |   ├── stochastic_process_types.py
+    |   ├── symbolic_multivariate_probability.py
+    |   ├── symbolic_probability.py
+    |   └── tests
+    |       ├── __init__.py
+    |       ├── test_compound_rv.py
+    |       ├── test_continuous_rv.py
+    |       ├── test_discrete_rv.py
+    |       ├── test_error_prop.py
+    |       ├── test_finite_rv.py
+    |       ├── test_joint_rv.py
+    |       ├── test_matrix_distributions.py
+    |       ├── test_mix.py
+    |       ├── test_random_matrix.py
+    |       ├── test_rv.py
+    |       ├── test_stochastic_process.py
+    |       ├── test_symbolic_multivariate.py
+    |       └── test_symbolic_probability.py
+    ├── strategies
+    |   ├── __init__.py
+    |   ├── branch
+    |   |   ├── __init__.py
+    |   |   ├── core.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   ├── test_core.py
+    |   |   |   ├── test_tools.py
+    |   |   |   └── test_traverse.py
+    |   |   ├── tools.py
+    |   |   └── traverse.py
+    |   ├── core.py
+    |   ├── rl.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_core.py
+    |   |   ├── test_rl.py
+    |   |   ├── test_strat.py
+    |   |   ├── test_tools.py
+    |   |   ├── test_traverse.py
+    |   |   └── test_tree.py
+    |   ├── tools.py
+    |   ├── traverse.py
+    |   ├── tree.py
+    |   └── util.py
+    ├── tensor
+    |   ├── __init__.py
+    |   ├── array
+    |   |   ├── __init__.py
+    |   |   ├── array_comprehension.py
+    |   |   ├── array_derivatives.py
+    |   |   ├── arrayop.py
+    |   |   ├── dense_ndim_array.py
+    |   |   ├── expressions
+    |   |   |   ├── __init__.py
+    |   |   |   ├── array_expressions.py
+    |   |   |   ├── arrayexpr_derivatives.py
+    |   |   |   ├── conv_array_to_indexed.py
+    |   |   |   ├── conv_array_to_matrix.py
+    |   |   |   ├── conv_indexed_to_array.py
+    |   |   |   ├── conv_matrix_to_array.py
+    |   |   |   ├── from_array_to_indexed.py
+    |   |   |   ├── from_array_to_matrix.py
+    |   |   |   ├── from_indexed_to_array.py
+    |   |   |   ├── from_matrix_to_array.py
+    |   |   |   ├── tests
+    |   |   |   └── utils.py
+    |   |   ├── mutable_ndim_array.py
+    |   |   ├── ndim_array.py
+    |   |   ├── sparse_ndim_array.py
+    |   |   └── tests
+    |   |       ├── __init__.py
+    |   |       ├── test_array_comprehension.py
+    |   |       ├── test_array_derivatives.py
+    |   |       ├── test_arrayop.py
+    |   |       ├── test_immutable_ndim_array.py
+    |   |       ├── test_mutable_ndim_array.py
+    |   |       ├── test_ndim_array.py
+    |   |       └── test_ndim_array_conversions.py
+    |   ├── functions.py
+    |   ├── index_methods.py
+    |   ├── indexed.py
+    |   ├── tensor.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_functions.py
+    |   |   ├── test_index_methods.py
+    |   |   ├── test_indexed.py
+    |   |   ├── test_tensor.py
+    |   |   ├── test_tensor_element.py
+    |   |   └── test_tensor_operators.py
+    |   └── toperators.py
+    ├── testing
+    |   ├── __init__.py
+    |   ├── matrices.py
+    |   ├── pytest.py
+    |   ├── quality_unicode.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── diagnose_imports.py
+    |   |   ├── test_code_quality.py
+    |   |   ├── test_deprecated.py
+    |   |   ├── test_module_imports.py
+    |   |   └── test_pytest.py
+    |   └── tmpfiles.py
+    ├── this.py
+    ├── unify
+    |   ├── __init__.py
+    |   ├── core.py
+    |   ├── rewrite.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_rewrite.py
+    |   |   ├── test_sympy.py
+    |   |   └── test_unify.py
+    |   └── usympy.py
+    ├── utilities
+    |   ├── __init__.py
+    |   ├── _compilation
+    |   |   ├── __init__.py
+    |   |   ├── availability.py
+    |   |   ├── compilation.py
+    |   |   ├── runners.py
+    |   |   ├── tests
+    |   |   |   ├── __init__.py
+    |   |   |   └── test_compilation.py
+    |   |   └── util.py
+    |   ├── autowrap.py
+    |   ├── codegen.py
+    |   ├── decorator.py
+    |   ├── enumerative.py
+    |   ├── exceptions.py
+    |   ├── iterables.py
+    |   ├── lambdify.py
+    |   ├── magic.py
+    |   ├── matchpy_connector.py
+    |   ├── mathml
+    |   |   ├── __init__.py
+    |   |   └── data
+    |   ├── memoization.py
+    |   ├── misc.py
+    |   ├── pkgdata.py
+    |   ├── pytest.py
+    |   ├── randtest.py
+    |   ├── runtests.py
+    |   ├── source.py
+    |   ├── tests
+    |   |   ├── __init__.py
+    |   |   ├── test_autowrap.py
+    |   |   ├── test_codegen.py
+    |   |   ├── test_codegen_julia.py
+    |   |   ├── test_codegen_octave.py
+    |   |   ├── test_codegen_rust.py
+    |   |   ├── test_decorator.py
+    |   |   ├── test_deprecated.py
+    |   |   ├── test_enumerative.py
+    |   |   ├── test_exceptions.py
+    |   |   ├── test_iterables.py
+    |   |   ├── test_lambdify.py
+    |   |   ├── test_matchpy_connector.py
+    |   |   ├── test_misc.py
+    |   |   ├── test_pickling.py
+    |   |   ├── test_source.py
+    |   |   ├── test_timeutils.py
+    |   |   └── test_wester.py
+    |   ├── timeutils.py
+    |   └── tmpfiles.py
+    └── vector
+        ├── __init__.py
+        ├── basisdependent.py
+        ├── coordsysrect.py
+        ├── deloperator.py
+        ├── dyadic.py
+        ├── functions.py
+        ├── implicitregion.py
+        ├── integrals.py
+        ├── operators.py
+        ├── orienters.py
+        ├── parametricregion.py
+        ├── point.py
+        ├── scalar.py
+        ├── tests
+        |   ├── __init__.py
+        |   ├── test_coordsysrect.py
+        |   ├── test_dyadic.py
+        |   ├── test_field_functions.py
+        |   ├── test_functions.py
+        |   ├── test_implicitregion.py
+        |   ├── test_integrals.py
+        |   ├── test_operators.py
+        |   ├── test_parametricregion.py
+        |   ├── test_printing.py
+        |   └── test_vector.py
+        └── vector.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: `_check_homomorphism` is broken on PermutationGroups
+
+Description: ```python
+In [1]: from sympy.combinatorics import *
+   ...: from sympy.combinatorics.homomorphisms import homomorphism
+   ...: D3 = DihedralGroup(3)
+   ...: T = homomorphism(D3, D3, D3.generators, D3.generators)
+
+ValueError: The given images do not define a homomorphism
+```
+
+The issue is in the internal `_image()` function, where it handles the case of a `PermutationGroup`:
+
+https://github.com/sympy/sympy/blob/809c53c077485ca48a206cee78340389cb83b7f1/sympy/combinatorics/homomorphisms.py#L336-L337
+
+When `r[i]` is an inverted generator, the `in gens` test fails.
+
+I think the whole thing can be greatly simplified.
+
+Patch information:
+diff --git a/sympy/combinatorics/homomorphisms.py b/sympy/combinatorics/homomorphisms.py
+index bb7bdf32ba..b98a8cbe12 100644
+--- a/sympy/combinatorics/homomorphisms.py
++++ b/sympy/combinatorics/homomorphisms.py
+@@ -333,10 +333,13 @@ def _image(r):
+             # both indices
+             while i < len(r):
+                 power = r_arr[j][1]
+-                if isinstance(domain, PermutationGroup) and r[i] in gens:
+-                    s = domain.generators[gens.index(r[i])]
+-                else:
+-                    s = r[i]
++                s = r[i]
++                if isinstance(domain, PermutationGroup):
++                    # Handle both positive and inverted generators
++                    if s in gens:
++                        s = domain.generators[gens.index(s)]
++                    elif s**-1 in gens:
++                        s = domain.generators[gens.index(s**-1)]**-1
+                 if s in images:
+                     w = w*images[s]**power
+                 elif s**-1 in images:
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file sympy/combinatorics/tests/test_homomorphisms.py.
+Extra Requirements: 
+Purpose: To find relevant test cases for `homomorphism` with `PermutationGroup` instances.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: sympy/combinatorics/tests/test_homomorphisms.py
+Line number range: 1 - 109
+Content:
+1. from sympy.combinatorics import Permutation
+2. from sympy.combinatorics.perm_groups import PermutationGroup
+3. from sympy.combinatorics.homomorphisms import homomorphism, group_isomorphism, is_isomorphic
+4. from sympy.combinatorics.free_groups import free_group
+5. from sympy.combinatorics.fp_groups import FpGroup
+6. from sympy.combinatorics.named_groups import AlternatingGroup, DihedralGroup, CyclicGroup
+7. from sympy.testing.pytest import raises
+8. 
+9. def test_homomorphism():
+10.     # FpGroup -> PermutationGroup
+11.     F, a, b = free_group("a, b")
+12.     G = FpGroup(F, [a**3, b**3, (a*b)**2])
+13. 
+14.     c = Permutation(3)(0, 1, 2)
+15.     d = Permutation(3)(1, 2, 3)
+16.     A = AlternatingGroup(4)
+17.     T = homomorphism(G, A, [a, b], [c, d])
+18.     assert T(a*b**2*a**-1) == c*d**2*c**-1
+19.     assert T.is_isomorphism()
+20.     assert T(T.invert(Permutation(3)(0, 2, 3))) == Permutation(3)(0, 2, 3)
+21. 
+22.     T = homomorphism(G, AlternatingGroup(4), G.generators)
+23.     assert T.is_trivial()
+24.     assert T.kernel().order() == G.order()
+25. 
+26.     E, e = free_group("e")
+27.     G = FpGroup(E, [e**8])
+28.     P = PermutationGroup([Permutation(0, 1, 2, 3), Permutation(0, 2)])
+29.     T = homomorphism(G, P, [e], [Permutation(0, 1, 2, 3)])
+30.     assert T.image().order() == 4
+31.     assert T(T.invert(Permutation(0, 2)(1, 3))) == Permutation(0, 2)(1, 3)
+32. 
+33.     T = homomorphism(E, AlternatingGroup(4), E.generators, [c])
+34.     assert T.invert(c**2) == e**-1 #order(c) == 3 so c**2 == c**-1
+35. 
+36.     # FreeGroup -> FreeGroup
+37.     T = homomorphism(F, E, [a], [e])
+38.     assert T(a**-2*b**4*a**2).is_identity
+39. 
+40.     # FreeGroup -> FpGroup
+41.     G = FpGroup(F, [a*b*a**-1*b**-1])
+42.     T = homomorphism(F, G, F.generators, G.generators)
+43.     assert T.invert(a**-1*b**-1*a**2) == a*b**-1
+44. 
+45.     # PermutationGroup -> PermutationGroup
+46.     D = DihedralGroup(8)
+47.     p = Permutation(0, 1, 2, 3, 4, 5, 6, 7)
+48.     P = PermutationGroup(p)
+49.     T = homomorphism(P, D, [p], [p])
+50.     assert T.is_injective()
+51.     assert not T.is_isomorphism()
+52.     assert T.invert(p**3) == p**3
+53. 
+54.     T2 = homomorphism(F, P, [F.generators[0]], P.generators)
+55.     T = T.compose(T2)
+56.     assert T.domain == F
+57.     assert T.codomain == D
+58.     assert T(a*b) == p
+59. 
+60. def test_isomorphisms():
+61. 
+62.     F, a, b = free_group("a, b")
+63.     E, c, d = free_group("c, d")
+64.     # Infinite groups with differently ordered relators.
+65.     G = FpGroup(F, [a**2, b**3])
+66.     H = FpGroup(F, [b**3, a**2])
+67.     assert is_isomorphic(G, H)
+68. 
+69.     # Trivial Case
+70.     # FpGroup -> FpGroup
+71.     H = FpGroup(F, [a**3, b**3, (a*b)**2])
+72.     F, c, d = free_group("c, d")
+73.     G = FpGroup(F, [c**3, d**3, (c*d)**2])
+74.     check, T =  group_isomorphism(G, H)
+75.     assert check
+76.     assert T(c**3*d**2) == a**3*b**2
+77. 
+78.     # FpGroup -> PermutationGroup
+79.     # FpGroup is converted to the equivalent isomorphic group.
+80.     F, a, b = free_group("a, b")
+81.     G = FpGroup(F, [a**3, b**3, (a*b)**2])
+82.     H = AlternatingGroup(4)
+83.     check, T = group_isomorphism(G, H)
+84.     assert check
+85.     assert T(b*a*b**-1*a**-1*b**-1) == Permutation(0, 2, 3)
+86.     assert T(b*a*b*a**-1*b**-1) == Permutation(0, 3, 2)
+87. 
+88.     # PermutationGroup -> PermutationGroup
+89.     D = DihedralGroup(8)
+90.     p = Permutation(0, 1, 2, 3, 4, 5, 6, 7)
+91.     P = PermutationGroup(p)
+92.     assert not is_isomorphic(D, P)
+93. 
+94.     A = CyclicGroup(5)
+95.     B = CyclicGroup(7)
+96.     assert not is_isomorphic(A, B)
+97. 
+98.     # Two groups of the same prime order are isomorphic to each other.
+99.     G = FpGroup(F, [a, b**5])
+100.     H = CyclicGroup(5)
+101.     assert G.order() == H.order()
+102.     assert is_isomorphic(G, H)
+103. 
+104. 
+105. def test_check_homomorphism():
+106.     a = Permutation(1,2,3,4)
+107.     b = Permutation(1,3)
+108.     G = PermutationGroup([a, b])
+109.     raises(ValueError, lambda: homomorphism(G, G, [a], [a]))
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 12:43:54,933 - thread-140114896357056.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='I have analyzed the provided test file `sympy/combinatorics/tests/test_homomorphisms.py` and found three relevant test cases that exercise `homomorphism` with `PermutationGroup`. The file contains sufficient examples to construct the answer, including tests for `homomorphism` between permutation groups, isomorphism tests involving `DihedralGroup`, and a test checking for `ValueError` on homomorphism creation. Therefore, no additional context is required.' query='' extra_requirements='' purpose=''
+2025-12-21 12:43:54,935 - thread-140114896357056.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

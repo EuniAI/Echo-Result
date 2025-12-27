@@ -1,0 +1,1979 @@
+2025-12-23 16:50:52,965 - thread-125107825538752.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: "center" kwarg ignored when manually iterating over DataArrayRolling
+
+Description: ### Discussed in https://github.com/pydata/xarray/discussions/6738
+
+<div type='discussions-op-text'>
+
+<sup>Originally posted by **ckingdon95** June 29, 2022</sup>
+Hello, I am trying to manually iterate over a DataArrayRolling object, as described [here ](https://docs.xarray.dev/en/stable/user-guide/computation.html#rolling-window-operations)in the documentation. 
+
+I am confused why the following two code chunks do not produce the same sequence of values. I would like to be able to manually iterate over a DataArrayRolling object, and still be given center-justified windows. Is there a way to do this?
+
+```python
+import xarray as xr
+import numpy as np
+
+my_data = xr.DataArray(np.arange(1,10), dims="x")
+
+# Option 1: take a center-justified rolling average
+result1 = my_data.rolling(x=3, center=True).mean().values
+result1
+```
+This returns the following values, as expected:
+```
+array([nan,  2.,  3.,  4.,  5.,  6.,  7.,  8., nan])
+```
+
+Whereas when I do it manually, it is not equivalent:
+
+```python
+# Option 2: try to manually iterate, but the result is not centered
+my_data_rolling = my_data.rolling(x=3, center=True)
+result2 = [window.mean().values.item() for label, window in my_data_rolling]
+result2
+```
+This returns
+```
+[nan, nan, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+```
+Is this an issue with the window iterator? If it is not an issue, then is there a way for me to get the center-justified windows in the manual iteration? </div>
+
+Patch information:
+diff --git a/doc/user-guide/computation.rst b/doc/user-guide/computation.rst
+index dc9748af..9a00d6b0 100644
+--- a/doc/user-guide/computation.rst
++++ b/doc/user-guide/computation.rst
+@@ -212,6 +212,10 @@ We can also manually iterate through ``Rolling`` objects:
+         # arr_window is a view of x
+         ...
+ 
++Manual iteration respects the ``center`` argument: when constructed with
++``center=True``, the yielded windows are centered around each label, consistent
++with centered rolling aggregations.
++
+ .. _comput.rolling_exp:
+ 
+ While ``rolling`` provides a simple moving average, ``DataArray`` also supports
+diff --git a/xarray/core/rolling.py b/xarray/core/rolling.py
+index aef290f6..1ad639a6 100644
+--- a/xarray/core/rolling.py
++++ b/xarray/core/rolling.py
+@@ -270,9 +270,20 @@ class DataArrayRolling(Rolling["DataArray"]):
+     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
+         if self.ndim > 1:
+             raise ValueError("__iter__ is only supported for 1d-rolling")
+-        stops = np.arange(1, len(self.window_labels) + 1)
+-        starts = stops - int(self.window[0])
+-        starts[: int(self.window[0])] = 0
++        N = len(self.window_labels)
++        w = int(self.window[0])
++        if not self.center[0]:
++            stops = np.arange(1, N + 1)
++            starts = stops - w
++            starts[: w] = 0
++        else:
++            idx = np.arange(N)
++            before = w // 2
++            after = w - before
++            starts = idx - before
++            stops = idx + after
++            starts = np.maximum(0, starts)
++            stops = np.minimum(N, stops)
+         for (label, start, stop) in zip(self.window_labels, starts, stops):
+             window = self.obj.isel({self.dim[0]: slice(start, stop)})
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-23 16:50:53,031 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+xarray
+├── .binder
+|   └── environment.yml
+├── .codecov.yml
+├── .git_archival.txt
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bugreport.yml
+|   |   ├── config.yml
+|   |   ├── misc.yml
+|   |   └── newfeature.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── dependabot.yml
+|   ├── stale.yml
+|   └── workflows
+|       ├── benchmarks.yml
+|       ├── ci-additional.yaml
+|       ├── ci.yaml
+|       ├── configure-testpypi-version.py
+|       ├── parse_logs.py
+|       ├── publish-test-results.yaml
+|       ├── pypi-release.yaml
+|       ├── testpypi-release.yaml
+|       └── upstream-dev-ci.yaml
+├── .pep8speaks.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yaml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── HOW_TO_RELEASE.md
+├── README.md
+├── asv_bench
+|   └── benchmarks
+|       ├── README_CI.md
+|       ├── __init__.py
+|       ├── combine.py
+|       ├── dataarray_missing.py
+|       ├── dataset_io.py
+|       ├── groupby.py
+|       ├── indexing.py
+|       ├── interp.py
+|       ├── pandas.py
+|       ├── polyfit.py
+|       ├── reindexing.py
+|       ├── repr.py
+|       ├── rolling.py
+|       └── unstacking.py
+├── ci
+|   ├── install-upstream-wheels.sh
+|   ├── min_deps_check.py
+|   └── requirements
+|       ├── all-but-dask.yml
+|       ├── bare-minimum.yml
+|       ├── doc.yml
+|       ├── environment-windows.yml
+|       ├── environment.yml
+|       └── min-all-deps.yml
+├── conftest.py
+├── design_notes
+|   └── flexible_indexes_notes.md
+├── doc
+|   ├── README.rst
+|   ├── _static
+|   |   ├── dataset-diagram-build.sh
+|   |   ├── style.css
+|   |   └── thumbnails
+|   ├── _templates
+|   |   └── autosummary
+|   |       ├── accessor.rst
+|   |       ├── accessor_attribute.rst
+|   |       ├── accessor_callable.rst
+|   |       └── accessor_method.rst
+|   ├── api-hidden.rst
+|   ├── api.rst
+|   ├── conf.py
+|   ├── contributing.rst
+|   ├── developers-meeting.rst
+|   ├── ecosystem.rst
+|   ├── examples
+|   |   └── _code
+|   |       └── accessor_example.py
+|   ├── gallery
+|   |   ├── README.txt
+|   |   ├── plot_cartopy_facetgrid.py
+|   |   ├── plot_colorbar_center.py
+|   |   ├── plot_control_colorbar.py
+|   |   ├── plot_lines_from_2d.py
+|   |   ├── plot_rasterio.py
+|   |   └── plot_rasterio_rgb.py
+|   ├── gallery.rst
+|   ├── gallery.yml
+|   ├── getting-started-guide
+|   |   ├── faq.rst
+|   |   ├── index.rst
+|   |   ├── installing.rst
+|   |   ├── quick-overview.rst
+|   |   └── why-xarray.rst
+|   ├── howdoi.rst
+|   ├── index.rst
+|   ├── internals
+|   |   ├── duck-arrays-integration.rst
+|   |   ├── extending-xarray.rst
+|   |   ├── how-to-add-new-backend.rst
+|   |   ├── index.rst
+|   |   ├── variable-objects.rst
+|   |   └── zarr-encoding-spec.rst
+|   ├── roadmap.rst
+|   ├── team.rst
+|   ├── team.yml
+|   ├── tutorials-and-videos.rst
+|   ├── user-guide
+|   |   ├── combining.rst
+|   |   ├── computation.rst
+|   |   ├── dask.rst
+|   |   ├── data-structures.rst
+|   |   ├── duckarrays.rst
+|   |   ├── groupby.rst
+|   |   ├── index.rst
+|   |   ├── indexing.rst
+|   |   ├── interpolation.rst
+|   |   ├── io.rst
+|   |   ├── options.rst
+|   |   ├── pandas.rst
+|   |   ├── plotting.rst
+|   |   ├── reshaping.rst
+|   |   ├── terminology.rst
+|   |   ├── time-series.rst
+|   |   └── weather-climate.rst
+|   ├── videos.yml
+|   └── whats-new.rst
+├── licenses
+├── properties
+|   ├── README.md
+|   ├── conftest.py
+|   ├── test_encode_decode.py
+|   └── test_pandas_roundtrip.py
+├── requirements.txt
+├── setup.py
+└── xarray
+    ├── __init__.py
+    ├── backends
+    |   ├── __init__.py
+    |   ├── api.py
+    |   ├── cfgrib_.py
+    |   ├── common.py
+    |   ├── file_manager.py
+    |   ├── h5netcdf_.py
+    |   ├── locks.py
+    |   ├── lru_cache.py
+    |   ├── memory.py
+    |   ├── netCDF4_.py
+    |   ├── netcdf3.py
+    |   ├── plugins.py
+    |   ├── pseudonetcdf_.py
+    |   ├── pydap_.py
+    |   ├── pynio_.py
+    |   ├── rasterio_.py
+    |   ├── scipy_.py
+    |   ├── store.py
+    |   └── zarr.py
+    ├── coding
+    |   ├── __init__.py
+    |   ├── calendar_ops.py
+    |   ├── cftime_offsets.py
+    |   ├── cftimeindex.py
+    |   ├── frequencies.py
+    |   ├── strings.py
+    |   ├── times.py
+    |   └── variables.py
+    ├── conventions.py
+    ├── convert.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── _reductions.py
+    |   ├── _typed_ops.py
+    |   ├── accessor_dt.py
+    |   ├── accessor_str.py
+    |   ├── alignment.py
+    |   ├── arithmetic.py
+    |   ├── combine.py
+    |   ├── common.py
+    |   ├── computation.py
+    |   ├── concat.py
+    |   ├── coordinates.py
+    |   ├── dask_array_compat.py
+    |   ├── dask_array_ops.py
+    |   ├── dataarray.py
+    |   ├── dataset.py
+    |   ├── dtypes.py
+    |   ├── duck_array_ops.py
+    |   ├── extensions.py
+    |   ├── formatting.py
+    |   ├── formatting_html.py
+    |   ├── groupby.py
+    |   ├── indexes.py
+    |   ├── indexing.py
+    |   ├── merge.py
+    |   ├── missing.py
+    |   ├── nanops.py
+    |   ├── npcompat.py
+    |   ├── nputils.py
+    |   ├── ops.py
+    |   ├── options.py
+    |   ├── parallel.py
+    |   ├── pdcompat.py
+    |   ├── pycompat.py
+    |   ├── resample.py
+    |   ├── resample_cftime.py
+    |   ├── rolling.py
+    |   ├── rolling_exp.py
+    |   ├── types.py
+    |   ├── utils.py
+    |   ├── variable.py
+    |   └── weighted.py
+    ├── plot
+    |   ├── __init__.py
+    |   ├── dataset_plot.py
+    |   ├── facetgrid.py
+    |   ├── plot.py
+    |   └── utils.py
+    ├── static
+    |   ├── __init__.py
+    |   ├── css
+    |   |   ├── __init__.py
+    |   |   └── style.css
+    |   └── html
+    |       ├── __init__.py
+    |       └── icons-svg-inline.html
+    ├── testing.py
+    ├── tests
+    |   ├── __init__.py
+    |   ├── conftest.py
+    |   ├── data
+    |   ├── test_accessor_dt.py
+    |   ├── test_accessor_str.py
+    |   ├── test_backends.py
+    |   ├── test_backends_api.py
+    |   ├── test_backends_common.py
+    |   ├── test_backends_file_manager.py
+    |   ├── test_backends_locks.py
+    |   ├── test_backends_lru_cache.py
+    |   ├── test_calendar_ops.py
+    |   ├── test_cftime_offsets.py
+    |   ├── test_cftimeindex.py
+    |   ├── test_cftimeindex_resample.py
+    |   ├── test_coarsen.py
+    |   ├── test_coding.py
+    |   ├── test_coding_strings.py
+    |   ├── test_coding_times.py
+    |   ├── test_combine.py
+    |   ├── test_computation.py
+    |   ├── test_concat.py
+    |   ├── test_conventions.py
+    |   ├── test_cupy.py
+    |   ├── test_dask.py
+    |   ├── test_dataarray.py
+    |   ├── test_dataset.py
+    |   ├── test_distributed.py
+    |   ├── test_dtypes.py
+    |   ├── test_duck_array_ops.py
+    |   ├── test_extensions.py
+    |   ├── test_formatting.py
+    |   ├── test_formatting_html.py
+    |   ├── test_groupby.py
+    |   ├── test_indexes.py
+    |   ├── test_indexing.py
+    |   ├── test_interp.py
+    |   ├── test_merge.py
+    |   ├── test_missing.py
+    |   ├── test_nputils.py
+    |   ├── test_options.py
+    |   ├── test_plot.py
+    |   ├── test_plugins.py
+    |   ├── test_print_versions.py
+    |   ├── test_rolling.py
+    |   ├── test_sparse.py
+    |   ├── test_testing.py
+    |   ├── test_tutorial.py
+    |   ├── test_ufuncs.py
+    |   ├── test_units.py
+    |   ├── test_utils.py
+    |   ├── test_variable.py
+    |   └── test_weighted.py
+    ├── tutorial.py
+    └── util
+        ├── __init__.py
+        ├── generate_ops.py
+        ├── generate_reductions.py
+        └── print_versions.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: "center" kwarg ignored when manually iterating over DataArrayRolling
+
+Description: ### Discussed in https://github.com/pydata/xarray/discussions/6738
+
+<div type='discussions-op-text'>
+
+<sup>Originally posted by **ckingdon95** June 29, 2022</sup>
+Hello, I am trying to manually iterate over a DataArrayRolling object, as described [here ](https://docs.xarray.dev/en/stable/user-guide/computation.html#rolling-window-operations)in the documentation. 
+
+I am confused why the following two code chunks do not produce the same sequence of values. I would like to be able to manually iterate over a DataArrayRolling object, and still be given center-justified windows. Is there a way to do this?
+
+```python
+import xarray as xr
+import numpy as np
+
+my_data = xr.DataArray(np.arange(1,10), dims="x")
+
+# Option 1: take a center-justified rolling average
+result1 = my_data.rolling(x=3, center=True).mean().values
+result1
+```
+This returns the following values, as expected:
+```
+array([nan,  2.,  3.,  4.,  5.,  6.,  7.,  8., nan])
+```
+
+Whereas when I do it manually, it is not equivalent:
+
+```python
+# Option 2: try to manually iterate, but the result is not centered
+my_data_rolling = my_data.rolling(x=3, center=True)
+result2 = [window.mean().values.item() for label, window in my_data_rolling]
+result2
+```
+This returns
+```
+[nan, nan, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+```
+Is this an issue with the window iterator? If it is not an issue, then is there a way for me to get the center-justified windows in the manual iteration? </div>
+
+Patch information:
+diff --git a/doc/user-guide/computation.rst b/doc/user-guide/computation.rst
+index dc9748af..9a00d6b0 100644
+--- a/doc/user-guide/computation.rst
++++ b/doc/user-guide/computation.rst
+@@ -212,6 +212,10 @@ We can also manually iterate through ``Rolling`` objects:
+         # arr_window is a view of x
+         ...
+ 
++Manual iteration respects the ``center`` argument: when constructed with
++``center=True``, the yielded windows are centered around each label, consistent
++with centered rolling aggregations.
++
+ .. _comput.rolling_exp:
+ 
+ While ``rolling`` provides a simple moving average, ``DataArray`` also supports
+diff --git a/xarray/core/rolling.py b/xarray/core/rolling.py
+index aef290f6..1ad639a6 100644
+--- a/xarray/core/rolling.py
++++ b/xarray/core/rolling.py
+@@ -270,9 +270,20 @@ class DataArrayRolling(Rolling["DataArray"]):
+     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
+         if self.ndim > 1:
+             raise ValueError("__iter__ is only supported for 1d-rolling")
+-        stops = np.arange(1, len(self.window_labels) + 1)
+-        starts = stops - int(self.window[0])
+-        starts[: int(self.window[0])] = 0
++        N = len(self.window_labels)
++        w = int(self.window[0])
++        if not self.center[0]:
++            stops = np.arange(1, N + 1)
++            starts = stops - w
++            starts[: w] = 0
++        else:
++            idx = np.arange(N)
++            before = w // 2
++            after = w - before
++            starts = idx - before
++            stops = idx + after
++            starts = np.maximum(0, starts)
++            stops = np.minimum(N, stops)
+         for (label, start, stop) in zip(self.window_labels, starts, stops):
+             window = self.obj.isel({self.dim[0]: slice(start, stop)})
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 16:51:08,749 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to fix a bug in `DataArrayRolling` where the `center` argument is ignored during manual iteration. The provided diff shows the fix is in `xarray/core/rolling.py`. To understand the bug and verify the fix, I need the full source code of the `DataArrayRolling` class and its parent `Rolling` class, which are located in that file. The current context is empty, so I must request this file.' query='Please provide the full content of `xarray/core/rolling.py`.' extra_requirements='' purpose='This will allow me to examine the implementation of `DataArrayRolling` and its `__iter__` method to understand why the `center` argument was being ignored and how the provided patch fixes it.'
+2025-12-23 16:51:08,750 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `xarray/core/rolling.py`.
+2025-12-23 16:51:08,750 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-23 16:51:08,751 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-23 16:51:08,752 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-23 16:51:08,752 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `xarray/core/rolling.py`.
+Purpose: This will allow me to examine the implementation of `DataArrayRolling` and its `__iter__` method to understand why the `center` argument was being ignored and how the provided patch fixes it.
+2025-12-23 16:51:11,590 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `xarray/core/rolling.py`. This will enable a detailed examination of the `DataArrayRolling` implementation, specifically focusing on the `__iter__` method, to understand the issue with the `center` argument and how the proposed patch addresses it.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "xarray/core/rolling.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2078, 'candidates_token_count': 83, 'total_token_count': 2277, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2078}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 83}], 'thoughts_token_count': 116, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.09626270202269037, 'model_name': 'gemini-2.5-pro'} id='run--89a249f3-21a2-4e1d-aaf0-43d0b9377d9a-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'xarray/core/rolling.py'}, 'id': '1ceebb1b-4b61-49d7-a6f8-76fff1314b5a', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2078, 'output_tokens': 83, 'total_tokens': 2277, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 116}}
+2025-12-23 16:51:19,654 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content="I have successfully retrieved the entire content of the `xarray/core/rolling.py` file. Upon reviewing the code, I can see the implementation of the `DataArrayRolling` class and its `__iter__` method. A preliminary analysis of the `__iter__` method suggests that the `center` argument is not being used to calculate the rolling window's start and stop positions, which is the likely cause of the issue you've described." additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 9298, 'candidates_token_count': 95, 'total_token_count': 10092, 'cached_content_token_count': 1851, 'prompt_tokens_details': [{'modality': 1, 'token_count': 9298}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1851}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 95}], 'thoughts_token_count': 699}, 'finish_reason': 'STOP', 'avg_logprobs': -0.6944338346782484, 'model_name': 'gemini-2.5-pro'} id='run--42ba1100-6f74-48bc-a912-dde843981c91-0' usage_metadata={'input_tokens': 9298, 'output_tokens': 95, 'total_tokens': 10092, 'input_token_details': {'cache_read': 1851}, 'output_token_details': {'reasoning': 699}}
+2025-12-23 16:51:19,656 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `xarray/core/rolling.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+This will allow me to examine the implementation of `DataArrayRolling` and its `__iter__` method to understand why the `center` argument was being ignored and how the provided patch fixes it.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: xarray/core/rolling.py
+Line number range: 1 - 500
+Content:
+1. from __future__ import annotations
+2. 
+3. import functools
+4. import itertools
+5. import math
+6. import warnings
+7. from typing import (
+8.     TYPE_CHECKING,
+9.     Any,
+10.     Callable,
+11.     Generic,
+12.     Hashable,
+13.     Iterator,
+14.     Mapping,
+15.     TypeVar,
+16. )
+17. 
+18. import numpy as np
+19. 
+20. from . import dtypes, duck_array_ops, utils
+21. from .arithmetic import CoarsenArithmetic
+22. from .options import OPTIONS, _get_keep_attrs
+23. from .pycompat import is_duck_dask_array
+24. from .types import CoarsenBoundaryOptions, SideOptions, T_Xarray
+25. from .utils import either_dict_or_kwargs
+26. 
+27. try:
+28.     import bottleneck
+29. except ImportError:
+30.     # use numpy methods instead
+31.     bottleneck = None
+32. 
+33. if TYPE_CHECKING:
+34.     from .dataarray import DataArray
+35.     from .dataset import Dataset
+36. 
+37.     RollingKey = Any
+38.     _T = TypeVar("_T")
+39. 
+40. _ROLLING_REDUCE_DOCSTRING_TEMPLATE = """\
+41. Reduce this object's data windows by applying `{name}` along its dimension.
+42. 
+43. Parameters
+44. ----------
+45. keep_attrs : bool, default: None
+46.     If True, the attributes (``attrs``) will be copied from the original
+47.     object to the new one. If False, the new object will be returned
+48.     without attributes. If None uses the global default.
+49. **kwargs : dict
+50.     Additional keyword arguments passed on to `{name}`.
+51. 
+52. Returns
+53. -------
+54. reduced : same type as caller
+55.     New object with `{name}` applied along its rolling dimension.
+56. """
+57. 
+58. 
+59. class Rolling(Generic[T_Xarray]):
+60.     """A object that implements the moving window pattern.
+61. 
+62.     See Also
+63.     --------
+64.     xarray.Dataset.groupby
+65.     xarray.DataArray.groupby
+66.     xarray.Dataset.rolling
+67.     xarray.DataArray.rolling
+68.     """
+69. 
+70.     __slots__ = ("obj", "window", "min_periods", "center", "dim")
+71.     _attributes = ("window", "min_periods", "center", "dim")
+72. 
+73.     def __init__(
+74.         self,
+75.         obj: T_Xarray,
+76.         windows: Mapping[Any, int],
+77.         min_periods: int | None = None,
+78.         center: bool | Mapping[Any, bool] = False,
+79.     ) -> None:
+80.         """
+81.         Moving window object.
+82. 
+83.         Parameters
+84.         ----------
+85.         obj : Dataset or DataArray
+86.             Object to window.
+87.         windows : mapping of hashable to int
+88.             A mapping from the name of the dimension to create the rolling
+89.             window along (e.g. `time`) to the size of the moving window.
+90.         min_periods : int or None, default: None
+91.             Minimum number of observations in window required to have a value
+92.             (otherwise result is NA). The default, None, is equivalent to
+93.             setting min_periods equal to the size of the window.
+94.         center : bool or dict-like Hashable to bool, default: False
+95.             Set the labels at the center of the window. If dict-like, set this
+96.             property per rolling dimension.
+97. 
+98.         Returns
+99.         -------
+100.         rolling : type of input argument
+101.         """
+102.         self.dim: list[Hashable] = []
+103.         self.window: list[int] = []
+104.         for d, w in windows.items():
+105.             self.dim.append(d)
+106.             if w <= 0:
+107.                 raise ValueError("window must be > 0")
+108.             self.window.append(w)
+109. 
+110.         self.center = self._mapping_to_list(center, default=False)
+111.         self.obj: T_Xarray = obj
+112. 
+113.         # attributes
+114.         if min_periods is not None and min_periods <= 0:
+115.             raise ValueError("min_periods must be greater than zero or None")
+116. 
+117.         self.min_periods = (
+118.             math.prod(self.window) if min_periods is None else min_periods
+119.         )
+120. 
+121.     def __repr__(self) -> str:
+122.         """provide a nice str repr of our rolling object"""
+123. 
+124.         attrs = [
+125.             "{k}->{v}{c}".format(k=k, v=w, c="(center)" if c else "")
+126.             for k, w, c in zip(self.dim, self.window, self.center)
+127.         ]
+128.         return "{klass} [{attrs}]".format(
+129.             klass=self.__class__.__name__, attrs=",".join(attrs)
+130.         )
+131. 
+132.     def __len__(self) -> int:
+133.         return math.prod(self.obj.sizes[d] for d in self.dim)
+134. 
+135.     @property
+136.     def ndim(self) -> int:
+137.         return len(self.dim)
+138. 
+139.     def _reduce_method(  # type: ignore[misc]
+140.         name: str, fillna: Any, rolling_agg_func: Callable | None = None
+141.     ) -> Callable[..., T_Xarray]:
+142.         """Constructs reduction methods built on a numpy reduction function (e.g. sum),
+143.         a bottleneck reduction function (e.g. move_sum), or a Rolling reduction (_mean)."""
+144.         if rolling_agg_func:
+145.             array_agg_func = None
+146.         else:
+147.             array_agg_func = getattr(duck_array_ops, name)
+148. 
+149.         bottleneck_move_func = getattr(bottleneck, "move_" + name, None)
+150. 
+151.         def method(self, keep_attrs=None, **kwargs):
+152. 
+153.             keep_attrs = self._get_keep_attrs(keep_attrs)
+154. 
+155.             return self._numpy_or_bottleneck_reduce(
+156.                 array_agg_func,
+157.                 bottleneck_move_func,
+158.                 rolling_agg_func,
+159.                 keep_attrs=keep_attrs,
+160.                 fillna=fillna,
+161.                 **kwargs,
+162.             )
+163. 
+164.         method.__name__ = name
+165.         method.__doc__ = _ROLLING_REDUCE_DOCSTRING_TEMPLATE.format(name=name)
+166.         return method
+167. 
+168.     def _mean(self, keep_attrs, **kwargs):
+169.         result = self.sum(keep_attrs=False, **kwargs) / self.count(keep_attrs=False)
+170.         if keep_attrs:
+171.             result.attrs = self.obj.attrs
+172.         return result
+173. 
+174.     _mean.__doc__ = _ROLLING_REDUCE_DOCSTRING_TEMPLATE.format(name="mean")
+175. 
+176.     argmax = _reduce_method("argmax", dtypes.NINF)
+177.     argmin = _reduce_method("argmin", dtypes.INF)
+178.     max = _reduce_method("max", dtypes.NINF)
+179.     min = _reduce_method("min", dtypes.INF)
+180.     prod = _reduce_method("prod", 1)
+181.     sum = _reduce_method("sum", 0)
+182.     mean = _reduce_method("mean", None, _mean)
+183.     std = _reduce_method("std", None)
+184.     var = _reduce_method("var", None)
+185.     median = _reduce_method("median", None)
+186. 
+187.     def _counts(self, keep_attrs: bool | None) -> T_Xarray:
+188.         raise NotImplementedError()
+189. 
+190.     def count(self, keep_attrs: bool | None = None) -> T_Xarray:
+191.         keep_attrs = self._get_keep_attrs(keep_attrs)
+192.         rolling_count = self._counts(keep_attrs=keep_attrs)
+193.         enough_periods = rolling_count >= self.min_periods
+194.         return rolling_count.where(enough_periods)
+195. 
+196.     count.__doc__ = _ROLLING_REDUCE_DOCSTRING_TEMPLATE.format(name="count")
+197. 
+198.     def _mapping_to_list(
+199.         self,
+200.         arg: _T | Mapping[Any, _T],
+201.         default: _T | None = None,
+202.         allow_default: bool = True,
+203.         allow_allsame: bool = True,
+204.     ) -> list[_T]:
+205.         if utils.is_dict_like(arg):
+206.             if allow_default:
+207.                 return [arg.get(d, default) for d in self.dim]
+208.             for d in self.dim:
+209.                 if d not in arg:
+210.                     raise KeyError(f"Argument has no dimension key {d}.")
+211.             return [arg[d] for d in self.dim]
+212.         if allow_allsame:  # for single argument
+213.             return [arg] * self.ndim  # type: ignore[list-item]  # no check for negatives
+214.         if self.ndim == 1:
+215.             return [arg]  # type: ignore[list-item]  # no check for negatives
+216.         raise ValueError(f"Mapping argument is necessary for {self.ndim}d-rolling.")
+217. 
+218.     def _get_keep_attrs(self, keep_attrs):
+219.         if keep_attrs is None:
+220.             keep_attrs = _get_keep_attrs(default=True)
+221. 
+222.         return keep_attrs
+223. 
+224. 
+225. class DataArrayRolling(Rolling["DataArray"]):
+226.     __slots__ = ("window_labels",)
+227. 
+228.     def __init__(
+229.         self,
+230.         obj: DataArray,
+231.         windows: Mapping[Any, int],
+232.         min_periods: int | None = None,
+233.         center: bool | Mapping[Any, bool] = False,
+234.     ) -> None:
+235.         """
+236.         Moving window object for DataArray.
+237.         You should use DataArray.rolling() method to construct this object
+238.         instead of the class constructor.
+239. 
+240.         Parameters
+241.         ----------
+242.         obj : DataArray
+243.             Object to window.
+244.         windows : mapping of hashable to int
+245.             A mapping from the name of the dimension to create the rolling
+246.             exponential window along (e.g. `time`) to the size of the moving window.
+247.         min_periods : int, default: None
+248.             Minimum number of observations in window required to have a value
+249.             (otherwise result is NA). The default, None, is equivalent to
+250.             setting min_periods equal to the size of the window.
+251.         center : bool, default: False
+252.             Set the labels at the center of the window.
+253. 
+254.         Returns
+255.         -------
+256.         rolling : type of input argument
+257. 
+258.         See Also
+259.         --------
+260.         xarray.DataArray.rolling
+261.         xarray.DataArray.groupby
+262.         xarray.Dataset.rolling
+263.         xarray.Dataset.groupby
+264.         """
+265.         super().__init__(obj, windows, min_periods=min_periods, center=center)
+266. 
+267.         # TODO legacy attribute
+268.         self.window_labels = self.obj[self.dim[0]]
+269. 
+270.     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
+271.         if self.ndim > 1:
+272.             raise ValueError("__iter__ is only supported for 1d-rolling")
+273.         stops = np.arange(1, len(self.window_labels) + 1)
+274.         starts = stops - int(self.window[0])
+275.         starts[: int(self.window[0])] = 0
+276.         for (label, start, stop) in zip(self.window_labels, starts, stops):
+277.             window = self.obj.isel({self.dim[0]: slice(start, stop)})
+278. 
+279.             counts = window.count(dim=self.dim[0])
+280.             window = window.where(counts >= self.min_periods)
+281. 
+282.             yield (label, window)
+283. 
+284.     def construct(
+285.         self,
+286.         window_dim: Hashable | Mapping[Any, Hashable] | None = None,
+287.         stride: int | Mapping[Any, int] = 1,
+288.         fill_value: Any = dtypes.NA,
+289.         keep_attrs: bool | None = None,
+290.         **window_dim_kwargs: Hashable,
+291.     ) -> DataArray:
+292.         """
+293.         Convert this rolling object to xr.DataArray,
+294.         where the window dimension is stacked as a new dimension
+295. 
+296.         Parameters
+297.         ----------
+298.         window_dim : Hashable or dict-like to Hashable, optional
+299.             A mapping from dimension name to the new window dimension names.
+300.         stride : int or mapping of int, default: 1
+301.             Size of stride for the rolling window.
+302.         fill_value : default: dtypes.NA
+303.             Filling value to match the dimension size.
+304.         keep_attrs : bool, default: None
+305.             If True, the attributes (``attrs``) will be copied from the original
+306.             object to the new one. If False, the new object will be returned
+307.             without attributes. If None uses the global default.
+308.         **window_dim_kwargs : Hashable, optional
+309.             The keyword arguments form of ``window_dim`` {dim: new_name, ...}.
+310. 
+311.         Returns
+312.         -------
+313.         DataArray that is a view of the original array. The returned array is
+314.         not writeable.
+315. 
+316.         Examples
+317.         --------
+318.         >>> da = xr.DataArray(np.arange(8).reshape(2, 4), dims=("a", "b"))
+319. 
+320.         >>> rolling = da.rolling(b=3)
+321.         >>> rolling.construct("window_dim")
+322.         <xarray.DataArray (a: 2, b: 4, window_dim: 3)>
+323.         array([[[nan, nan,  0.],
+324.                 [nan,  0.,  1.],
+325.                 [ 0.,  1.,  2.],
+326.                 [ 1.,  2.,  3.]],
+327.         <BLANKLINE>
+328.                [[nan, nan,  4.],
+329.                 [nan,  4.,  5.],
+330.                 [ 4.,  5.,  6.],
+331.                 [ 5.,  6.,  7.]]])
+332.         Dimensions without coordinates: a, b, window_dim
+333. 
+334.         >>> rolling = da.rolling(b=3, center=True)
+335.         >>> rolling.construct("window_dim")
+336.         <xarray.DataArray (a: 2, b: 4, window_dim: 3)>
+337.         array([[[nan,  0.,  1.],
+338.                 [ 0.,  1.,  2.],
+339.                 [ 1.,  2.,  3.],
+340.                 [ 2.,  3., nan]],
+341.         <BLANKLINE>
+342.                [[nan,  4.,  5.],
+343.                 [ 4.,  5.,  6.],
+344.                 [ 5.,  6.,  7.],
+345.                 [ 6.,  7., nan]]])
+346.         Dimensions without coordinates: a, b, window_dim
+347. 
+348.         """
+349. 
+350.         return self._construct(
+351.             self.obj,
+352.             window_dim=window_dim,
+353.             stride=stride,
+354.             fill_value=fill_value,
+355.             keep_attrs=keep_attrs,
+356.             **window_dim_kwargs,
+357.         )
+358. 
+359.     def _construct(
+360.         self,
+361.         obj: DataArray,
+362.         window_dim: Hashable | Mapping[Any, Hashable] | None = None,
+363.         stride: int | Mapping[Any, int] = 1,
+364.         fill_value: Any = dtypes.NA,
+365.         keep_attrs: bool | None = None,
+366.         **window_dim_kwargs: Hashable,
+367.     ) -> DataArray:
+368.         from .dataarray import DataArray
+369. 
+370.         keep_attrs = self._get_keep_attrs(keep_attrs)
+371. 
+372.         if window_dim is None:
+373.             if len(window_dim_kwargs) == 0:
+374.                 raise ValueError(
+375.                     "Either window_dim or window_dim_kwargs need to be specified."
+376.                 )
+377.             window_dim = {d: window_dim_kwargs[str(d)] for d in self.dim}
+378. 
+379.         window_dims = self._mapping_to_list(
+380.             window_dim, allow_default=False, allow_allsame=False  # type: ignore[arg-type]  # https://github.com/python/mypy/issues/12506
+381.         )
+382.         strides = self._mapping_to_list(stride, default=1)
+383. 
+384.         window = obj.variable.rolling_window(
+385.             self.dim, self.window, window_dims, self.center, fill_value=fill_value
+386.         )
+387. 
+388.         attrs = obj.attrs if keep_attrs else {}
+389. 
+390.         result = DataArray(
+391.             window,
+392.             dims=obj.dims + tuple(window_dims),
+393.             coords=obj.coords,
+394.             attrs=attrs,
+395.             name=obj.name,
+396.         )
+397.         return result.isel({d: slice(None, None, s) for d, s in zip(self.dim, strides)})
+398. 
+399.     def reduce(
+400.         self, func: Callable, keep_attrs: bool | None = None, **kwargs: Any
+401.     ) -> DataArray:
+402.         """Reduce the items in this group by applying `func` along some
+403.         dimension(s).
+404. 
+405.         Parameters
+406.         ----------
+407.         func : callable
+408.             Function which can be called in the form
+409.             `func(x, **kwargs)` to return the result of collapsing an
+410.             np.ndarray over an the rolling dimension.
+411.         keep_attrs : bool, default: None
+412.             If True, the attributes (``attrs``) will be copied from the original
+413.             object to the new one. If False, the new object will be returned
+414.             without attributes. If None uses the global default.
+415.         **kwargs : dict
+416.             Additional keyword arguments passed on to `func`.
+417. 
+418.         Returns
+419.         -------
+420.         reduced : DataArray
+421.             Array with summarized data.
+422. 
+423.         Examples
+424.         --------
+425.         >>> da = xr.DataArray(np.arange(8).reshape(2, 4), dims=("a", "b"))
+426.         >>> rolling = da.rolling(b=3)
+427.         >>> rolling.construct("window_dim")
+428.         <xarray.DataArray (a: 2, b: 4, window_dim: 3)>
+429.         array([[[nan, nan,  0.],
+430.                 [nan,  0.,  1.],
+431.                 [ 0.,  1.,  2.],
+432.                 [ 1.,  2.,  3.]],
+433.         <BLANKLINE>
+434.                [[nan, nan,  4.],
+435.                 [nan,  4.,  5.],
+436.                 [ 4.,  5.,  6.],
+437.                 [ 5.,  6.,  7.]]])
+438.         Dimensions without coordinates: a, b, window_dim
+439. 
+440.         >>> rolling.reduce(np.sum)
+441.         <xarray.DataArray (a: 2, b: 4)>
+442.         array([[nan, nan,  3.,  6.],
+443.                [nan, nan, 15., 18.]])
+444.         Dimensions without coordinates: a, b
+445. 
+446.         >>> rolling = da.rolling(b=3, min_periods=1)
+447.         >>> rolling.reduce(np.nansum)
+448.         <xarray.DataArray (a: 2, b: 4)>
+449.         array([[ 0.,  1.,  3.,  6.],
+450.                [ 4.,  9., 15., 18.]])
+451.         Dimensions without coordinates: a, b
+452.         """
+453. 
+454.         keep_attrs = self._get_keep_attrs(keep_attrs)
+455. 
+456.         rolling_dim = {
+457.             d: utils.get_temp_dimname(self.obj.dims, f"_rolling_dim_{d}")
+458.             for d in self.dim
+459.         }
+460. 
+461.         # save memory with reductions GH4325
+462.         fillna = kwargs.pop("fillna", dtypes.NA)
+463.         if fillna is not dtypes.NA:
+464.             obj = self.obj.fillna(fillna)
+465.         else:
+466.             obj = self.obj
+467.         windows = self._construct(
+468.             obj, rolling_dim, keep_attrs=keep_attrs, fill_value=fillna
+469.         )
+470. 
+471.         result = windows.reduce(
+472.             func, dim=list(rolling_dim.values()), keep_attrs=keep_attrs, **kwargs
+473.         )
+474. 
+475.         # Find valid windows based on count.
+476.         counts = self._counts(keep_attrs=False)
+477.         return result.where(counts >= self.min_periods)
+478. 
+479.     def _counts(self, keep_attrs: bool | None) -> DataArray:
+480.         """Number of non-nan entries in each rolling window."""
+481. 
+482.         rolling_dim = {
+483.             d: utils.get_temp_dimname(self.obj.dims, f"_rolling_dim_{d}")
+484.             for d in self.dim
+485.         }
+486.         # We use False as the fill_value instead of np.nan, since boolean
+487.         # array is faster to be reduced than object array.
+488.         # The use of skipna==False is also faster since it does not need to
+489.         # copy the strided array.
+490.         counts = (
+491.             self.obj.notnull(keep_attrs=keep_attrs)
+492.             .rolling(
+493.                 {d: w for d, w in zip(self.dim, self.window)},
+494.                 center={d: self.center[i] for i, d in enumerate(self.dim)},
+495.             )
+496.             .construct(rolling_dim, fill_value=False, keep_attrs=keep_attrs)
+497.             .sum(dim=list(rolling_dim.values()), skipna=False, keep_attrs=keep_attrs)
+498.         )
+499.         return counts
+500.
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-23 16:51:25,756 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly requested the 'full content of `xarray/core/rolling.py`'.\n\n2. Extended relevance:\n   - The purpose is to examine the implementation of `DataArrayRolling` and its `__iter__` method to understand a bug. The full file content is necessary to understand the class definition, its parent class `Rolling`, and any other dependencies or helper functions within the same file that might be relevant to the bug.", relative_path='xarray/core/rolling.py', start_line=1, end_line=500)]
+2025-12-23 16:51:25,758 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `xarray/core/rolling.py`.
+2025-12-23 16:51:25,758 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-23 16:51:25,758 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-23 16:51:25,759 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-23 16:51:25,759 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-23 16:51:25,759 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+xarray
+├── .binder
+|   └── environment.yml
+├── .codecov.yml
+├── .git_archival.txt
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bugreport.yml
+|   |   ├── config.yml
+|   |   ├── misc.yml
+|   |   └── newfeature.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── dependabot.yml
+|   ├── stale.yml
+|   └── workflows
+|       ├── benchmarks.yml
+|       ├── ci-additional.yaml
+|       ├── ci.yaml
+|       ├── configure-testpypi-version.py
+|       ├── parse_logs.py
+|       ├── publish-test-results.yaml
+|       ├── pypi-release.yaml
+|       ├── testpypi-release.yaml
+|       └── upstream-dev-ci.yaml
+├── .pep8speaks.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yaml
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── HOW_TO_RELEASE.md
+├── README.md
+├── asv_bench
+|   └── benchmarks
+|       ├── README_CI.md
+|       ├── __init__.py
+|       ├── combine.py
+|       ├── dataarray_missing.py
+|       ├── dataset_io.py
+|       ├── groupby.py
+|       ├── indexing.py
+|       ├── interp.py
+|       ├── pandas.py
+|       ├── polyfit.py
+|       ├── reindexing.py
+|       ├── repr.py
+|       ├── rolling.py
+|       └── unstacking.py
+├── ci
+|   ├── install-upstream-wheels.sh
+|   ├── min_deps_check.py
+|   └── requirements
+|       ├── all-but-dask.yml
+|       ├── bare-minimum.yml
+|       ├── doc.yml
+|       ├── environment-windows.yml
+|       ├── environment.yml
+|       └── min-all-deps.yml
+├── conftest.py
+├── design_notes
+|   └── flexible_indexes_notes.md
+├── doc
+|   ├── README.rst
+|   ├── _static
+|   |   ├── dataset-diagram-build.sh
+|   |   ├── style.css
+|   |   └── thumbnails
+|   ├── _templates
+|   |   └── autosummary
+|   |       ├── accessor.rst
+|   |       ├── accessor_attribute.rst
+|   |       ├── accessor_callable.rst
+|   |       └── accessor_method.rst
+|   ├── api-hidden.rst
+|   ├── api.rst
+|   ├── conf.py
+|   ├── contributing.rst
+|   ├── developers-meeting.rst
+|   ├── ecosystem.rst
+|   ├── examples
+|   |   └── _code
+|   |       └── accessor_example.py
+|   ├── gallery
+|   |   ├── README.txt
+|   |   ├── plot_cartopy_facetgrid.py
+|   |   ├── plot_colorbar_center.py
+|   |   ├── plot_control_colorbar.py
+|   |   ├── plot_lines_from_2d.py
+|   |   ├── plot_rasterio.py
+|   |   └── plot_rasterio_rgb.py
+|   ├── gallery.rst
+|   ├── gallery.yml
+|   ├── getting-started-guide
+|   |   ├── faq.rst
+|   |   ├── index.rst
+|   |   ├── installing.rst
+|   |   ├── quick-overview.rst
+|   |   └── why-xarray.rst
+|   ├── howdoi.rst
+|   ├── index.rst
+|   ├── internals
+|   |   ├── duck-arrays-integration.rst
+|   |   ├── extending-xarray.rst
+|   |   ├── how-to-add-new-backend.rst
+|   |   ├── index.rst
+|   |   ├── variable-objects.rst
+|   |   └── zarr-encoding-spec.rst
+|   ├── roadmap.rst
+|   ├── team.rst
+|   ├── team.yml
+|   ├── tutorials-and-videos.rst
+|   ├── user-guide
+|   |   ├── combining.rst
+|   |   ├── computation.rst
+|   |   ├── dask.rst
+|   |   ├── data-structures.rst
+|   |   ├── duckarrays.rst
+|   |   ├── groupby.rst
+|   |   ├── index.rst
+|   |   ├── indexing.rst
+|   |   ├── interpolation.rst
+|   |   ├── io.rst
+|   |   ├── options.rst
+|   |   ├── pandas.rst
+|   |   ├── plotting.rst
+|   |   ├── reshaping.rst
+|   |   ├── terminology.rst
+|   |   ├── time-series.rst
+|   |   └── weather-climate.rst
+|   ├── videos.yml
+|   └── whats-new.rst
+├── licenses
+├── properties
+|   ├── README.md
+|   ├── conftest.py
+|   ├── test_encode_decode.py
+|   └── test_pandas_roundtrip.py
+├── requirements.txt
+├── setup.py
+└── xarray
+    ├── __init__.py
+    ├── backends
+    |   ├── __init__.py
+    |   ├── api.py
+    |   ├── cfgrib_.py
+    |   ├── common.py
+    |   ├── file_manager.py
+    |   ├── h5netcdf_.py
+    |   ├── locks.py
+    |   ├── lru_cache.py
+    |   ├── memory.py
+    |   ├── netCDF4_.py
+    |   ├── netcdf3.py
+    |   ├── plugins.py
+    |   ├── pseudonetcdf_.py
+    |   ├── pydap_.py
+    |   ├── pynio_.py
+    |   ├── rasterio_.py
+    |   ├── scipy_.py
+    |   ├── store.py
+    |   └── zarr.py
+    ├── coding
+    |   ├── __init__.py
+    |   ├── calendar_ops.py
+    |   ├── cftime_offsets.py
+    |   ├── cftimeindex.py
+    |   ├── frequencies.py
+    |   ├── strings.py
+    |   ├── times.py
+    |   └── variables.py
+    ├── conventions.py
+    ├── convert.py
+    ├── core
+    |   ├── __init__.py
+    |   ├── _reductions.py
+    |   ├── _typed_ops.py
+    |   ├── accessor_dt.py
+    |   ├── accessor_str.py
+    |   ├── alignment.py
+    |   ├── arithmetic.py
+    |   ├── combine.py
+    |   ├── common.py
+    |   ├── computation.py
+    |   ├── concat.py
+    |   ├── coordinates.py
+    |   ├── dask_array_compat.py
+    |   ├── dask_array_ops.py
+    |   ├── dataarray.py
+    |   ├── dataset.py
+    |   ├── dtypes.py
+    |   ├── duck_array_ops.py
+    |   ├── extensions.py
+    |   ├── formatting.py
+    |   ├── formatting_html.py
+    |   ├── groupby.py
+    |   ├── indexes.py
+    |   ├── indexing.py
+    |   ├── merge.py
+    |   ├── missing.py
+    |   ├── nanops.py
+    |   ├── npcompat.py
+    |   ├── nputils.py
+    |   ├── ops.py
+    |   ├── options.py
+    |   ├── parallel.py
+    |   ├── pdcompat.py
+    |   ├── pycompat.py
+    |   ├── resample.py
+    |   ├── resample_cftime.py
+    |   ├── rolling.py
+    |   ├── rolling_exp.py
+    |   ├── types.py
+    |   ├── utils.py
+    |   ├── variable.py
+    |   └── weighted.py
+    ├── plot
+    |   ├── __init__.py
+    |   ├── dataset_plot.py
+    |   ├── facetgrid.py
+    |   ├── plot.py
+    |   └── utils.py
+    ├── static
+    |   ├── __init__.py
+    |   ├── css
+    |   |   ├── __init__.py
+    |   |   └── style.css
+    |   └── html
+    |       ├── __init__.py
+    |       └── icons-svg-inline.html
+    ├── testing.py
+    ├── tests
+    |   ├── __init__.py
+    |   ├── conftest.py
+    |   ├── data
+    |   ├── test_accessor_dt.py
+    |   ├── test_accessor_str.py
+    |   ├── test_backends.py
+    |   ├── test_backends_api.py
+    |   ├── test_backends_common.py
+    |   ├── test_backends_file_manager.py
+    |   ├── test_backends_locks.py
+    |   ├── test_backends_lru_cache.py
+    |   ├── test_calendar_ops.py
+    |   ├── test_cftime_offsets.py
+    |   ├── test_cftimeindex.py
+    |   ├── test_cftimeindex_resample.py
+    |   ├── test_coarsen.py
+    |   ├── test_coding.py
+    |   ├── test_coding_strings.py
+    |   ├── test_coding_times.py
+    |   ├── test_combine.py
+    |   ├── test_computation.py
+    |   ├── test_concat.py
+    |   ├── test_conventions.py
+    |   ├── test_cupy.py
+    |   ├── test_dask.py
+    |   ├── test_dataarray.py
+    |   ├── test_dataset.py
+    |   ├── test_distributed.py
+    |   ├── test_dtypes.py
+    |   ├── test_duck_array_ops.py
+    |   ├── test_extensions.py
+    |   ├── test_formatting.py
+    |   ├── test_formatting_html.py
+    |   ├── test_groupby.py
+    |   ├── test_indexes.py
+    |   ├── test_indexing.py
+    |   ├── test_interp.py
+    |   ├── test_merge.py
+    |   ├── test_missing.py
+    |   ├── test_nputils.py
+    |   ├── test_options.py
+    |   ├── test_plot.py
+    |   ├── test_plugins.py
+    |   ├── test_print_versions.py
+    |   ├── test_rolling.py
+    |   ├── test_sparse.py
+    |   ├── test_testing.py
+    |   ├── test_tutorial.py
+    |   ├── test_ufuncs.py
+    |   ├── test_units.py
+    |   ├── test_utils.py
+    |   ├── test_variable.py
+    |   └── test_weighted.py
+    ├── tutorial.py
+    └── util
+        ├── __init__.py
+        ├── generate_ops.py
+        ├── generate_reductions.py
+        └── print_versions.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: "center" kwarg ignored when manually iterating over DataArrayRolling
+
+Description: ### Discussed in https://github.com/pydata/xarray/discussions/6738
+
+<div type='discussions-op-text'>
+
+<sup>Originally posted by **ckingdon95** June 29, 2022</sup>
+Hello, I am trying to manually iterate over a DataArrayRolling object, as described [here ](https://docs.xarray.dev/en/stable/user-guide/computation.html#rolling-window-operations)in the documentation. 
+
+I am confused why the following two code chunks do not produce the same sequence of values. I would like to be able to manually iterate over a DataArrayRolling object, and still be given center-justified windows. Is there a way to do this?
+
+```python
+import xarray as xr
+import numpy as np
+
+my_data = xr.DataArray(np.arange(1,10), dims="x")
+
+# Option 1: take a center-justified rolling average
+result1 = my_data.rolling(x=3, center=True).mean().values
+result1
+```
+This returns the following values, as expected:
+```
+array([nan,  2.,  3.,  4.,  5.,  6.,  7.,  8., nan])
+```
+
+Whereas when I do it manually, it is not equivalent:
+
+```python
+# Option 2: try to manually iterate, but the result is not centered
+my_data_rolling = my_data.rolling(x=3, center=True)
+result2 = [window.mean().values.item() for label, window in my_data_rolling]
+result2
+```
+This returns
+```
+[nan, nan, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+```
+Is this an issue with the window iterator? If it is not an issue, then is there a way for me to get the center-justified windows in the manual iteration? </div>
+
+Patch information:
+diff --git a/doc/user-guide/computation.rst b/doc/user-guide/computation.rst
+index dc9748af..9a00d6b0 100644
+--- a/doc/user-guide/computation.rst
++++ b/doc/user-guide/computation.rst
+@@ -212,6 +212,10 @@ We can also manually iterate through ``Rolling`` objects:
+         # arr_window is a view of x
+         ...
+ 
++Manual iteration respects the ``center`` argument: when constructed with
++``center=True``, the yielded windows are centered around each label, consistent
++with centered rolling aggregations.
++
+ .. _comput.rolling_exp:
+ 
+ While ``rolling`` provides a simple moving average, ``DataArray`` also supports
+diff --git a/xarray/core/rolling.py b/xarray/core/rolling.py
+index aef290f6..1ad639a6 100644
+--- a/xarray/core/rolling.py
++++ b/xarray/core/rolling.py
+@@ -270,9 +270,20 @@ class DataArrayRolling(Rolling["DataArray"]):
+     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
+         if self.ndim > 1:
+             raise ValueError("__iter__ is only supported for 1d-rolling")
+-        stops = np.arange(1, len(self.window_labels) + 1)
+-        starts = stops - int(self.window[0])
+-        starts[: int(self.window[0])] = 0
++        N = len(self.window_labels)
++        w = int(self.window[0])
++        if not self.center[0]:
++            stops = np.arange(1, N + 1)
++            starts = stops - w
++            starts[: w] = 0
++        else:
++            idx = np.arange(N)
++            before = w // 2
++            after = w - before
++            starts = idx - before
++            stops = idx + after
++            starts = np.maximum(0, starts)
++            stops = np.minimum(N, stops)
+         for (label, start, stop) in zip(self.window_labels, starts, stops):
+             window = self.obj.isel({self.dim[0]: slice(start, stop)})
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `xarray/core/rolling.py`.
+Extra Requirements: 
+Purpose: This will allow me to examine the implementation of `DataArrayRolling` and its `__iter__` method to understand why the `center` argument was being ignored and how the provided patch fixes it.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: xarray/core/rolling.py
+Line number range: 1 - 500
+Content:
+1. from __future__ import annotations
+2. 
+3. import functools
+4. import itertools
+5. import math
+6. import warnings
+7. from typing import (
+8.     TYPE_CHECKING,
+9.     Any,
+10.     Callable,
+11.     Generic,
+12.     Hashable,
+13.     Iterator,
+14.     Mapping,
+15.     TypeVar,
+16. )
+17. 
+18. import numpy as np
+19. 
+20. from . import dtypes, duck_array_ops, utils
+21. from .arithmetic import CoarsenArithmetic
+22. from .options import OPTIONS, _get_keep_attrs
+23. from .pycompat import is_duck_dask_array
+24. from .types import CoarsenBoundaryOptions, SideOptions, T_Xarray
+25. from .utils import either_dict_or_kwargs
+26. 
+27. try:
+28.     import bottleneck
+29. except ImportError:
+30.     # use numpy methods instead
+31.     bottleneck = None
+32. 
+33. if TYPE_CHECKING:
+34.     from .dataarray import DataArray
+35.     from .dataset import Dataset
+36. 
+37.     RollingKey = Any
+38.     _T = TypeVar("_T")
+39. 
+40. _ROLLING_REDUCE_DOCSTRING_TEMPLATE = """\
+41. Reduce this object's data windows by applying `{name}` along its dimension.
+42. 
+43. Parameters
+44. ----------
+45. keep_attrs : bool, default: None
+46.     If True, the attributes (``attrs``) will be copied from the original
+47.     object to the new one. If False, the new object will be returned
+48.     without attributes. If None uses the global default.
+49. **kwargs : dict
+50.     Additional keyword arguments passed on to `{name}`.
+51. 
+52. Returns
+53. -------
+54. reduced : same type as caller
+55.     New object with `{name}` applied along its rolling dimension.
+56. """
+57. 
+58. 
+59. class Rolling(Generic[T_Xarray]):
+60.     """A object that implements the moving window pattern.
+61. 
+62.     See Also
+63.     --------
+64.     xarray.Dataset.groupby
+65.     xarray.DataArray.groupby
+66.     xarray.Dataset.rolling
+67.     xarray.DataArray.rolling
+68.     """
+69. 
+70.     __slots__ = ("obj", "window", "min_periods", "center", "dim")
+71.     _attributes = ("window", "min_periods", "center", "dim")
+72. 
+73.     def __init__(
+74.         self,
+75.         obj: T_Xarray,
+76.         windows: Mapping[Any, int],
+77.         min_periods: int | None = None,
+78.         center: bool | Mapping[Any, bool] = False,
+79.     ) -> None:
+80.         """
+81.         Moving window object.
+82. 
+83.         Parameters
+84.         ----------
+85.         obj : Dataset or DataArray
+86.             Object to window.
+87.         windows : mapping of hashable to int
+88.             A mapping from the name of the dimension to create the rolling
+89.             window along (e.g. `time`) to the size of the moving window.
+90.         min_periods : int or None, default: None
+91.             Minimum number of observations in window required to have a value
+92.             (otherwise result is NA). The default, None, is equivalent to
+93.             setting min_periods equal to the size of the window.
+94.         center : bool or dict-like Hashable to bool, default: False
+95.             Set the labels at the center of the window. If dict-like, set this
+96.             property per rolling dimension.
+97. 
+98.         Returns
+99.         -------
+100.         rolling : type of input argument
+101.         """
+102.         self.dim: list[Hashable] = []
+103.         self.window: list[int] = []
+104.         for d, w in windows.items():
+105.             self.dim.append(d)
+106.             if w <= 0:
+107.                 raise ValueError("window must be > 0")
+108.             self.window.append(w)
+109. 
+110.         self.center = self._mapping_to_list(center, default=False)
+111.         self.obj: T_Xarray = obj
+112. 
+113.         # attributes
+114.         if min_periods is not None and min_periods <= 0:
+115.             raise ValueError("min_periods must be greater than zero or None")
+116. 
+117.         self.min_periods = (
+118.             math.prod(self.window) if min_periods is None else min_periods
+119.         )
+120. 
+121.     def __repr__(self) -> str:
+122.         """provide a nice str repr of our rolling object"""
+123. 
+124.         attrs = [
+125.             "{k}->{v}{c}".format(k=k, v=w, c="(center)" if c else "")
+126.             for k, w, c in zip(self.dim, self.window, self.center)
+127.         ]
+128.         return "{klass} [{attrs}]".format(
+129.             klass=self.__class__.__name__, attrs=",".join(attrs)
+130.         )
+131. 
+132.     def __len__(self) -> int:
+133.         return math.prod(self.obj.sizes[d] for d in self.dim)
+134. 
+135.     @property
+136.     def ndim(self) -> int:
+137.         return len(self.dim)
+138. 
+139.     def _reduce_method(  # type: ignore[misc]
+140.         name: str, fillna: Any, rolling_agg_func: Callable | None = None
+141.     ) -> Callable[..., T_Xarray]:
+142.         """Constructs reduction methods built on a numpy reduction function (e.g. sum),
+143.         a bottleneck reduction function (e.g. move_sum), or a Rolling reduction (_mean)."""
+144.         if rolling_agg_func:
+145.             array_agg_func = None
+146.         else:
+147.             array_agg_func = getattr(duck_array_ops, name)
+148. 
+149.         bottleneck_move_func = getattr(bottleneck, "move_" + name, None)
+150. 
+151.         def method(self, keep_attrs=None, **kwargs):
+152. 
+153.             keep_attrs = self._get_keep_attrs(keep_attrs)
+154. 
+155.             return self._numpy_or_bottleneck_reduce(
+156.                 array_agg_func,
+157.                 bottleneck_move_func,
+158.                 rolling_agg_func,
+159.                 keep_attrs=keep_attrs,
+160.                 fillna=fillna,
+161.                 **kwargs,
+162.             )
+163. 
+164.         method.__name__ = name
+165.         method.__doc__ = _ROLLING_REDUCE_DOCSTRING_TEMPLATE.format(name=name)
+166.         return method
+167. 
+168.     def _mean(self, keep_attrs, **kwargs):
+169.         result = self.sum(keep_attrs=False, **kwargs) / self.count(keep_attrs=False)
+170.         if keep_attrs:
+171.             result.attrs = self.obj.attrs
+172.         return result
+173. 
+174.     _mean.__doc__ = _ROLLING_REDUCE_DOCSTRING_TEMPLATE.format(name="mean")
+175. 
+176.     argmax = _reduce_method("argmax", dtypes.NINF)
+177.     argmin = _reduce_method("argmin", dtypes.INF)
+178.     max = _reduce_method("max", dtypes.NINF)
+179.     min = _reduce_method("min", dtypes.INF)
+180.     prod = _reduce_method("prod", 1)
+181.     sum = _reduce_method("sum", 0)
+182.     mean = _reduce_method("mean", None, _mean)
+183.     std = _reduce_method("std", None)
+184.     var = _reduce_method("var", None)
+185.     median = _reduce_method("median", None)
+186. 
+187.     def _counts(self, keep_attrs: bool | None) -> T_Xarray:
+188.         raise NotImplementedError()
+189. 
+190.     def count(self, keep_attrs: bool | None = None) -> T_Xarray:
+191.         keep_attrs = self._get_keep_attrs(keep_attrs)
+192.         rolling_count = self._counts(keep_attrs=keep_attrs)
+193.         enough_periods = rolling_count >= self.min_periods
+194.         return rolling_count.where(enough_periods)
+195. 
+196.     count.__doc__ = _ROLLING_REDUCE_DOCSTRING_TEMPLATE.format(name="count")
+197. 
+198.     def _mapping_to_list(
+199.         self,
+200.         arg: _T | Mapping[Any, _T],
+201.         default: _T | None = None,
+202.         allow_default: bool = True,
+203.         allow_allsame: bool = True,
+204.     ) -> list[_T]:
+205.         if utils.is_dict_like(arg):
+206.             if allow_default:
+207.                 return [arg.get(d, default) for d in self.dim]
+208.             for d in self.dim:
+209.                 if d not in arg:
+210.                     raise KeyError(f"Argument has no dimension key {d}.")
+211.             return [arg[d] for d in self.dim]
+212.         if allow_allsame:  # for single argument
+213.             return [arg] * self.ndim  # type: ignore[list-item]  # no check for negatives
+214.         if self.ndim == 1:
+215.             return [arg]  # type: ignore[list-item]  # no check for negatives
+216.         raise ValueError(f"Mapping argument is necessary for {self.ndim}d-rolling.")
+217. 
+218.     def _get_keep_attrs(self, keep_attrs):
+219.         if keep_attrs is None:
+220.             keep_attrs = _get_keep_attrs(default=True)
+221. 
+222.         return keep_attrs
+223. 
+224. 
+225. class DataArrayRolling(Rolling["DataArray"]):
+226.     __slots__ = ("window_labels",)
+227. 
+228.     def __init__(
+229.         self,
+230.         obj: DataArray,
+231.         windows: Mapping[Any, int],
+232.         min_periods: int | None = None,
+233.         center: bool | Mapping[Any, bool] = False,
+234.     ) -> None:
+235.         """
+236.         Moving window object for DataArray.
+237.         You should use DataArray.rolling() method to construct this object
+238.         instead of the class constructor.
+239. 
+240.         Parameters
+241.         ----------
+242.         obj : DataArray
+243.             Object to window.
+244.         windows : mapping of hashable to int
+245.             A mapping from the name of the dimension to create the rolling
+246.             exponential window along (e.g. `time`) to the size of the moving window.
+247.         min_periods : int, default: None
+248.             Minimum number of observations in window required to have a value
+249.             (otherwise result is NA). The default, None, is equivalent to
+250.             setting min_periods equal to the size of the window.
+251.         center : bool, default: False
+252.             Set the labels at the center of the window.
+253. 
+254.         Returns
+255.         -------
+256.         rolling : type of input argument
+257. 
+258.         See Also
+259.         --------
+260.         xarray.DataArray.rolling
+261.         xarray.DataArray.groupby
+262.         xarray.Dataset.rolling
+263.         xarray.Dataset.groupby
+264.         """
+265.         super().__init__(obj, windows, min_periods=min_periods, center=center)
+266. 
+267.         # TODO legacy attribute
+268.         self.window_labels = self.obj[self.dim[0]]
+269. 
+270.     def __iter__(self) -> Iterator[tuple[RollingKey, DataArray]]:
+271.         if self.ndim > 1:
+272.             raise ValueError("__iter__ is only supported for 1d-rolling")
+273.         stops = np.arange(1, len(self.window_labels) + 1)
+274.         starts = stops - int(self.window[0])
+275.         starts[: int(self.window[0])] = 0
+276.         for (label, start, stop) in zip(self.window_labels, starts, stops):
+277.             window = self.obj.isel({self.dim[0]: slice(start, stop)})
+278. 
+279.             counts = window.count(dim=self.dim[0])
+280.             window = window.where(counts >= self.min_periods)
+281. 
+282.             yield (label, window)
+283. 
+284.     def construct(
+285.         self,
+286.         window_dim: Hashable | Mapping[Any, Hashable] | None = None,
+287.         stride: int | Mapping[Any, int] = 1,
+288.         fill_value: Any = dtypes.NA,
+289.         keep_attrs: bool | None = None,
+290.         **window_dim_kwargs: Hashable,
+291.     ) -> DataArray:
+292.         """
+293.         Convert this rolling object to xr.DataArray,
+294.         where the window dimension is stacked as a new dimension
+295. 
+296.         Parameters
+297.         ----------
+298.         window_dim : Hashable or dict-like to Hashable, optional
+299.             A mapping from dimension name to the new window dimension names.
+300.         stride : int or mapping of int, default: 1
+301.             Size of stride for the rolling window.
+302.         fill_value : default: dtypes.NA
+303.             Filling value to match the dimension size.
+304.         keep_attrs : bool, default: None
+305.             If True, the attributes (``attrs``) will be copied from the original
+306.             object to the new one. If False, the new object will be returned
+307.             without attributes. If None uses the global default.
+308.         **window_dim_kwargs : Hashable, optional
+309.             The keyword arguments form of ``window_dim`` {dim: new_name, ...}.
+310. 
+311.         Returns
+312.         -------
+313.         DataArray that is a view of the original array. The returned array is
+314.         not writeable.
+315. 
+316.         Examples
+317.         --------
+318.         >>> da = xr.DataArray(np.arange(8).reshape(2, 4), dims=("a", "b"))
+319. 
+320.         >>> rolling = da.rolling(b=3)
+321.         >>> rolling.construct("window_dim")
+322.         <xarray.DataArray (a: 2, b: 4, window_dim: 3)>
+323.         array([[[nan, nan,  0.],
+324.                 [nan,  0.,  1.],
+325.                 [ 0.,  1.,  2.],
+326.                 [ 1.,  2.,  3.]],
+327.         <BLANKLINE>
+328.                [[nan, nan,  4.],
+329.                 [nan,  4.,  5.],
+330.                 [ 4.,  5.,  6.],
+331.                 [ 5.,  6.,  7.]]])
+332.         Dimensions without coordinates: a, b, window_dim
+333. 
+334.         >>> rolling = da.rolling(b=3, center=True)
+335.         >>> rolling.construct("window_dim")
+336.         <xarray.DataArray (a: 2, b: 4, window_dim: 3)>
+337.         array([[[nan,  0.,  1.],
+338.                 [ 0.,  1.,  2.],
+339.                 [ 1.,  2.,  3.],
+340.                 [ 2.,  3., nan]],
+341.         <BLANKLINE>
+342.                [[nan,  4.,  5.],
+343.                 [ 4.,  5.,  6.],
+344.                 [ 5.,  6.,  7.],
+345.                 [ 6.,  7., nan]]])
+346.         Dimensions without coordinates: a, b, window_dim
+347. 
+348.         """
+349. 
+350.         return self._construct(
+351.             self.obj,
+352.             window_dim=window_dim,
+353.             stride=stride,
+354.             fill_value=fill_value,
+355.             keep_attrs=keep_attrs,
+356.             **window_dim_kwargs,
+357.         )
+358. 
+359.     def _construct(
+360.         self,
+361.         obj: DataArray,
+362.         window_dim: Hashable | Mapping[Any, Hashable] | None = None,
+363.         stride: int | Mapping[Any, int] = 1,
+364.         fill_value: Any = dtypes.NA,
+365.         keep_attrs: bool | None = None,
+366.         **window_dim_kwargs: Hashable,
+367.     ) -> DataArray:
+368.         from .dataarray import DataArray
+369. 
+370.         keep_attrs = self._get_keep_attrs(keep_attrs)
+371. 
+372.         if window_dim is None:
+373.             if len(window_dim_kwargs) == 0:
+374.                 raise ValueError(
+375.                     "Either window_dim or window_dim_kwargs need to be specified."
+376.                 )
+377.             window_dim = {d: window_dim_kwargs[str(d)] for d in self.dim}
+378. 
+379.         window_dims = self._mapping_to_list(
+380.             window_dim, allow_default=False, allow_allsame=False  # type: ignore[arg-type]  # https://github.com/python/mypy/issues/12506
+381.         )
+382.         strides = self._mapping_to_list(stride, default=1)
+383. 
+384.         window = obj.variable.rolling_window(
+385.             self.dim, self.window, window_dims, self.center, fill_value=fill_value
+386.         )
+387. 
+388.         attrs = obj.attrs if keep_attrs else {}
+389. 
+390.         result = DataArray(
+391.             window,
+392.             dims=obj.dims + tuple(window_dims),
+393.             coords=obj.coords,
+394.             attrs=attrs,
+395.             name=obj.name,
+396.         )
+397.         return result.isel({d: slice(None, None, s) for d, s in zip(self.dim, strides)})
+398. 
+399.     def reduce(
+400.         self, func: Callable, keep_attrs: bool | None = None, **kwargs: Any
+401.     ) -> DataArray:
+402.         """Reduce the items in this group by applying `func` along some
+403.         dimension(s).
+404. 
+405.         Parameters
+406.         ----------
+407.         func : callable
+408.             Function which can be called in the form
+409.             `func(x, **kwargs)` to return the result of collapsing an
+410.             np.ndarray over an the rolling dimension.
+411.         keep_attrs : bool, default: None
+412.             If True, the attributes (``attrs``) will be copied from the original
+413.             object to the new one. If False, the new object will be returned
+414.             without attributes. If None uses the global default.
+415.         **kwargs : dict
+416.             Additional keyword arguments passed on to `func`.
+417. 
+418.         Returns
+419.         -------
+420.         reduced : DataArray
+421.             Array with summarized data.
+422. 
+423.         Examples
+424.         --------
+425.         >>> da = xr.DataArray(np.arange(8).reshape(2, 4), dims=("a", "b"))
+426.         >>> rolling = da.rolling(b=3)
+427.         >>> rolling.construct("window_dim")
+428.         <xarray.DataArray (a: 2, b: 4, window_dim: 3)>
+429.         array([[[nan, nan,  0.],
+430.                 [nan,  0.,  1.],
+431.                 [ 0.,  1.,  2.],
+432.                 [ 1.,  2.,  3.]],
+433.         <BLANKLINE>
+434.                [[nan, nan,  4.],
+435.                 [nan,  4.,  5.],
+436.                 [ 4.,  5.,  6.],
+437.                 [ 5.,  6.,  7.]]])
+438.         Dimensions without coordinates: a, b, window_dim
+439. 
+440.         >>> rolling.reduce(np.sum)
+441.         <xarray.DataArray (a: 2, b: 4)>
+442.         array([[nan, nan,  3.,  6.],
+443.                [nan, nan, 15., 18.]])
+444.         Dimensions without coordinates: a, b
+445. 
+446.         >>> rolling = da.rolling(b=3, min_periods=1)
+447.         >>> rolling.reduce(np.nansum)
+448.         <xarray.DataArray (a: 2, b: 4)>
+449.         array([[ 0.,  1.,  3.,  6.],
+450.                [ 4.,  9., 15., 18.]])
+451.         Dimensions without coordinates: a, b
+452.         """
+453. 
+454.         keep_attrs = self._get_keep_attrs(keep_attrs)
+455. 
+456.         rolling_dim = {
+457.             d: utils.get_temp_dimname(self.obj.dims, f"_rolling_dim_{d}")
+458.             for d in self.dim
+459.         }
+460. 
+461.         # save memory with reductions GH4325
+462.         fillna = kwargs.pop("fillna", dtypes.NA)
+463.         if fillna is not dtypes.NA:
+464.             obj = self.obj.fillna(fillna)
+465.         else:
+466.             obj = self.obj
+467.         windows = self._construct(
+468.             obj, rolling_dim, keep_attrs=keep_attrs, fill_value=fillna
+469.         )
+470. 
+471.         result = windows.reduce(
+472.             func, dim=list(rolling_dim.values()), keep_attrs=keep_attrs, **kwargs
+473.         )
+474. 
+475.         # Find valid windows based on count.
+476.         counts = self._counts(keep_attrs=False)
+477.         return result.where(counts >= self.min_periods)
+478. 
+479.     def _counts(self, keep_attrs: bool | None) -> DataArray:
+480.         """Number of non-nan entries in each rolling window."""
+481. 
+482.         rolling_dim = {
+483.             d: utils.get_temp_dimname(self.obj.dims, f"_rolling_dim_{d}")
+484.             for d in self.dim
+485.         }
+486.         # We use False as the fill_value instead of np.nan, since boolean
+487.         # array is faster to be reduced than object array.
+488.         # The use of skipna==False is also faster since it does not need to
+489.         # copy the strided array.
+490.         counts = (
+491.             self.obj.notnull(keep_attrs=keep_attrs)
+492.             .rolling(
+493.                 {d: w for d, w in zip(self.dim, self.window)},
+494.                 center={d: self.center[i] for i, d in enumerate(self.dim)},
+495.             )
+496.             .construct(rolling_dim, fill_value=False, keep_attrs=keep_attrs)
+497.             .sum(dim=list(rolling_dim.values()), skipna=False, keep_attrs=keep_attrs)
+498.         )
+499.         return counts
+500. 
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 16:51:45,609 - thread-125107825538752.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The provided context, which includes the entire `xarray/core/rolling.py` file, is sufficient to understand the issue and the fix. The bug is located in the `__iter__` method of the `DataArrayRolling` class, and the provided patch directly modifies this method to correctly handle the `center` argument. The logic is self-contained within this method, and no further context from other files is necessary to understand how the window boundaries are calculated, which is the core of the issue.' query='' extra_requirements='' purpose=''
+2025-12-23 16:51:45,610 - thread-125107825538752.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

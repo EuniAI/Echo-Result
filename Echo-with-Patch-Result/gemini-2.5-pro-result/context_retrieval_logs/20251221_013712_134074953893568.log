@@ -1,0 +1,1830 @@
+2025-12-21 01:37:12,827 - thread-134074953893568.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-21 01:37:12,885 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1316.breaking.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4677.bugfix.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7255.feature.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── start_doc_server.sh
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 01:37:25,617 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user is reporting a crash in `Expression.compile("False")`. The provided patch modifies `src/_pytest/mark/expression.py` to fix this. To understand the root cause of the crash and how the patch resolves it, I need to examine the implementation of the `Expression` class and its associated parsing logic, which are located in this file.' query='Please provide the full content of `src/_pytest/mark/expression.py`.' extra_requirements='' purpose='This will provide the core logic for mark expression parsing, which is where the error occurs and the fix is applied.'
+2025-12-21 01:37:25,618 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `src/_pytest/mark/expression.py`.
+2025-12-21 01:37:25,618 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 01:37:25,619 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 01:37:25,620 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 01:37:25,620 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `src/_pytest/mark/expression.py`.
+Purpose: This will provide the core logic for mark expression parsing, which is where the error occurs and the fix is applied.
+2025-12-21 01:37:27,395 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "src/_pytest/mark/expression.py"}'}, '__gemini_function_call_thought_signatures__': {'cc706ad9-c877-4156-a206-4954285f2d5c': 'Ct0DAY89a19gFvehRLlIWi0ILnwYMVHJiQu+XsEB66kAG6ggeCt/QP8f8uGU/tNekPS4by02CYlyss/xEXQ4TihukD4HaXGDIhcNzLQV0nEiN5FG8yqsekq/vMm9qNNGHF/lG0uzAkS2NlK6vOwg0d9+LusSMTPwggypgLkSjHXJH7i4AKuxjST9hmOuH/SSQzES/YM64Wfpem7sXZ/CUG1ub7BDOaSfd9KfXUwUPeWLm6TKgFXHz7JLQfLddfxgmLYKHyZJu1KLbVC1UmTMcsKr9dLHE/b2QSMPKvO9EPLealafrYA/Fz043zyPGZGnLhTD+NyVKz7TEKcTLzs5SbyIMG5my/reulelHw6CTrJGWgGoxZAxfrNJ0lv2bSevnk4wWjEJtJ6xIROgD8lTMm0CWnkRc4yGUV5LA5JoBgkcgDKGBBq4uXWDOMBMWSabtO12AMWkDFuhVBNBIHCVGXrl3M7hP9niKuldx3SvXcNNp80DNcPiDF6Wjooc+T3h+UQsipqGEkJeNoMfUY+7G0QZBB15A6jDYzzkdZrErh6p2ZryHgmX8999a08ZN43f5Hk4BZoTb/k8NO+xsgXQ8XFJjF+WyhP7QJnQg67I3NH9lUYKG3mPZ7ky0TIkUak8'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2049, 'candidates_token_count': 23, 'total_token_count': 2195, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2049}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 23}], 'thoughts_token_count': 123, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.20691425903983737, 'model_name': 'gemini-2.5-pro'} id='run--1deb4576-5455-400f-bb73-10ba025c5690-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'src/_pytest/mark/expression.py'}, 'id': 'cc706ad9-c877-4156-a206-4954285f2d5c', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2049, 'output_tokens': 23, 'total_tokens': 2195, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 123}}
+2025-12-21 01:37:29,972 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the entire content of `src/_pytest/mark/expression.py`. This file is responsible for parsing and evaluating mark expressions, which are used for filtering tests. The code defines the grammar for these expressions, includes a parser, and an `Expression` class to compile and evaluate the expressions.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 4795, 'candidates_token_count': 62, 'total_token_count': 4958, 'cached_content_token_count': 1712, 'prompt_tokens_details': [{'modality': 1, 'token_count': 4918}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1712}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 62}], 'thoughts_token_count': 101}, 'finish_reason': 'STOP', 'avg_logprobs': -0.22562857597104966, 'model_name': 'gemini-2.5-pro'} id='run--3eb4fac0-eed2-4fe2-80b2-46cd1aab4399-0' usage_metadata={'input_tokens': 4795, 'output_tokens': 62, 'total_tokens': 4958, 'input_token_details': {'cache_read': 1712}, 'output_token_details': {'reasoning': 101}}
+2025-12-21 01:37:29,974 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `src/_pytest/mark/expression.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+This will provide the core logic for mark expression parsing, which is where the error occurs and the fix is applied.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: src/_pytest/mark/expression.py
+Line number range: 1 - 218
+Content:
+1. r"""
+2. Evaluate match expressions, as used by `-k` and `-m`.
+3. 
+4. The grammar is:
+5. 
+6. expression: expr? EOF
+7. expr:       and_expr ('or' and_expr)*
+8. and_expr:   not_expr ('and' not_expr)*
+9. not_expr:   'not' not_expr | '(' expr ')' | ident
+10. ident:      (\w|:|\+|-|\.|\[|\])+
+11. 
+12. The semantics are:
+13. 
+14. - Empty expression evaluates to False.
+15. - ident evaluates to True of False according to a provided matcher function.
+16. - or/and/not evaluate according to the usual boolean semantics.
+17. """
+18. import ast
+19. import enum
+20. import re
+21. import types
+22. from typing import Callable
+23. from typing import Iterator
+24. from typing import Mapping
+25. from typing import Optional
+26. from typing import Sequence
+27. 
+28. import attr
+29. 
+30. from _pytest.compat import TYPE_CHECKING
+31. 
+32. if TYPE_CHECKING:
+33.     from typing import NoReturn
+34. 
+35. 
+36. __all__ = [
+37.     "Expression",
+38.     "ParseError",
+39. ]
+40. 
+41. 
+42. class TokenType(enum.Enum):
+43.     LPAREN = "left parenthesis"
+44.     RPAREN = "right parenthesis"
+45.     OR = "or"
+46.     AND = "and"
+47.     NOT = "not"
+48.     IDENT = "identifier"
+49.     EOF = "end of input"
+50. 
+51. 
+52. @attr.s(frozen=True, slots=True)
+53. class Token:
+54.     type = attr.ib(type=TokenType)
+55.     value = attr.ib(type=str)
+56.     pos = attr.ib(type=int)
+57. 
+58. 
+59. class ParseError(Exception):
+60.     """The expression contains invalid syntax.
+61. 
+62.     :param column: The column in the line where the error occurred (1-based).
+63.     :param message: A description of the error.
+64.     """
+65. 
+66.     def __init__(self, column: int, message: str) -> None:
+67.         self.column = column
+68.         self.message = message
+69. 
+70.     def __str__(self) -> str:
+71.         return "at column {}: {}".format(self.column, self.message)
+72. 
+73. 
+74. class Scanner:
+75.     __slots__ = ("tokens", "current")
+76. 
+77.     def __init__(self, input: str) -> None:
+78.         self.tokens = self.lex(input)
+79.         self.current = next(self.tokens)
+80. 
+81.     def lex(self, input: str) -> Iterator[Token]:
+82.         pos = 0
+83.         while pos < len(input):
+84.             if input[pos] in (" ", "\t"):
+85.                 pos += 1
+86.             elif input[pos] == "(":
+87.                 yield Token(TokenType.LPAREN, "(", pos)
+88.                 pos += 1
+89.             elif input[pos] == ")":
+90.                 yield Token(TokenType.RPAREN, ")", pos)
+91.                 pos += 1
+92.             else:
+93.                 match = re.match(r"(:?\w|:|\+|-|\.|\[|\])+", input[pos:])
+94.                 if match:
+95.                     value = match.group(0)
+96.                     if value == "or":
+97.                         yield Token(TokenType.OR, value, pos)
+98.                     elif value == "and":
+99.                         yield Token(TokenType.AND, value, pos)
+100.                     elif value == "not":
+101.                         yield Token(TokenType.NOT, value, pos)
+102.                     else:
+103.                         yield Token(TokenType.IDENT, value, pos)
+104.                     pos += len(value)
+105.                 else:
+106.                     raise ParseError(
+107.                         pos + 1, 'unexpected character "{}"'.format(input[pos]),
+108.                     )
+109.         yield Token(TokenType.EOF, "", pos)
+110. 
+111.     def accept(self, type: TokenType, *, reject: bool = False) -> Optional[Token]:
+112.         if self.current.type is type:
+113.             token = self.current
+114.             if token.type is not TokenType.EOF:
+115.                 self.current = next(self.tokens)
+116.             return token
+117.         if reject:
+118.             self.reject((type,))
+119.         return None
+120. 
+121.     def reject(self, expected: Sequence[TokenType]) -> "NoReturn":
+122.         raise ParseError(
+123.             self.current.pos + 1,
+124.             "expected {}; got {}".format(
+125.                 " OR ".join(type.value for type in expected), self.current.type.value,
+126.             ),
+127.         )
+128. 
+129. 
+130. def expression(s: Scanner) -> ast.Expression:
+131.     if s.accept(TokenType.EOF):
+132.         ret = ast.NameConstant(False)  # type: ast.expr
+133.     else:
+134.         ret = expr(s)
+135.         s.accept(TokenType.EOF, reject=True)
+136.     return ast.fix_missing_locations(ast.Expression(ret))
+137. 
+138. 
+139. def expr(s: Scanner) -> ast.expr:
+140.     ret = and_expr(s)
+141.     while s.accept(TokenType.OR):
+142.         rhs = and_expr(s)
+143.         ret = ast.BoolOp(ast.Or(), [ret, rhs])
+144.     return ret
+145. 
+146. 
+147. def and_expr(s: Scanner) -> ast.expr:
+148.     ret = not_expr(s)
+149.     while s.accept(TokenType.AND):
+150.         rhs = not_expr(s)
+151.         ret = ast.BoolOp(ast.And(), [ret, rhs])
+152.     return ret
+153. 
+154. 
+155. def not_expr(s: Scanner) -> ast.expr:
+156.     if s.accept(TokenType.NOT):
+157.         return ast.UnaryOp(ast.Not(), not_expr(s))
+158.     if s.accept(TokenType.LPAREN):
+159.         ret = expr(s)
+160.         s.accept(TokenType.RPAREN, reject=True)
+161.         return ret
+162.     ident = s.accept(TokenType.IDENT)
+163.     if ident:
+164.         return ast.Name(ident.value, ast.Load())
+165.     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+166. 
+167. 
+168. class MatcherAdapter(Mapping[str, bool]):
+169.     """Adapts a matcher function to a locals mapping as required by eval()."""
+170. 
+171.     def __init__(self, matcher: Callable[[str], bool]) -> None:
+172.         self.matcher = matcher
+173. 
+174.     def __getitem__(self, key: str) -> bool:
+175.         return self.matcher(key)
+176. 
+177.     def __iter__(self) -> Iterator[str]:
+178.         raise NotImplementedError()
+179. 
+180.     def __len__(self) -> int:
+181.         raise NotImplementedError()
+182. 
+183. 
+184. class Expression:
+185.     """A compiled match expression as used by -k and -m.
+186. 
+187.     The expression can be evaulated against different matchers.
+188.     """
+189. 
+190.     __slots__ = ("code",)
+191. 
+192.     def __init__(self, code: types.CodeType) -> None:
+193.         self.code = code
+194. 
+195.     @classmethod
+196.     def compile(self, input: str) -> "Expression":
+197.         """Compile a match expression.
+198. 
+199.         :param input: The input expression - one line.
+200.         """
+201.         astexpr = expression(Scanner(input))
+202.         code = compile(
+203.             astexpr, filename="<pytest match expression>", mode="eval",
+204.         )  # type: types.CodeType
+205.         return Expression(code)
+206. 
+207.     def evaluate(self, matcher: Callable[[str], bool]) -> bool:
+208.         """Evaluate the match expression.
+209. 
+210.         :param matcher: Given an identifier, should return whether it matches or not.
+211.                         Should be prepared to handle arbitrary strings as input.
+212. 
+213.         Returns whether the expression matches or not.
+214.         """
+215.         ret = eval(
+216.             self.code, {"__builtins__": {}}, MatcherAdapter(matcher)
+217.         )  # type: bool
+218.         return ret
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 01:37:33,308 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='The user requested the full content of the file `src/_pytest/mark/expression.py`. This context includes the entire file, from line 1 to 218, as provided.', relative_path='src/_pytest/mark/expression.py', start_line=1, end_line=218)]
+2025-12-21 01:37:33,309 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `src/_pytest/mark/expression.py`.
+2025-12-21 01:37:33,309 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 01:37:33,309 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 01:37:33,310 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 01:37:33,310 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 01:37:33,310 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1316.breaking.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4677.bugfix.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7255.feature.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── start_doc_server.sh
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `src/_pytest/mark/expression.py`.
+Extra Requirements: 
+Purpose: This will provide the core logic for mark expression parsing, which is where the error occurs and the fix is applied.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: src/_pytest/mark/expression.py
+Line number range: 1 - 218
+Content:
+1. r"""
+2. Evaluate match expressions, as used by `-k` and `-m`.
+3. 
+4. The grammar is:
+5. 
+6. expression: expr? EOF
+7. expr:       and_expr ('or' and_expr)*
+8. and_expr:   not_expr ('and' not_expr)*
+9. not_expr:   'not' not_expr | '(' expr ')' | ident
+10. ident:      (\w|:|\+|-|\.|\[|\])+
+11. 
+12. The semantics are:
+13. 
+14. - Empty expression evaluates to False.
+15. - ident evaluates to True of False according to a provided matcher function.
+16. - or/and/not evaluate according to the usual boolean semantics.
+17. """
+18. import ast
+19. import enum
+20. import re
+21. import types
+22. from typing import Callable
+23. from typing import Iterator
+24. from typing import Mapping
+25. from typing import Optional
+26. from typing import Sequence
+27. 
+28. import attr
+29. 
+30. from _pytest.compat import TYPE_CHECKING
+31. 
+32. if TYPE_CHECKING:
+33.     from typing import NoReturn
+34. 
+35. 
+36. __all__ = [
+37.     "Expression",
+38.     "ParseError",
+39. ]
+40. 
+41. 
+42. class TokenType(enum.Enum):
+43.     LPAREN = "left parenthesis"
+44.     RPAREN = "right parenthesis"
+45.     OR = "or"
+46.     AND = "and"
+47.     NOT = "not"
+48.     IDENT = "identifier"
+49.     EOF = "end of input"
+50. 
+51. 
+52. @attr.s(frozen=True, slots=True)
+53. class Token:
+54.     type = attr.ib(type=TokenType)
+55.     value = attr.ib(type=str)
+56.     pos = attr.ib(type=int)
+57. 
+58. 
+59. class ParseError(Exception):
+60.     """The expression contains invalid syntax.
+61. 
+62.     :param column: The column in the line where the error occurred (1-based).
+63.     :param message: A description of the error.
+64.     """
+65. 
+66.     def __init__(self, column: int, message: str) -> None:
+67.         self.column = column
+68.         self.message = message
+69. 
+70.     def __str__(self) -> str:
+71.         return "at column {}: {}".format(self.column, self.message)
+72. 
+73. 
+74. class Scanner:
+75.     __slots__ = ("tokens", "current")
+76. 
+77.     def __init__(self, input: str) -> None:
+78.         self.tokens = self.lex(input)
+79.         self.current = next(self.tokens)
+80. 
+81.     def lex(self, input: str) -> Iterator[Token]:
+82.         pos = 0
+83.         while pos < len(input):
+84.             if input[pos] in (" ", "\t"):
+85.                 pos += 1
+86.             elif input[pos] == "(":
+87.                 yield Token(TokenType.LPAREN, "(", pos)
+88.                 pos += 1
+89.             elif input[pos] == ")":
+90.                 yield Token(TokenType.RPAREN, ")", pos)
+91.                 pos += 1
+92.             else:
+93.                 match = re.match(r"(:?\w|:|\+|-|\.|\[|\])+", input[pos:])
+94.                 if match:
+95.                     value = match.group(0)
+96.                     if value == "or":
+97.                         yield Token(TokenType.OR, value, pos)
+98.                     elif value == "and":
+99.                         yield Token(TokenType.AND, value, pos)
+100.                     elif value == "not":
+101.                         yield Token(TokenType.NOT, value, pos)
+102.                     else:
+103.                         yield Token(TokenType.IDENT, value, pos)
+104.                     pos += len(value)
+105.                 else:
+106.                     raise ParseError(
+107.                         pos + 1, 'unexpected character "{}"'.format(input[pos]),
+108.                     )
+109.         yield Token(TokenType.EOF, "", pos)
+110. 
+111.     def accept(self, type: TokenType, *, reject: bool = False) -> Optional[Token]:
+112.         if self.current.type is type:
+113.             token = self.current
+114.             if token.type is not TokenType.EOF:
+115.                 self.current = next(self.tokens)
+116.             return token
+117.         if reject:
+118.             self.reject((type,))
+119.         return None
+120. 
+121.     def reject(self, expected: Sequence[TokenType]) -> "NoReturn":
+122.         raise ParseError(
+123.             self.current.pos + 1,
+124.             "expected {}; got {}".format(
+125.                 " OR ".join(type.value for type in expected), self.current.type.value,
+126.             ),
+127.         )
+128. 
+129. 
+130. def expression(s: Scanner) -> ast.Expression:
+131.     if s.accept(TokenType.EOF):
+132.         ret = ast.NameConstant(False)  # type: ast.expr
+133.     else:
+134.         ret = expr(s)
+135.         s.accept(TokenType.EOF, reject=True)
+136.     return ast.fix_missing_locations(ast.Expression(ret))
+137. 
+138. 
+139. def expr(s: Scanner) -> ast.expr:
+140.     ret = and_expr(s)
+141.     while s.accept(TokenType.OR):
+142.         rhs = and_expr(s)
+143.         ret = ast.BoolOp(ast.Or(), [ret, rhs])
+144.     return ret
+145. 
+146. 
+147. def and_expr(s: Scanner) -> ast.expr:
+148.     ret = not_expr(s)
+149.     while s.accept(TokenType.AND):
+150.         rhs = not_expr(s)
+151.         ret = ast.BoolOp(ast.And(), [ret, rhs])
+152.     return ret
+153. 
+154. 
+155. def not_expr(s: Scanner) -> ast.expr:
+156.     if s.accept(TokenType.NOT):
+157.         return ast.UnaryOp(ast.Not(), not_expr(s))
+158.     if s.accept(TokenType.LPAREN):
+159.         ret = expr(s)
+160.         s.accept(TokenType.RPAREN, reject=True)
+161.         return ret
+162.     ident = s.accept(TokenType.IDENT)
+163.     if ident:
+164.         return ast.Name(ident.value, ast.Load())
+165.     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+166. 
+167. 
+168. class MatcherAdapter(Mapping[str, bool]):
+169.     """Adapts a matcher function to a locals mapping as required by eval()."""
+170. 
+171.     def __init__(self, matcher: Callable[[str], bool]) -> None:
+172.         self.matcher = matcher
+173. 
+174.     def __getitem__(self, key: str) -> bool:
+175.         return self.matcher(key)
+176. 
+177.     def __iter__(self) -> Iterator[str]:
+178.         raise NotImplementedError()
+179. 
+180.     def __len__(self) -> int:
+181.         raise NotImplementedError()
+182. 
+183. 
+184. class Expression:
+185.     """A compiled match expression as used by -k and -m.
+186. 
+187.     The expression can be evaulated against different matchers.
+188.     """
+189. 
+190.     __slots__ = ("code",)
+191. 
+192.     def __init__(self, code: types.CodeType) -> None:
+193.         self.code = code
+194. 
+195.     @classmethod
+196.     def compile(self, input: str) -> "Expression":
+197.         """Compile a match expression.
+198. 
+199.         :param input: The input expression - one line.
+200.         """
+201.         astexpr = expression(Scanner(input))
+202.         code = compile(
+203.             astexpr, filename="<pytest match expression>", mode="eval",
+204.         )  # type: types.CodeType
+205.         return Expression(code)
+206. 
+207.     def evaluate(self, matcher: Callable[[str], bool]) -> bool:
+208.         """Evaluate the match expression.
+209. 
+210.         :param matcher: Given an identifier, should return whether it matches or not.
+211.                         Should be prepared to handle arbitrary strings as input.
+212. 
+213.         Returns whether the expression matches or not.
+214.         """
+215.         ret = eval(
+216.             self.code, {"__builtins__": {}}, MatcherAdapter(matcher)
+217.         )  # type: bool
+218.         return ret
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 01:37:57,321 - thread-134074953893568.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user's query is about a crash in `Expression.compile`. The provided context contains the full source code for `src/_pytest/mark/expression.py`, which defines the `Expression` class and its `compile` method. The crash is caused by creating an `ast.Name` node for a keyword like 'False', which is handled inside the `not_expr` function within `expression.py`. The provided patch, which is also within `expression.py`, directly addresses this by creating `ast.NameConstant` nodes instead. All the logic for parsing the expression and creating the AST is self-contained in the provided file. Therefore, the existing context is sufficient to understand the issue and the fix. Other parts of the codebase that use this expression evaluation are not essential to understanding the crash itself." query='' extra_requirements='' purpose=''
+2025-12-21 01:37:57,322 - thread-134074953893568.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

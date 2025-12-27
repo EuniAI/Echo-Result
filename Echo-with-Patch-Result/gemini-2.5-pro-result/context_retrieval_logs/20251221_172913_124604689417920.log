@@ -1,0 +1,3274 @@
+2025-12-21 17:29:13,341 - thread-124604689417920.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Removing a default header of a session
+
+Description: [The docs](http://docs.python-requests.org/en/latest/user/advanced/#session-objects) say that you can prevent sending a session header by setting the headers value to None in the method's arguments. You would expect (as [discussed on IRC](https://botbot.me/freenode/python-requests/msg/10788170/)) that this would work for session's default headers, too:
+
+``` python
+session = requests.Session()
+# Do not send Accept-Encoding
+session.headers['Accept-Encoding'] = None
+```
+
+What happens is that "None"  gets sent as the value of header.
+
+```
+Accept-Encoding: None
+```
+
+For the reference, here is a way that works:
+
+``` python
+del session.headers['Accept-Encoding']
+```
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index 80c1e6ae..10b43be2 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -43,6 +43,19 @@ Any dictionaries that you pass to a request method will be merged with the sessi
+ 
+     Sometimes you'll want to omit session-level keys from a dict parameter. To do this, you simply set that key's value to ``None`` in the method-level parameter. It will automatically be omitted.
+ 
++    You can also remove default headers set on a Session by assigning ``None`` to that header key. For example, to prevent ``Accept-Encoding`` from being sent with this Session:
++
++    ::
++
++        s = requests.Session()
++        s.headers['Accept-Encoding'] = None  # header will be omitted
++
++    Alternatively, deleting the key has the same effect:
++
++    ::
++
++        del s.headers['Accept-Encoding']
++
+ All values that are contained within a session are directly available to you. See the :ref:`Session API Docs <sessionapi>` to learn more.
+ 
+ Request and Response Objects
+diff --git a/requests/models.py b/requests/models.py
+index cd232e68..a5391e47 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -391,7 +391,10 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         """Prepares the given HTTP headers."""
+ 
+         if headers:
+-            self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
++            # Filter out headers with None values to avoid sending them.
++            self.headers = CaseInsensitiveDict(
++                (to_native_string(name), value) for name, value in headers.items() if value is not None
++            )
+         else:
+             self.headers = CaseInsensitiveDict()
+ 
+diff --git a/requests/sessions.py b/requests/sessions.py
+index a023e4ec..07466bf9 100644
+--- a/requests/sessions.py
++++ b/requests/sessions.py
+@@ -51,10 +51,14 @@ def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
+     ):
+         return request_setting
+ 
+-    merged_setting = dict_class(to_key_val_list(session_setting))
++    # Start with a copy of the session settings, but drop any keys set to None
++    merged_setting = dict_class(
++        (k, v) for k, v in to_key_val_list(session_setting) if v is not None
++    )
++    # Layer on request settings
+     merged_setting.update(to_key_val_list(request_setting))
+ 
+-    # Remove keys that are set to None.
++    # Remove keys that are set to None in the request.
+     for (k, v) in request_setting.items():
+         if v is None:
+             del merged_setting[k]
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-21 17:29:13,410 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── AUTHORS.rst
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── support.rst
+|   |   └── updates.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── internals.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   ├── requirements.txt
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── chardet
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardetect.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── cp949prober.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connection.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   ├── ntlmpool.py
+|   |       |   └── pyopenssl.py
+|   |       ├── exceptions.py
+|   |       ├── fields.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Removing a default header of a session
+
+Description: [The docs](http://docs.python-requests.org/en/latest/user/advanced/#session-objects) say that you can prevent sending a session header by setting the headers value to None in the method's arguments. You would expect (as [discussed on IRC](https://botbot.me/freenode/python-requests/msg/10788170/)) that this would work for session's default headers, too:
+
+``` python
+session = requests.Session()
+# Do not send Accept-Encoding
+session.headers['Accept-Encoding'] = None
+```
+
+What happens is that "None"  gets sent as the value of header.
+
+```
+Accept-Encoding: None
+```
+
+For the reference, here is a way that works:
+
+``` python
+del session.headers['Accept-Encoding']
+```
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index 80c1e6ae..10b43be2 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -43,6 +43,19 @@ Any dictionaries that you pass to a request method will be merged with the sessi
+ 
+     Sometimes you'll want to omit session-level keys from a dict parameter. To do this, you simply set that key's value to ``None`` in the method-level parameter. It will automatically be omitted.
+ 
++    You can also remove default headers set on a Session by assigning ``None`` to that header key. For example, to prevent ``Accept-Encoding`` from being sent with this Session:
++
++    ::
++
++        s = requests.Session()
++        s.headers['Accept-Encoding'] = None  # header will be omitted
++
++    Alternatively, deleting the key has the same effect:
++
++    ::
++
++        del s.headers['Accept-Encoding']
++
+ All values that are contained within a session are directly available to you. See the :ref:`Session API Docs <sessionapi>` to learn more.
+ 
+ Request and Response Objects
+diff --git a/requests/models.py b/requests/models.py
+index cd232e68..a5391e47 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -391,7 +391,10 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         """Prepares the given HTTP headers."""
+ 
+         if headers:
+-            self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
++            # Filter out headers with None values to avoid sending them.
++            self.headers = CaseInsensitiveDict(
++                (to_native_string(name), value) for name, value in headers.items() if value is not None
++            )
+         else:
+             self.headers = CaseInsensitiveDict()
+ 
+diff --git a/requests/sessions.py b/requests/sessions.py
+index a023e4ec..07466bf9 100644
+--- a/requests/sessions.py
++++ b/requests/sessions.py
+@@ -51,10 +51,14 @@ def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
+     ):
+         return request_setting
+ 
+-    merged_setting = dict_class(to_key_val_list(session_setting))
++    # Start with a copy of the session settings, but drop any keys set to None
++    merged_setting = dict_class(
++        (k, v) for k, v in to_key_val_list(session_setting) if v is not None
++    )
++    # Layer on request settings
+     merged_setting.update(to_key_val_list(request_setting))
+ 
+-    # Remove keys that are set to None.
++    # Remove keys that are set to None in the request.
+     for (k, v) in request_setting.items():
+         if v is None:
+             del merged_setting[k]
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 17:29:18,654 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to find relevant test cases for a bug fix. The bug is about session header manipulation. The most relevant file for this is likely `test_requests.py`, but its content is not available in the current context. I need to get the content of this file to find the test cases.' query='Please provide the full content of `test_requests.py`.' extra_requirements='' purpose="I need the content of `test_requests.py` to identify test cases related to session headers and find the ones most relevant to the user's query."
+2025-12-21 17:29:18,656 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `test_requests.py`.
+2025-12-21 17:29:18,656 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 17:29:18,656 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 17:29:18,657 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 17:29:18,657 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `test_requests.py`.
+Purpose: I need the content of `test_requests.py` to identify test cases related to session headers and find the ones most relevant to the user's query.
+2025-12-21 17:29:21,269 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'find_file_node_with_basename', 'arguments': '{"basename": "test_requests.py"}'}, '__gemini_function_call_thought_signatures__': {'70018370-955c-4086-94d0-3de6f63964ef': 'CqUGAY89a1/oy8k+ZScxfm3YLuMJYjQB2JWA2nRjlfpaFhy/+gTN6aJzW2jcOWLTF5AUtn9Onp82S+e/qLAt/wn8ZD+6EHIcst1o0wOJhIO7GT7zlkPkRIWiNr2j3KgDbv4Q0Mc2IeR4MMkkSZ+mbaeMu+O3KweuSwbv+6vcjax3hGz3FhfT+KqiB8lFRQE+HJnToSOFqtuYZUJjzH6ByRqjFgiy7iU/BuW3z7gkhC5bNX0+TTP+MODOBy88W6vYLJ/qTXzveBiHbXVqURS8dTtUmf9841iMsho9wg5vZq4OVdIpdvpeBKM2TEa8DDC066CmV8w704D693YQ9xDw+zDazLeV+7iuUrnXouEO0z8mHspoYOxl3uWZpGdeTw/FL2eyvGcaMQ37V0XVM5s8ACVm6qtniBnGyphoLcTA1jzY9S5rwALmTt6TaQ6EwDMvii+QWzdyHC7oLYYKUmWXewihSIxM1diliOQK9j6rkHFPGWj5q45E44E9Ms8MkuvyM0gy/XhpVRkuOBfu+7NqZdMK9Z9hNBsGGP1L85qtshQem/PjW+J2nil33JJ4d71XvSRVDPeuD68PDGQt56VolRWyQTE7ouGT5R7zO07QgY61xMeL3RsWT4p04VQAAvECy2P3MYkgChMElSnJn8OvGeW9xpuoa/a9xxWsqfhbQibD09NQML43U2xu1NeeN9Ut0LY8Qmq1R0EUrE05R/Cy6ioy7khcUIgThC5ghUHa/XR8IML6X+vT5/eEbHbvyymh2ztYlOx3F/D99G67uamebsJPeayVSu5w5SW71AqYIGFVwyzippzWUCWFI2PPMj5lA+m2KDhdF7fAQjhChcG2cykevhmCZcU7ONQjdpMrmn2yT/ZKrLD4cvvK6BSWQFVmWs6EXUyZM9YIVHyzIS5tZRh7Vo3Hi7IIFZtiaw6IFg8OQAHKJFyxH1EHZDb4IEzYGRyobXbewmG1mPDZVMfn0tYVpIYQ7t+SI62nVStuQg+lY0ms8XmBEuEP+i+3hlff11JslOIx5v7wChnREFpIOJpZrtxLjWmymIW6CeYhF35lebtaiZATRg=='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2050, 'candidates_token_count': 15, 'total_token_count': 2284, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2050}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 15}], 'thoughts_token_count': 219, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.48014087677001954, 'model_name': 'gemini-2.5-pro'} id='run--682d3aca-2245-4d44-a77e-e74a60316f5d-0' tool_calls=[{'name': 'find_file_node_with_basename', 'args': {'basename': 'test_requests.py'}, 'id': '70018370-955c-4086-94d0-3de6f63964ef', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2050, 'output_tokens': 15, 'total_tokens': 2284, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 219}}
+2025-12-21 17:29:22,625 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "test_requests.py"}'}, '__gemini_function_call_thought_signatures__': {'83725c4c-6e8a-4d06-bb7c-5a8917b22f45': 'CvABAY89a18r67f8qx5hvrEdVnKxSulnjSA+fJzT3aXvM/Wx7eUE/HLaWKRhmGWCpIVfmX9vePzY6xLIcvnn28SRB0Dyd6LJQPDzOQt6iA7uOj3K2M5WnTrILzkaYaPETIC5ZfyvQIChoHjRFbHEtV2SsKlWnb6Cv57dJpsZoDQrq1XuGeKZl/dDk8NSj14h9iTKTK+zZFksizmglKikURiJeKCFOq04YUbl19RyaV8hWOCajrGn6BudamANRgVRF1oYXdHY9O7YNkiDIYQIP0jxwlLHVm7RDOEIfNgFBW54tP1rh4fcKO7TXDsMEePuARhg'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2119, 'candidates_token_count': 19, 'total_token_count': 2196, 'cached_content_token_count': 1487, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2338}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1487}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 19}], 'thoughts_token_count': 58}, 'finish_reason': 'STOP', 'avg_logprobs': -0.11597507878353722, 'model_name': 'gemini-2.5-pro'} id='run--a967c717-823f-492e-b1c0-ece38f5fc670-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'test_requests.py'}, 'id': '83725c4c-6e8a-4d06-bb7c-5a8917b22f45', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2119, 'output_tokens': 19, 'total_tokens': 2196, 'input_token_details': {'cache_read': 1487}, 'output_token_details': {'reasoning': 58}}
+2025-12-21 17:29:26,643 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"start_line": 501.0, "end_line": 2000.0, "relative_path": "test_requests.py"}'}, '__gemini_function_call_thought_signatures__': {'19ae41a1-8b11-475e-93d0-ee4cf576170f': 'CqkHAY89a1+WitLIEhmdF9+4SACqGER74bOyKMwnLAPpfdNe1BMlryrt4zCr5c5cPrHMaknAu2jzYWhJyTrGe1bA7gHvBERLgOUGlFXgrwEWoI4CBWwM6HuNcrNDAvZeZ4YdkpyM+NmCzQK09ouSr9Y4PAIJSuugpalssg1jrwOGaSh0iEZDjCnP5L44bto0rbFBcxiq327KxIgrFjRjw4LzhzN9+syRK1sOD6KG3LOkNEm/cmGjmcCMlbJnJ5TCLzk3A6J7xnS3sPZ4rLb8uU/+6h/FPhp6woIVa5N4RiPNwzgaXjJi4wEuZOJJoDamIlGEjXOniWevXVv5hr4WHtEYGBZR1seO0fjJUa1YRXogx8Bn8RaEVbCMw8m9V/cgJ8/7ojqtZFTKyF+HKV39+bng/MS4046ArLroZ/m+5RhAjBUBVtTLuiY8fVwbpLEOpEGpUBSR6nXUjx1+pebTiCVyho94DxXl/GKbQwRtuIb91sc1RWvRfFRm4KkdDYndngGOqCl6wbk5pvznFhEQHK+VkRI7175udxmXkHA9jZ9QaHiUqhNUKrKLDKkynBVidI16T8jNNHuM3agC14NkVP7zFXq+8F27rRwXbzVXH2yY0IU13jKmhuZrUA5sqezwU8h0e7Ec7Kfln45eS3jT984X0z9I4AFmFLid2SKUVurjqwfpMCUudPI8AW0EmraSbinrEKoMT+88sLRbp1OK0cQhO0FAWOybBjD9d/zq8fB/yHSN73X3UzMR+Y57nnrVh/bqNo3EpFUOgJG9PRBmW/dqilvd4PbDMprfJ1CB7dyjeh5tMu3+5SCdkLd89HvAjNa8fgekMdz+U0NyWejGHZuDHeuml6/sw2JQelP5rYUlHd+1bN1hO1Ptyfrh0oZyiP/YODkDcuSnjjGnFXryv+bnQTZHOe5cbYuoaGEuD3TKoh4Mrlw+7X+n1452PNXXu9Lki+AHa8x/hTxpmnc7nZhNliiTlRrwtrHDEqHMl+o6y4ujo0I2dBGjMdPVKjwTOCq3Vn/M+kaeMrw6HvJLKOZYtc4WBxYpjr/VCO3Nv88J8gwbzGUe1yOHwdX6efVMNlyA1cQPJ8hmSiBXkjjissH3tD6JadxVQ/6wfAx0S+4TzrwEkJiUaL6KOdNjj3C35Aug+Rl6CkrAW/+Jh3Hp3GkeEkNqicY1OeVqZR/Mn4b5ga0/s2CD1z9Uyy64WI6Qlodf3rpMF8/GRmoMs20/16lt0y7fyYRq7o4tdA=='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 10245, 'candidates_token_count': 25, 'total_token_count': 10535, 'cached_content_token_count': 1822, 'prompt_tokens_details': [{'modality': 1, 'token_count': 10522}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1822}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 25}], 'thoughts_token_count': 265}, 'finish_reason': 'STOP', 'avg_logprobs': -0.5572128677368164, 'model_name': 'gemini-2.5-pro'} id='run--9ca02216-20b6-45f2-b973-9551eb59fe4a-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'start_line': 501.0, 'end_line': 2000.0, 'relative_path': 'test_requests.py'}, 'id': '19ae41a1-8b11-475e-93d0-ee4cf576170f', 'type': 'tool_call'}] usage_metadata={'input_tokens': 10245, 'output_tokens': 25, 'total_tokens': 10535, 'input_token_details': {'cache_read': 1822}, 'output_token_details': {'reasoning': 265}}
+2025-12-21 17:29:29,384 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have successfully retrieved the entire content of the `test_requests.py` file. The file contains a comprehensive suite of tests for the Requests library, covering functionalities such as making HTTP requests, handling redirects, managing cookies, and authentication. I can now use this content to identify specific test cases relevant to your query about session headers.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 21617, 'candidates_token_count': 67, 'total_token_count': 21769, 'cached_content_token_count': 9350, 'prompt_tokens_details': [{'modality': 1, 'token_count': 22159}], 'cache_tokens_details': [{'modality': 1, 'token_count': 9350}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 67}], 'thoughts_token_count': 85}, 'finish_reason': 'STOP', 'avg_logprobs': -0.17871045354586929, 'model_name': 'gemini-2.5-pro'} id='run--f8099a06-4f6c-4599-8d9f-1b133279e95b-0' usage_metadata={'input_tokens': 21617, 'output_tokens': 67, 'total_tokens': 21769, 'input_token_details': {'cache_read': 9350}, 'output_token_details': {'reasoning': 85}}
+2025-12-21 17:29:29,386 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `test_requests.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the content of `test_requests.py` to identify test cases related to session headers and find the ones most relevant to the user's query.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: test_requests.py
+Line number range: 1 - 500
+Content:
+1. #!/usr/bin/env python
+2. # -*- coding: utf-8 -*-
+3. 
+4. """Tests for Requests."""
+5. 
+6. from __future__ import division
+7. import json
+8. import os
+9. import pickle
+10. import unittest
+11. 
+12. import requests
+13. import pytest
+14. from requests.adapters import HTTPAdapter
+15. from requests.auth import HTTPDigestAuth
+16. from requests.compat import (
+17.     Morsel, cookielib, getproxies, str, urljoin, urlparse)
+18. from requests.cookies import cookiejar_from_dict, morsel_to_cookie
+19. from requests.exceptions import InvalidURL, MissingSchema
+20. from requests.structures import CaseInsensitiveDict
+21. 
+22. try:
+23.     import StringIO
+24. except ImportError:
+25.     import io as StringIO
+26. 
+27. HTTPBIN = os.environ.get('HTTPBIN_URL', 'http://httpbin.org/')
+28. # Issue #1483: Make sure the URL always has a trailing slash
+29. HTTPBIN = HTTPBIN.rstrip('/') + '/'
+30. 
+31. 
+32. def httpbin(*suffix):
+33.     """Returns url for HTTPBIN resource."""
+34.     return urljoin(HTTPBIN, '/'.join(suffix))
+35. 
+36. 
+37. class RequestsTestCase(unittest.TestCase):
+38. 
+39.     _multiprocess_can_split_ = True
+40. 
+41.     def setUp(self):
+42.         """Create simple data set with headers."""
+43.         pass
+44. 
+45.     def tearDown(self):
+46.         """Teardown."""
+47.         pass
+48. 
+49.     def test_entry_points(self):
+50. 
+51.         requests.session
+52.         requests.session().get
+53.         requests.session().head
+54.         requests.get
+55.         requests.head
+56.         requests.put
+57.         requests.patch
+58.         requests.post
+59. 
+60.     def test_invalid_url(self):
+61.         with pytest.raises(MissingSchema):
+62.             requests.get('hiwpefhipowhefopw')
+63.         with pytest.raises(InvalidURL):
+64.             requests.get('http://')
+65. 
+66.     def test_basic_building(self):
+67.         req = requests.Request()
+68.         req.url = 'http://kennethreitz.org/'
+69.         req.data = {'life': '42'}
+70. 
+71.         pr = req.prepare()
+72.         assert pr.url == req.url
+73.         assert pr.body == 'life=42'
+74. 
+75.     def test_no_content_length(self):
+76.         get_req = requests.Request('GET', httpbin('get')).prepare()
+77.         assert 'Content-Length' not in get_req.headers
+78.         head_req = requests.Request('HEAD', httpbin('head')).prepare()
+79.         assert 'Content-Length' not in head_req.headers
+80. 
+81.     def test_path_is_not_double_encoded(self):
+82.         request = requests.Request('GET', "http://0.0.0.0/get/test case").prepare()
+83. 
+84.         assert request.path_url == '/get/test%20case'
+85. 
+86.     def test_params_are_added_before_fragment(self):
+87.         request = requests.Request('GET',
+88.             "http://example.com/path#fragment", params={"a": "b"}).prepare()
+89.         assert request.url == "http://example.com/path?a=b#fragment"
+90.         request = requests.Request('GET',
+91.             "http://example.com/path?key=value#fragment", params={"a": "b"}).prepare()
+92.         assert request.url == "http://example.com/path?key=value&a=b#fragment"
+93. 
+94.     def test_mixed_case_scheme_acceptable(self):
+95.         s = requests.Session()
+96.         s.proxies = getproxies()
+97.         parts = urlparse(httpbin('get'))
+98.         schemes = ['http://', 'HTTP://', 'hTTp://', 'HttP://',
+99.                    'https://', 'HTTPS://', 'hTTps://', 'HttPs://']
+100.         for scheme in schemes:
+101.             url = scheme + parts.netloc + parts.path
+102.             r = requests.Request('GET', url)
+103.             r = s.send(r.prepare())
+104.             assert r.status_code == 200, 'failed for scheme {0}'.format(scheme)
+105. 
+106.     def test_HTTP_200_OK_GET_ALTERNATIVE(self):
+107.         r = requests.Request('GET', httpbin('get'))
+108.         s = requests.Session()
+109.         s.proxies = getproxies()
+110. 
+111.         r = s.send(r.prepare())
+112. 
+113.         assert r.status_code == 200
+114. 
+115.     def test_HTTP_302_ALLOW_REDIRECT_GET(self):
+116.         r = requests.get(httpbin('redirect', '1'))
+117.         assert r.status_code == 200
+118.         assert r.history[0].status_code == 302
+119.         assert r.history[0].is_redirect
+120. 
+121.     # def test_HTTP_302_ALLOW_REDIRECT_POST(self):
+122.     #     r = requests.post(httpbin('status', '302'), data={'some': 'data'})
+123.     #     self.assertEqual(r.status_code, 200)
+124. 
+125.     def test_HTTP_200_OK_GET_WITH_PARAMS(self):
+126.         heads = {'User-agent': 'Mozilla/5.0'}
+127. 
+128.         r = requests.get(httpbin('user-agent'), headers=heads)
+129. 
+130.         assert heads['User-agent'] in r.text
+131.         assert r.status_code == 200
+132. 
+133.     def test_HTTP_200_OK_GET_WITH_MIXED_PARAMS(self):
+134.         heads = {'User-agent': 'Mozilla/5.0'}
+135. 
+136.         r = requests.get(httpbin('get') + '?test=true', params={'q': 'test'}, headers=heads)
+137.         assert r.status_code == 200
+138. 
+139.     def test_set_cookie_on_301(self):
+140.         s = requests.session()
+141.         url = httpbin('cookies/set?foo=bar')
+142.         r = s.get(url)
+143.         assert s.cookies['foo'] == 'bar'
+144. 
+145.     def test_cookie_sent_on_redirect(self):
+146.         s = requests.session()
+147.         s.get(httpbin('cookies/set?foo=bar'))
+148.         r = s.get(httpbin('redirect/1'))  # redirects to httpbin('get')
+149.         assert 'Cookie' in r.json()['headers']
+150. 
+151.     def test_cookie_removed_on_expire(self):
+152.         s = requests.session()
+153.         s.get(httpbin('cookies/set?foo=bar'))
+154.         assert s.cookies['foo'] == 'bar'
+155.         s.get(
+156.             httpbin('response-headers'),
+157.             params={
+158.                 'Set-Cookie':
+159.                     'foo=deleted; expires=Thu, 01-Jan-1970 00:00:01 GMT'
+160.             }
+161.         )
+162.         assert 'foo' not in s.cookies
+163. 
+164.     def test_cookie_quote_wrapped(self):
+165.         s = requests.session()
+166.         s.get(httpbin('cookies/set?foo="bar:baz"'))
+167.         assert s.cookies['foo'] == '"bar:baz"'
+168. 
+169.     def test_cookie_persists_via_api(self):
+170.         s = requests.session()
+171.         r = s.get(httpbin('redirect/1'), cookies={'foo': 'bar'})
+172.         assert 'foo' in r.request.headers['Cookie']
+173.         assert 'foo' in r.history[0].request.headers['Cookie']
+174. 
+175.     def test_request_cookie_overrides_session_cookie(self):
+176.         s = requests.session()
+177.         s.cookies['foo'] = 'bar'
+178.         r = s.get(httpbin('cookies'), cookies={'foo': 'baz'})
+179.         assert r.json()['cookies']['foo'] == 'baz'
+180.         # Session cookie should not be modified
+181.         assert s.cookies['foo'] == 'bar'
+182. 
+183.     def test_request_cookies_not_persisted(self):
+184.         s = requests.session()
+185.         s.get(httpbin('cookies'), cookies={'foo': 'baz'})
+186.         # Sending a request with cookies should not add cookies to the session
+187.         assert not s.cookies
+188. 
+189.     def test_generic_cookiejar_works(self):
+190.         cj = cookielib.CookieJar()
+191.         cookiejar_from_dict({'foo': 'bar'}, cj)
+192.         s = requests.session()
+193.         s.cookies = cj
+194.         r = s.get(httpbin('cookies'))
+195.         # Make sure the cookie was sent
+196.         assert r.json()['cookies']['foo'] == 'bar'
+197.         # Make sure the session cj is still the custom one
+198.         assert s.cookies is cj
+199. 
+200.     def test_param_cookiejar_works(self):
+201.         cj = cookielib.CookieJar()
+202.         cookiejar_from_dict({'foo' : 'bar'}, cj)
+203.         s = requests.session()
+204.         r = s.get(httpbin('cookies'), cookies=cj)
+205.         # Make sure the cookie was sent
+206.         assert r.json()['cookies']['foo'] == 'bar'
+207. 
+208.     def test_requests_in_history_are_not_overridden(self):
+209.         resp = requests.get(httpbin('redirect/3'))
+210.         urls = [r.url for r in resp.history]
+211.         req_urls = [r.request.url for r in resp.history]
+212.         assert urls == req_urls
+213. 
+214.     def test_user_agent_transfers(self):
+215. 
+216.         heads = {
+217.             'User-agent': 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+218.         }
+219. 
+220.         r = requests.get(httpbin('user-agent'), headers=heads)
+221.         assert heads['User-agent'] in r.text
+222. 
+223.         heads = {
+224.             'user-agent': 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+225.         }
+226. 
+227.         r = requests.get(httpbin('user-agent'), headers=heads)
+228.         assert heads['user-agent'] in r.text
+229. 
+230.     def test_HTTP_200_OK_HEAD(self):
+231.         r = requests.head(httpbin('get'))
+232.         assert r.status_code == 200
+233. 
+234.     def test_HTTP_200_OK_PUT(self):
+235.         r = requests.put(httpbin('put'))
+236.         assert r.status_code == 200
+237. 
+238.     def test_BASICAUTH_TUPLE_HTTP_200_OK_GET(self):
+239.         auth = ('user', 'pass')
+240.         url = httpbin('basic-auth', 'user', 'pass')
+241. 
+242.         r = requests.get(url, auth=auth)
+243.         assert r.status_code == 200
+244. 
+245.         r = requests.get(url)
+246.         assert r.status_code == 401
+247. 
+248.         s = requests.session()
+249.         s.auth = auth
+250.         r = s.get(url)
+251.         assert r.status_code == 200
+252. 
+253.     def test_basicauth_with_netrc(self):
+254.         auth = ('user', 'pass')
+255.         wrong_auth = ('wronguser', 'wrongpass')
+256.         url = httpbin('basic-auth', 'user', 'pass')
+257. 
+258.         def get_netrc_auth_mock(url):
+259.             return auth
+260.         requests.sessions.get_netrc_auth = get_netrc_auth_mock
+261. 
+262.         # Should use netrc and work.
+263.         r = requests.get(url)
+264.         assert r.status_code == 200
+265. 
+266.         # Given auth should override and fail.
+267.         r = requests.get(url, auth=wrong_auth)
+268.         assert r.status_code == 401
+269. 
+270.         s = requests.session()
+271. 
+272.         # Should use netrc and work.
+273.         r = s.get(url)
+274.         assert r.status_code == 200
+275. 
+276.         # Given auth should override and fail.
+277.         s.auth = wrong_auth
+278.         r = s.get(url)
+279.         assert r.status_code == 401
+280. 
+281.     def test_DIGEST_HTTP_200_OK_GET(self):
+282. 
+283.         auth = HTTPDigestAuth('user', 'pass')
+284.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+285. 
+286.         r = requests.get(url, auth=auth)
+287.         assert r.status_code == 200
+288. 
+289.         r = requests.get(url)
+290.         assert r.status_code == 401
+291. 
+292.         s = requests.session()
+293.         s.auth = HTTPDigestAuth('user', 'pass')
+294.         r = s.get(url)
+295.         assert r.status_code == 200
+296. 
+297.     def test_DIGEST_AUTH_RETURNS_COOKIE(self):
+298.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+299.         auth = HTTPDigestAuth('user', 'pass')
+300.         r = requests.get(url)
+301.         assert r.cookies['fake'] == 'fake_value'
+302. 
+303.         r = requests.get(url, auth=auth)
+304.         assert r.status_code == 200
+305. 
+306.     def test_DIGEST_AUTH_SETS_SESSION_COOKIES(self):
+307.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+308.         auth = HTTPDigestAuth('user', 'pass')
+309.         s = requests.Session()
+310.         s.get(url, auth=auth)
+311.         assert s.cookies['fake'] == 'fake_value'
+312. 
+313.     def test_DIGEST_STREAM(self):
+314. 
+315.         auth = HTTPDigestAuth('user', 'pass')
+316.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+317. 
+318.         r = requests.get(url, auth=auth, stream=True)
+319.         assert r.raw.read() != b''
+320. 
+321.         r = requests.get(url, auth=auth, stream=False)
+322.         assert r.raw.read() == b''
+323. 
+324.     def test_DIGESTAUTH_WRONG_HTTP_401_GET(self):
+325. 
+326.         auth = HTTPDigestAuth('user', 'wrongpass')
+327.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+328. 
+329.         r = requests.get(url, auth=auth)
+330.         assert r.status_code == 401
+331. 
+332.         r = requests.get(url)
+333.         assert r.status_code == 401
+334. 
+335.         s = requests.session()
+336.         s.auth = auth
+337.         r = s.get(url)
+338.         assert r.status_code == 401
+339. 
+340.     def test_DIGESTAUTH_QUOTES_QOP_VALUE(self):
+341. 
+342.         auth = HTTPDigestAuth('user', 'pass')
+343.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+344. 
+345.         r = requests.get(url, auth=auth)
+346.         assert '"auth"' in r.request.headers['Authorization']
+347. 
+348.     def test_POSTBIN_GET_POST_FILES(self):
+349. 
+350.         url = httpbin('post')
+351.         post1 = requests.post(url).raise_for_status()
+352. 
+353.         post1 = requests.post(url, data={'some': 'data'})
+354.         assert post1.status_code == 200
+355. 
+356.         with open('requirements.txt') as f:
+357.             post2 = requests.post(url, files={'some': f})
+358.         assert post2.status_code == 200
+359. 
+360.         post4 = requests.post(url, data='[{"some": "json"}]')
+361.         assert post4.status_code == 200
+362. 
+363.         with pytest.raises(ValueError):
+364.             requests.post(url, files = ['bad file data'])
+365. 
+366.     def test_POSTBIN_GET_POST_FILES_WITH_DATA(self):
+367. 
+368.         url = httpbin('post')
+369.         post1 = requests.post(url).raise_for_status()
+370. 
+371.         post1 = requests.post(url, data={'some': 'data'})
+372.         assert post1.status_code == 200
+373. 
+374.         with open('requirements.txt') as f:
+375.             post2 = requests.post(url, data={'some': 'data'}, files={'some': f})
+376.         assert post2.status_code == 200
+377. 
+378.         post4 = requests.post(url, data='[{"some": "json"}]')
+379.         assert post4.status_code == 200
+380. 
+381.         with pytest.raises(ValueError):
+382.             requests.post(url, files = ['bad file data'])
+383. 
+384.     def test_conflicting_post_params(self):
+385.         url = httpbin('post')
+386.         with open('requirements.txt') as f:
+387.             pytest.raises(ValueError, "requests.post(url, data='[{\"some\": \"data\"}]', files={'some': f})")
+388.             pytest.raises(ValueError, "requests.post(url, data=u'[{\"some\": \"data\"}]', files={'some': f})")
+389. 
+390.     def test_request_ok_set(self):
+391.         r = requests.get(httpbin('status', '404'))
+392.         assert not r.ok
+393. 
+394.     def test_status_raising(self):
+395.         r = requests.get(httpbin('status', '404'))
+396.         with pytest.raises(requests.exceptions.HTTPError):
+397.             r.raise_for_status()
+398. 
+399.         r = requests.get(httpbin('status', '500'))
+400.         assert not r.ok
+401. 
+402.     def test_decompress_gzip(self):
+403.         r = requests.get(httpbin('gzip'))
+404.         r.content.decode('ascii')
+405. 
+406.     def test_unicode_get(self):
+407.         url = httpbin('/get')
+408.         requests.get(url, params={'foo': 'føø'})
+409.         requests.get(url, params={'føø': 'føø'})
+410.         requests.get(url, params={'føø': 'føø'})
+411.         requests.get(url, params={'foo': 'foo'})
+412.         requests.get(httpbin('ø'), params={'foo': 'foo'})
+413. 
+414.     def test_unicode_header_name(self):
+415.         requests.put(httpbin('put'), headers={str('Content-Type'): 'application/octet-stream'}, data='\xff') # compat.str is unicode.
+416. 
+417.     def test_pyopenssl_redirect(self):
+418.         requests.get('https://httpbin.org/status/301')
+419. 
+420.     def test_urlencoded_get_query_multivalued_param(self):
+421. 
+422.         r = requests.get(httpbin('get'), params=dict(test=['foo', 'baz']))
+423.         assert r.status_code == 200
+424.         assert r.url == httpbin('get?test=foo&test=baz')
+425. 
+426.     def test_different_encodings_dont_break_post(self):
+427.         r = requests.post(httpbin('post'),
+428.                           data={'stuff': json.dumps({'a': 123})},
+429.                           params={'blah': 'asdf1234'},
+430.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+431.         assert r.status_code == 200
+432. 
+433.     def test_unicode_multipart_post(self):
+434.         r = requests.post(httpbin('post'),
+435.                           data={'stuff': u'ëlïxr'},
+436.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+437.         assert r.status_code == 200
+438. 
+439.         r = requests.post(httpbin('post'),
+440.                           data={'stuff': u'ëlïxr'.encode('utf-8')},
+441.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+442.         assert r.status_code == 200
+443. 
+444.         r = requests.post(httpbin('post'),
+445.                           data={'stuff': 'elixr'},
+446.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+447.         assert r.status_code == 200
+448. 
+449.         r = requests.post(httpbin('post'),
+450.                           data={'stuff': 'elixr'.encode('utf-8')},
+451.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+452.         assert r.status_code == 200
+453. 
+454.     def test_unicode_multipart_post_fieldnames(self):
+455.         filename = os.path.splitext(__file__)[0] + '.py'
+456.         r = requests.Request(method='POST',
+457.                              url=httpbin('post'),
+458.                              data={'stuff'.encode('utf-8'): 'elixr'},
+459.                              files={'file': ('test_requests.py',
+460.                                              open(filename, 'rb'))})
+461.         prep = r.prepare()
+462.         assert b'name="stuff"' in prep.body
+463.         assert b'name="b\'stuff\'"' not in prep.body
+464. 
+465.     def test_unicode_method_name(self):
+466.         files = {'file': open('test_requests.py', 'rb')}
+467.         r = requests.request(method=u'POST', url=httpbin('post'), files=files)
+468.         assert r.status_code == 200
+469. 
+470.     def test_custom_content_type(self):
+471.         r = requests.post(httpbin('post'),
+472.                           data={'stuff': json.dumps({'a': 123})},
+473.                           files={'file1': ('test_requests.py', open(__file__, 'rb')),
+474.                                  'file2': ('test_requests', open(__file__, 'rb'),
+475.                                            'text/py-content-type')})
+476.         assert r.status_code == 200
+477.         assert b"text/py-content-type" in r.request.body
+478. 
+479.     def test_hook_receives_request_arguments(self):
+480.         def hook(resp, **kwargs):
+481.             assert resp is not None
+482.             assert kwargs != {}
+483. 
+484.         requests.Request('GET', HTTPBIN, hooks={'response': hook})
+485. 
+486.     def test_session_hooks_are_used_with_no_request_hooks(self):
+487.         hook = lambda x, *args, **kwargs: x
+488.         s = requests.Session()
+489.         s.hooks['response'].append(hook)
+490.         r = requests.Request('GET', HTTPBIN)
+491.         prep = s.prepare_request(r)
+492.         assert prep.hooks['response'] != []
+493.         assert prep.hooks['response'] == [hook]
+494. 
+495.     def test_session_hooks_are_overriden_by_request_hooks(self):
+496.         hook1 = lambda x, *args, **kwargs: x
+497.         hook2 = lambda x, *args, **kwargs: x
+498.         assert hook1 is not hook2
+499.         s = requests.Session()
+500.         s.hooks['response'].append(hook2)
+
+
+File: test_requests.py
+Line number range: 501 - 2000
+Content:
+501.         r = requests.Request('GET', HTTPBIN, hooks={'response': [hook1]})
+502.         prep = s.prepare_request(r)
+503.         assert prep.hooks['response'] == [hook1]
+504. 
+505.     def test_prepared_request_hook(self):
+506.         def hook(resp, **kwargs):
+507.             resp.hook_working = True
+508.             return resp
+509. 
+510.         req = requests.Request('GET', HTTPBIN, hooks={'response': hook})
+511.         prep = req.prepare()
+512. 
+513.         s = requests.Session()
+514.         s.proxies = getproxies()
+515.         resp = s.send(prep)
+516. 
+517.         assert hasattr(resp, 'hook_working')
+518. 
+519.     def test_prepared_from_session(self):
+520.         class DummyAuth(requests.auth.AuthBase):
+521.             def __call__(self, r):
+522.                 r.headers['Dummy-Auth-Test'] = 'dummy-auth-test-ok'
+523.                 return r
+524. 
+525.         req = requests.Request('GET', httpbin('headers'))
+526.         assert not req.auth
+527. 
+528.         s = requests.Session()
+529.         s.auth = DummyAuth()
+530. 
+531.         prep = s.prepare_request(req)
+532.         resp = s.send(prep)
+533. 
+534.         assert resp.json()['headers']['Dummy-Auth-Test'] == 'dummy-auth-test-ok'
+535. 
+536.     def test_links(self):
+537.         r = requests.Response()
+538.         r.headers = {
+539.             'cache-control': 'public, max-age=60, s-maxage=60',
+540.             'connection': 'keep-alive',
+541.             'content-encoding': 'gzip',
+542.             'content-type': 'application/json; charset=utf-8',
+543.             'date': 'Sat, 26 Jan 2013 16:47:56 GMT',
+544.             'etag': '"6ff6a73c0e446c1f61614769e3ceb778"',
+545.             'last-modified': 'Sat, 26 Jan 2013 16:22:39 GMT',
+546.             'link': ('<https://api.github.com/users/kennethreitz/repos?'
+547.                      'page=2&per_page=10>; rel="next", <https://api.github.'
+548.                      'com/users/kennethreitz/repos?page=7&per_page=10>; '
+549.                      ' rel="last"'),
+550.             'server': 'GitHub.com',
+551.             'status': '200 OK',
+552.             'vary': 'Accept',
+553.             'x-content-type-options': 'nosniff',
+554.             'x-github-media-type': 'github.beta',
+555.             'x-ratelimit-limit': '60',
+556.             'x-ratelimit-remaining': '57'
+557.         }
+558.         assert r.links['next']['rel'] == 'next'
+559. 
+560.     def test_cookie_parameters(self):
+561.         key = 'some_cookie'
+562.         value = 'some_value'
+563.         secure = True
+564.         domain = 'test.com'
+565.         rest = {'HttpOnly': True}
+566. 
+567.         jar = requests.cookies.RequestsCookieJar()
+568.         jar.set(key, value, secure=secure, domain=domain, rest=rest)
+569. 
+570.         assert len(jar) == 1
+571.         assert 'some_cookie' in jar
+572. 
+573.         cookie = list(jar)[0]
+574.         assert cookie.secure == secure
+575.         assert cookie.domain == domain
+576.         assert cookie._rest['HttpOnly'] == rest['HttpOnly']
+577. 
+578.     def test_cookie_as_dict_keeps_len(self):
+579.         key = 'some_cookie'
+580.         value = 'some_value'
+581. 
+582.         key1 = 'some_cookie1'
+583.         value1 = 'some_value1'
+584. 
+585.         jar = requests.cookies.RequestsCookieJar()
+586.         jar.set(key, value)
+587.         jar.set(key1, value1)
+588. 
+589.         d1 = dict(jar)
+590.         d2 = dict(jar.iteritems())
+591.         d3 = dict(jar.items())
+592. 
+593.         assert len(jar) == 2
+594.         assert len(d1) == 2
+595.         assert len(d2) == 2
+596.         assert len(d3) == 2
+597. 
+598.     def test_cookie_as_dict_keeps_items(self):
+599.         key = 'some_cookie'
+600.         value = 'some_value'
+601. 
+602.         key1 = 'some_cookie1'
+603.         value1 = 'some_value1'
+604. 
+605.         jar = requests.cookies.RequestsCookieJar()
+606.         jar.set(key, value)
+607.         jar.set(key1, value1)
+608. 
+609.         d1 = dict(jar)
+610.         d2 = dict(jar.iteritems())
+611.         d3 = dict(jar.items())
+612. 
+613.         assert d1['some_cookie'] == 'some_value'
+614.         assert d2['some_cookie'] == 'some_value'
+615.         assert d3['some_cookie1'] == 'some_value1'
+616. 
+617.     def test_cookie_as_dict_keys(self):
+618.         key = 'some_cookie'
+619.         value = 'some_value'
+620. 
+621.         key1 = 'some_cookie1'
+622.         value1 = 'some_value1'
+623. 
+624.         jar = requests.cookies.RequestsCookieJar()
+625.         jar.set(key, value)
+626.         jar.set(key1, value1)
+627. 
+628.         keys = jar.keys()
+629.         assert keys == list(keys)
+630.         # make sure one can use keys multiple times
+631.         assert list(keys) == list(keys)
+632. 
+633.     def test_cookie_as_dict_values(self):
+634.         key = 'some_cookie'
+635.         value = 'some_value'
+636. 
+637.         key1 = 'some_cookie1'
+638.         value1 = 'some_value1'
+639. 
+640.         jar = requests.cookies.RequestsCookieJar()
+641.         jar.set(key, value)
+642.         jar.set(key1, value1)
+643. 
+644.         values = jar.values()
+645.         assert values == list(values)
+646.         # make sure one can use values multiple times
+647.         assert list(values) == list(values)
+648. 
+649.     def test_cookie_as_dict_items(self):
+650.         key = 'some_cookie'
+651.         value = 'some_value'
+652. 
+653.         key1 = 'some_cookie1'
+654.         value1 = 'some_value1'
+655. 
+656.         jar = requests.cookies.RequestsCookieJar()
+657.         jar.set(key, value)
+658.         jar.set(key1, value1)
+659. 
+660.         items = jar.items()
+661.         assert items == list(items)
+662.         # make sure one can use items multiple times
+663.         assert list(items) == list(items)
+664. 
+665. 
+666.     def test_time_elapsed_blank(self):
+667.         r = requests.get(httpbin('get'))
+668.         td = r.elapsed
+669.         total_seconds = ((td.microseconds + (td.seconds + td.days * 24 * 3600)
+670.                          * 10**6) / 10**6)
+671.         assert total_seconds > 0.0
+672. 
+673.     def test_response_is_iterable(self):
+674.         r = requests.Response()
+675.         io = StringIO.StringIO('abc')
+676.         read_ = io.read
+677. 
+678.         def read_mock(amt, decode_content=None):
+679.             return read_(amt)
+680.         setattr(io, 'read', read_mock)
+681.         r.raw = io
+682.         assert next(iter(r))
+683.         io.close()
+684. 
+685.     def test_request_and_response_are_pickleable(self):
+686.         r = requests.get(httpbin('get'))
+687. 
+688.         # verify we can pickle the original request
+689.         assert pickle.loads(pickle.dumps(r.request))
+690. 
+691.         # verify we can pickle the response and that we have access to
+692.         # the original request.
+693.         pr = pickle.loads(pickle.dumps(r))
+694.         assert r.request.url == pr.request.url
+695.         assert r.request.headers == pr.request.headers
+696. 
+697.     def test_get_auth_from_url(self):
+698.         url = 'http://user:pass@complex.url.com/path?query=yes'
+699.         assert ('user', 'pass') == requests.utils.get_auth_from_url(url)
+700. 
+701.     def test_get_auth_from_url_encoded_spaces(self):
+702.         url = 'http://user:pass%20pass@complex.url.com/path?query=yes'
+703.         assert ('user', 'pass pass') == requests.utils.get_auth_from_url(url)
+704. 
+705.     def test_get_auth_from_url_not_encoded_spaces(self):
+706.         url = 'http://user:pass pass@complex.url.com/path?query=yes'
+707.         assert ('user', 'pass pass') == requests.utils.get_auth_from_url(url)
+708. 
+709.     def test_get_auth_from_url_percent_chars(self):
+710.         url = 'http://user%25user:pass@complex.url.com/path?query=yes'
+711.         assert ('user%user', 'pass') == requests.utils.get_auth_from_url(url)
+712. 
+713.     def test_get_auth_from_url_encoded_hashes(self):
+714.         url = 'http://user:pass%23pass@complex.url.com/path?query=yes'
+715.         assert ('user', 'pass#pass') == requests.utils.get_auth_from_url(url)
+716. 
+717.     def test_cannot_send_unprepared_requests(self):
+718.         r = requests.Request(url=HTTPBIN)
+719.         with pytest.raises(ValueError):
+720.             requests.Session().send(r)
+721. 
+722.     def test_http_error(self):
+723.         error = requests.exceptions.HTTPError()
+724.         assert not error.response
+725.         response = requests.Response()
+726.         error = requests.exceptions.HTTPError(response=response)
+727.         assert error.response == response
+728.         error = requests.exceptions.HTTPError('message', response=response)
+729.         assert str(error) == 'message'
+730.         assert error.response == response
+731. 
+732.     def test_session_pickling(self):
+733.         r = requests.Request('GET', httpbin('get'))
+734.         s = requests.Session()
+735. 
+736.         s = pickle.loads(pickle.dumps(s))
+737.         s.proxies = getproxies()
+738. 
+739.         r = s.send(r.prepare())
+740.         assert r.status_code == 200
+741. 
+742.     def test_fixes_1329(self):
+743.         """
+744.         Ensure that header updates are done case-insensitively.
+745.         """
+746.         s = requests.Session()
+747.         s.headers.update({'ACCEPT': 'BOGUS'})
+748.         s.headers.update({'accept': 'application/json'})
+749.         r = s.get(httpbin('get'))
+750.         headers = r.request.headers
+751.         assert headers['accept'] == 'application/json'
+752.         assert headers['Accept'] == 'application/json'
+753.         assert headers['ACCEPT'] == 'application/json'
+754. 
+755.     def test_uppercase_scheme_redirect(self):
+756.         parts = urlparse(httpbin('html'))
+757.         url = "HTTP://" + parts.netloc + parts.path
+758.         r = requests.get(httpbin('redirect-to'), params={'url': url})
+759.         assert r.status_code == 200
+760.         assert r.url.lower() == url.lower()
+761. 
+762.     def test_transport_adapter_ordering(self):
+763.         s = requests.Session()
+764.         order = ['https://', 'http://']
+765.         assert order == list(s.adapters)
+766.         s.mount('http://git', HTTPAdapter())
+767.         s.mount('http://github', HTTPAdapter())
+768.         s.mount('http://github.com', HTTPAdapter())
+769.         s.mount('http://github.com/about/', HTTPAdapter())
+770.         order = [
+771.             'http://github.com/about/',
+772.             'http://github.com',
+773.             'http://github',
+774.             'http://git',
+775.             'https://',
+776.             'http://',
+777.         ]
+778.         assert order == list(s.adapters)
+779.         s.mount('http://gittip', HTTPAdapter())
+780.         s.mount('http://gittip.com', HTTPAdapter())
+781.         s.mount('http://gittip.com/about/', HTTPAdapter())
+782.         order = [
+783.             'http://github.com/about/',
+784.             'http://gittip.com/about/',
+785.             'http://github.com',
+786.             'http://gittip.com',
+787.             'http://github',
+788.             'http://gittip',
+789.             'http://git',
+790.             'https://',
+791.             'http://',
+792.         ]
+793.         assert order == list(s.adapters)
+794.         s2 = requests.Session()
+795.         s2.adapters = {'http://': HTTPAdapter()}
+796.         s2.mount('https://', HTTPAdapter())
+797.         assert 'http://' in s2.adapters
+798.         assert 'https://' in s2.adapters
+799. 
+800.     def test_header_remove_is_case_insensitive(self):
+801.         # From issue #1321
+802.         s = requests.Session()
+803.         s.headers['foo'] = 'bar'
+804.         r = s.get(httpbin('get'), headers={'FOO': None})
+805.         assert 'foo' not in r.request.headers
+806. 
+807.     def test_params_are_merged_case_sensitive(self):
+808.         s = requests.Session()
+809.         s.params['foo'] = 'bar'
+810.         r = s.get(httpbin('get'), params={'FOO': 'bar'})
+811.         assert r.json()['args'] == {'foo': 'bar', 'FOO': 'bar'}
+812. 
+813. 
+814.     def test_long_authinfo_in_url(self):
+815.         url = 'http://{0}:{1}@{2}:9000/path?query#frag'.format(
+816.             'E8A3BE87-9E3F-4620-8858-95478E385B5B',
+817.             'EA770032-DA4D-4D84-8CE9-29C6D910BF1E',
+818.             'exactly-------------sixty-----------three------------characters',
+819.         )
+820.         r = requests.Request('GET', url).prepare()
+821.         assert r.url == url
+822. 
+823.     def test_header_keys_are_native(self):
+824.         headers = {u'unicode': 'blah', 'byte'.encode('ascii'): 'blah'}
+825.         r = requests.Request('GET', httpbin('get'), headers=headers)
+826.         p = r.prepare()
+827. 
+828.         # This is testing that they are builtin strings. A bit weird, but there
+829.         # we go.
+830.         assert 'unicode' in p.headers.keys()
+831.         assert 'byte' in p.headers.keys()
+832. 
+833.     def test_can_send_nonstring_objects_with_files(self):
+834.         data = {'a': 0.0}
+835.         files = {'b': 'foo'}
+836.         r = requests.Request('POST', httpbin('post'), data=data, files=files)
+837.         p = r.prepare()
+838. 
+839.         assert 'multipart/form-data' in p.headers['Content-Type']
+840. 
+841.     def test_autoset_header_values_are_native(self):
+842.         data = 'this is a string'
+843.         length = '16'
+844.         req = requests.Request('POST', httpbin('post'), data=data)
+845.         p = req.prepare()
+846. 
+847.         assert p.headers['Content-Length'] == length
+848. 
+849.     def test_oddball_schemes_dont_check_URLs(self):
+850.         test_urls = (
+851.             'data:image/gif;base64,R0lGODlhAQABAHAAACH5BAUAAAAALAAAAAABAAEAAAICRAEAOw==',
+852.             'file:///etc/passwd',
+853.             'magnet:?xt=urn:btih:be08f00302bc2d1d3cfa3af02024fa647a271431',
+854.         )
+855.         for test_url in test_urls:
+856.             req = requests.Request('GET', test_url)
+857.             preq = req.prepare()
+858.             assert test_url == preq.url
+859. 
+860. 
+861. class TestContentEncodingDetection(unittest.TestCase):
+862. 
+863.     def test_none(self):
+864.         encodings = requests.utils.get_encodings_from_content('')
+865.         assert not len(encodings)
+866. 
+867.     def test_html_charset(self):
+868.         """HTML5 meta charset attribute"""
+869.         content = '<meta charset="UTF-8">'
+870.         encodings = requests.utils.get_encodings_from_content(content)
+871.         assert len(encodings) == 1
+872.         assert encodings[0] == 'UTF-8'
+873. 
+874.     def test_html4_pragma(self):
+875.         """HTML4 pragma directive"""
+876.         content = '<meta http-equiv="Content-type" content="text/html;charset=UTF-8">'
+877.         encodings = requests.utils.get_encodings_from_content(content)
+878.         assert len(encodings) == 1
+879.         assert encodings[0] == 'UTF-8'
+880. 
+881.     def test_xhtml_pragma(self):
+882.         """XHTML 1.x served with text/html MIME type"""
+883.         content = '<meta http-equiv="Content-type" content="text/html;charset=UTF-8" />'
+884.         encodings = requests.utils.get_encodings_from_content(content)
+885.         assert len(encodings) == 1
+886.         assert encodings[0] == 'UTF-8'
+887. 
+888.     def test_xml(self):
+889.         """XHTML 1.x served as XML"""
+890.         content = '<?xml version="1.0" encoding="UTF-8"?>'
+891.         encodings = requests.utils.get_encodings_from_content(content)
+892.         assert len(encodings) == 1
+893.         assert encodings[0] == 'UTF-8'
+894. 
+895.     def test_precedence(self):
+896.         content = '''
+897.         <?xml version="1.0" encoding="XML"?>
+898.         <meta charset="HTML5">
+899.         <meta http-equiv="Content-type" content="text/html;charset=HTML4" />
+900.         '''.strip()
+901.         encodings = requests.utils.get_encodings_from_content(content)
+902.         assert encodings == ['HTML5', 'HTML4', 'XML']
+903. 
+904. 
+905. class TestCaseInsensitiveDict(unittest.TestCase):
+906. 
+907.     def test_mapping_init(self):
+908.         cid = CaseInsensitiveDict({'Foo': 'foo','BAr': 'bar'})
+909.         assert len(cid) == 2
+910.         assert 'foo' in cid
+911.         assert 'bar' in cid
+912. 
+913.     def test_iterable_init(self):
+914.         cid = CaseInsensitiveDict([('Foo', 'foo'), ('BAr', 'bar')])
+915.         assert len(cid) == 2
+916.         assert 'foo' in cid
+917.         assert 'bar' in cid
+918. 
+919.     def test_kwargs_init(self):
+920.         cid = CaseInsensitiveDict(FOO='foo', BAr='bar')
+921.         assert len(cid) == 2
+922.         assert 'foo' in cid
+923.         assert 'bar' in cid
+924. 
+925.     def test_docstring_example(self):
+926.         cid = CaseInsensitiveDict()
+927.         cid['Accept'] = 'application/json'
+928.         assert cid['aCCEPT'] == 'application/json'
+929.         assert list(cid) == ['Accept']
+930. 
+931.     def test_len(self):
+932.         cid = CaseInsensitiveDict({'a': 'a', 'b': 'b'})
+933.         cid['A'] = 'a'
+934.         assert len(cid) == 2
+935. 
+936.     def test_getitem(self):
+937.         cid = CaseInsensitiveDict({'Spam': 'blueval'})
+938.         assert cid['spam'] == 'blueval'
+939.         assert cid['SPAM'] == 'blueval'
+940. 
+941.     def test_fixes_649(self):
+942.         """__setitem__ should behave case-insensitively."""
+943.         cid = CaseInsensitiveDict()
+944.         cid['spam'] = 'oneval'
+945.         cid['Spam'] = 'twoval'
+946.         cid['sPAM'] = 'redval'
+947.         cid['SPAM'] = 'blueval'
+948.         assert cid['spam'] == 'blueval'
+949.         assert cid['SPAM'] == 'blueval'
+950.         assert list(cid.keys()) == ['SPAM']
+951. 
+952.     def test_delitem(self):
+953.         cid = CaseInsensitiveDict()
+954.         cid['Spam'] = 'someval'
+955.         del cid['sPam']
+956.         assert 'spam' not in cid
+957.         assert len(cid) == 0
+958. 
+959.     def test_contains(self):
+960.         cid = CaseInsensitiveDict()
+961.         cid['Spam'] = 'someval'
+962.         assert 'Spam' in cid
+963.         assert 'spam' in cid
+964.         assert 'SPAM' in cid
+965.         assert 'sPam' in cid
+966.         assert 'notspam' not in cid
+967. 
+968.     def test_get(self):
+969.         cid = CaseInsensitiveDict()
+970.         cid['spam'] = 'oneval'
+971.         cid['SPAM'] = 'blueval'
+972.         assert cid.get('spam') == 'blueval'
+973.         assert cid.get('SPAM') == 'blueval'
+974.         assert cid.get('sPam') == 'blueval'
+975.         assert cid.get('notspam', 'default') == 'default'
+976. 
+977.     def test_update(self):
+978.         cid = CaseInsensitiveDict()
+979.         cid['spam'] = 'blueval'
+980.         cid.update({'sPam': 'notblueval'})
+981.         assert cid['spam'] == 'notblueval'
+982.         cid = CaseInsensitiveDict({'Foo': 'foo','BAr': 'bar'})
+983.         cid.update({'fOO': 'anotherfoo', 'bAR': 'anotherbar'})
+984.         assert len(cid) == 2
+985.         assert cid['foo'] == 'anotherfoo'
+986.         assert cid['bar'] == 'anotherbar'
+987. 
+988.     def test_update_retains_unchanged(self):
+989.         cid = CaseInsensitiveDict({'foo': 'foo', 'bar': 'bar'})
+990.         cid.update({'foo': 'newfoo'})
+991.         assert cid['bar'] == 'bar'
+992. 
+993.     def test_iter(self):
+994.         cid = CaseInsensitiveDict({'Spam': 'spam', 'Eggs': 'eggs'})
+995.         keys = frozenset(['Spam', 'Eggs'])
+996.         assert frozenset(iter(cid)) == keys
+997. 
+998.     def test_equality(self):
+999.         cid = CaseInsensitiveDict({'SPAM': 'blueval', 'Eggs': 'redval'})
+1000.         othercid = CaseInsensitiveDict({'spam': 'blueval', 'eggs': 'redval'})
+1001.         assert cid == othercid
+1002.         del othercid['spam']
+1003.         assert cid != othercid
+1004.         assert cid == {'spam': 'blueval', 'eggs': 'redval'}
+1005. 
+1006.     def test_setdefault(self):
+1007.         cid = CaseInsensitiveDict({'Spam': 'blueval'})
+1008.         assert cid.setdefault('spam', 'notblueval') == 'blueval'
+1009.         assert cid.setdefault('notspam', 'notblueval') == 'notblueval'
+1010. 
+1011.     def test_lower_items(self):
+1012.         cid = CaseInsensitiveDict({
+1013.             'Accept': 'application/json',
+1014.             'user-Agent': 'requests',
+1015.         })
+1016.         keyset = frozenset(lowerkey for lowerkey, v in cid.lower_items())
+1017.         lowerkeyset = frozenset(['accept', 'user-agent'])
+1018.         assert keyset == lowerkeyset
+1019. 
+1020.     def test_preserve_key_case(self):
+1021.         cid = CaseInsensitiveDict({
+1022.             'Accept': 'application/json',
+1023.             'user-Agent': 'requests',
+1024.         })
+1025.         keyset = frozenset(['Accept', 'user-Agent'])
+1026.         assert frozenset(i[0] for i in cid.items()) == keyset
+1027.         assert frozenset(cid.keys()) == keyset
+1028.         assert frozenset(cid) == keyset
+1029. 
+1030.     def test_preserve_last_key_case(self):
+1031.         cid = CaseInsensitiveDict({
+1032.             'Accept': 'application/json',
+1033.             'user-Agent': 'requests',
+1034.         })
+1035.         cid.update({'ACCEPT': 'application/json'})
+1036.         cid['USER-AGENT'] = 'requests'
+1037.         keyset = frozenset(['ACCEPT', 'USER-AGENT'])
+1038.         assert frozenset(i[0] for i in cid.items()) == keyset
+1039.         assert frozenset(cid.keys()) == keyset
+1040.         assert frozenset(cid) == keyset
+1041. 
+1042. 
+1043. class UtilsTestCase(unittest.TestCase):
+1044. 
+1045.     def test_super_len_io_streams(self):
+1046.         """ Ensures that we properly deal with different kinds of IO streams. """
+1047.         # uses StringIO or io.StringIO (see import above)
+1048.         from io import BytesIO
+1049.         from requests.utils import super_len
+1050. 
+1051.         assert super_len(StringIO.StringIO()) == 0
+1052.         assert super_len(StringIO.StringIO('with so much drama in the LBC')) == 29
+1053. 
+1054.         assert super_len(BytesIO()) == 0
+1055.         assert super_len(BytesIO(b"it's kinda hard bein' snoop d-o-double-g")) == 40
+1056. 
+1057.         try:
+1058.             import cStringIO
+1059.         except ImportError:
+1060.             pass
+1061.         else:
+1062.             assert super_len(cStringIO.StringIO('but some how, some way...')) == 25
+1063. 
+1064.     def test_get_environ_proxies_ip_ranges(self):
+1065.         """ Ensures that IP addresses are correctly matches with ranges in no_proxy variable """
+1066.         from requests.utils import get_environ_proxies
+1067.         os.environ['no_proxy'] = "192.168.0.0/24,127.0.0.1,localhost.localdomain,172.16.1.1"
+1068.         assert get_environ_proxies('http://192.168.0.1:5000/') == {}
+1069.         assert get_environ_proxies('http://192.168.0.1/') == {}
+1070.         assert get_environ_proxies('http://172.16.1.1/') == {}
+1071.         assert get_environ_proxies('http://172.16.1.1:5000/') == {}
+1072.         assert get_environ_proxies('http://192.168.1.1:5000/') != {}
+1073.         assert get_environ_proxies('http://192.168.1.1/') != {}
+1074. 
+1075.     def test_get_environ_proxies(self):
+1076.         """ Ensures that IP addresses are correctly matches with ranges in no_proxy variable """
+1077.         from requests.utils import get_environ_proxies
+1078.         os.environ['no_proxy'] = "127.0.0.1,localhost.localdomain,192.168.0.0/24,172.16.1.1"
+1079.         assert get_environ_proxies('http://localhost.localdomain:5000/v1.0/') == {}
+1080.         assert get_environ_proxies('http://www.requests.com/') != {}
+1081. 
+1082.     def test_is_ipv4_address(self):
+1083.         from requests.utils import is_ipv4_address
+1084.         assert is_ipv4_address('8.8.8.8')
+1085.         assert not is_ipv4_address('8.8.8.8.8')
+1086.         assert not is_ipv4_address('localhost.localdomain')
+1087. 
+1088.     def test_is_valid_cidr(self):
+1089.         from requests.utils import is_valid_cidr
+1090.         assert not is_valid_cidr('8.8.8.8')
+1091.         assert is_valid_cidr('192.168.1.0/24')
+1092. 
+1093.     def test_dotted_netmask(self):
+1094.         from requests.utils import dotted_netmask
+1095.         assert dotted_netmask(8) == '255.0.0.0'
+1096.         assert dotted_netmask(24) == '255.255.255.0'
+1097.         assert dotted_netmask(25) == '255.255.255.128'
+1098. 
+1099.     def test_address_in_network(self):
+1100.         from requests.utils import address_in_network
+1101.         assert address_in_network('192.168.1.1', '192.168.1.0/24')
+1102.         assert not address_in_network('172.16.0.1', '192.168.1.0/24')
+1103. 
+1104.     def test_get_auth_from_url(self):
+1105.         """ Ensures that username and password in well-encoded URI as per RFC 3986 are correclty extracted """
+1106.         from requests.utils import get_auth_from_url
+1107.         from requests.compat import quote
+1108.         percent_encoding_test_chars = "%!*'();:@&=+$,/?#[] "
+1109.         url_address = "request.com/url.html#test"
+1110.         url = "http://" + quote(percent_encoding_test_chars, '') + ':' + quote(percent_encoding_test_chars, '') + '@' + url_address
+1111.         (username, password) = get_auth_from_url(url)
+1112.         assert username == percent_encoding_test_chars
+1113.         assert password == percent_encoding_test_chars
+1114. 
+1115. 
+1116. class TestMorselToCookieExpires(unittest.TestCase):
+1117. 
+1118.     """Tests for morsel_to_cookie when morsel contains expires."""
+1119. 
+1120.     def test_expires_valid_str(self):
+1121.         """Test case where we convert expires from string time."""
+1122. 
+1123.         morsel = Morsel()
+1124.         morsel['expires'] = 'Thu, 01-Jan-1970 00:00:01 GMT'
+1125.         cookie = morsel_to_cookie(morsel)
+1126.         assert cookie.expires == 1
+1127. 
+1128.     def test_expires_invalid_int(self):
+1129.         """Test case where an invalid type is passed for expires."""
+1130. 
+1131.         morsel = Morsel()
+1132.         morsel['expires'] = 100
+1133.         with pytest.raises(TypeError):
+1134.             morsel_to_cookie(morsel)
+1135. 
+1136.     def test_expires_invalid_str(self):
+1137.         """Test case where an invalid string is input."""
+1138. 
+1139.         morsel = Morsel()
+1140.         morsel['expires'] = 'woops'
+1141.         with pytest.raises(ValueError):
+1142.             morsel_to_cookie(morsel)
+1143. 
+1144.     def test_expires_none(self):
+1145.         """Test case where expires is None."""
+1146. 
+1147.         morsel = Morsel()
+1148.         morsel['expires'] = None
+1149.         cookie = morsel_to_cookie(morsel)
+1150.         assert cookie.expires is None
+1151. 
+1152. 
+1153. class TestMorselToCookieMaxAge(unittest.TestCase):
+1154. 
+1155.     """Tests for morsel_to_cookie when morsel contains max-age."""
+1156. 
+1157.     def test_max_age_valid_int(self):
+1158.         """Test case where a valid max age in seconds is passed."""
+1159. 
+1160.         morsel = Morsel()
+1161.         morsel['max-age'] = 60
+1162.         cookie = morsel_to_cookie(morsel)
+1163.         assert isinstance(cookie.expires, int)
+1164. 
+1165.     def test_max_age_invalid_str(self):
+1166.         """Test case where a invalid max age is passed."""
+1167. 
+1168.         morsel = Morsel()
+1169.         morsel['max-age'] = 'woops'
+1170.         with pytest.raises(TypeError):
+1171.             morsel_to_cookie(morsel)
+1172. 
+1173. 
+1174. if __name__ == '__main__':
+1175.     unittest.main()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 17:29:33,880 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="The user has requested the full content of the file `test_requests.py`. The context provided contains the content of this file from line 1 to 1175, which represents the entire file. Therefore, the entire content is relevant to fulfill the user's request.", relative_path='test_requests.py', start_line=1, end_line=1175)]
+2025-12-21 17:29:33,882 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `test_requests.py`.
+2025-12-21 17:29:33,882 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 17:29:33,882 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 17:29:33,883 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 17:29:33,883 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 17:29:33,883 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── AUTHORS.rst
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── support.rst
+|   |   └── updates.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── internals.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   ├── requirements.txt
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── chardet
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardetect.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── cp949prober.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connection.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   ├── ntlmpool.py
+|   |       |   └── pyopenssl.py
+|   |       ├── exceptions.py
+|   |       ├── fields.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Removing a default header of a session
+
+Description: [The docs](http://docs.python-requests.org/en/latest/user/advanced/#session-objects) say that you can prevent sending a session header by setting the headers value to None in the method's arguments. You would expect (as [discussed on IRC](https://botbot.me/freenode/python-requests/msg/10788170/)) that this would work for session's default headers, too:
+
+``` python
+session = requests.Session()
+# Do not send Accept-Encoding
+session.headers['Accept-Encoding'] = None
+```
+
+What happens is that "None"  gets sent as the value of header.
+
+```
+Accept-Encoding: None
+```
+
+For the reference, here is a way that works:
+
+``` python
+del session.headers['Accept-Encoding']
+```
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index 80c1e6ae..10b43be2 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -43,6 +43,19 @@ Any dictionaries that you pass to a request method will be merged with the sessi
+ 
+     Sometimes you'll want to omit session-level keys from a dict parameter. To do this, you simply set that key's value to ``None`` in the method-level parameter. It will automatically be omitted.
+ 
++    You can also remove default headers set on a Session by assigning ``None`` to that header key. For example, to prevent ``Accept-Encoding`` from being sent with this Session:
++
++    ::
++
++        s = requests.Session()
++        s.headers['Accept-Encoding'] = None  # header will be omitted
++
++    Alternatively, deleting the key has the same effect:
++
++    ::
++
++        del s.headers['Accept-Encoding']
++
+ All values that are contained within a session are directly available to you. See the :ref:`Session API Docs <sessionapi>` to learn more.
+ 
+ Request and Response Objects
+diff --git a/requests/models.py b/requests/models.py
+index cd232e68..a5391e47 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -391,7 +391,10 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         """Prepares the given HTTP headers."""
+ 
+         if headers:
+-            self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
++            # Filter out headers with None values to avoid sending them.
++            self.headers = CaseInsensitiveDict(
++                (to_native_string(name), value) for name, value in headers.items() if value is not None
++            )
+         else:
+             self.headers = CaseInsensitiveDict()
+ 
+diff --git a/requests/sessions.py b/requests/sessions.py
+index a023e4ec..07466bf9 100644
+--- a/requests/sessions.py
++++ b/requests/sessions.py
+@@ -51,10 +51,14 @@ def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
+     ):
+         return request_setting
+ 
+-    merged_setting = dict_class(to_key_val_list(session_setting))
++    # Start with a copy of the session settings, but drop any keys set to None
++    merged_setting = dict_class(
++        (k, v) for k, v in to_key_val_list(session_setting) if v is not None
++    )
++    # Layer on request settings
+     merged_setting.update(to_key_val_list(request_setting))
+ 
+-    # Remove keys that are set to None.
++    # Remove keys that are set to None in the request.
+     for (k, v) in request_setting.items():
+         if v is None:
+             del merged_setting[k]
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `test_requests.py`.
+Extra Requirements: 
+Purpose: I need the content of `test_requests.py` to identify test cases related to session headers and find the ones most relevant to the user's query.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: test_requests.py
+Line number range: 1 - 1175
+Content:
+1. #!/usr/bin/env python
+2. # -*- coding: utf-8 -*-
+3. 
+4. """Tests for Requests."""
+5. 
+6. from __future__ import division
+7. import json
+8. import os
+9. import pickle
+10. import unittest
+11. 
+12. import requests
+13. import pytest
+14. from requests.adapters import HTTPAdapter
+15. from requests.auth import HTTPDigestAuth
+16. from requests.compat import (
+17.     Morsel, cookielib, getproxies, str, urljoin, urlparse)
+18. from requests.cookies import cookiejar_from_dict, morsel_to_cookie
+19. from requests.exceptions import InvalidURL, MissingSchema
+20. from requests.structures import CaseInsensitiveDict
+21. 
+22. try:
+23.     import StringIO
+24. except ImportError:
+25.     import io as StringIO
+26. 
+27. HTTPBIN = os.environ.get('HTTPBIN_URL', 'http://httpbin.org/')
+28. # Issue #1483: Make sure the URL always has a trailing slash
+29. HTTPBIN = HTTPBIN.rstrip('/') + '/'
+30. 
+31. 
+32. def httpbin(*suffix):
+33.     """Returns url for HTTPBIN resource."""
+34.     return urljoin(HTTPBIN, '/'.join(suffix))
+35. 
+36. 
+37. class RequestsTestCase(unittest.TestCase):
+38. 
+39.     _multiprocess_can_split_ = True
+40. 
+41.     def setUp(self):
+42.         """Create simple data set with headers."""
+43.         pass
+44. 
+45.     def tearDown(self):
+46.         """Teardown."""
+47.         pass
+48. 
+49.     def test_entry_points(self):
+50. 
+51.         requests.session
+52.         requests.session().get
+53.         requests.session().head
+54.         requests.get
+55.         requests.head
+56.         requests.put
+57.         requests.patch
+58.         requests.post
+59. 
+60.     def test_invalid_url(self):
+61.         with pytest.raises(MissingSchema):
+62.             requests.get('hiwpefhipowhefopw')
+63.         with pytest.raises(InvalidURL):
+64.             requests.get('http://')
+65. 
+66.     def test_basic_building(self):
+67.         req = requests.Request()
+68.         req.url = 'http://kennethreitz.org/'
+69.         req.data = {'life': '42'}
+70. 
+71.         pr = req.prepare()
+72.         assert pr.url == req.url
+73.         assert pr.body == 'life=42'
+74. 
+75.     def test_no_content_length(self):
+76.         get_req = requests.Request('GET', httpbin('get')).prepare()
+77.         assert 'Content-Length' not in get_req.headers
+78.         head_req = requests.Request('HEAD', httpbin('head')).prepare()
+79.         assert 'Content-Length' not in head_req.headers
+80. 
+81.     def test_path_is_not_double_encoded(self):
+82.         request = requests.Request('GET', "http://0.0.0.0/get/test case").prepare()
+83. 
+84.         assert request.path_url == '/get/test%20case'
+85. 
+86.     def test_params_are_added_before_fragment(self):
+87.         request = requests.Request('GET',
+88.             "http://example.com/path#fragment", params={"a": "b"}).prepare()
+89.         assert request.url == "http://example.com/path?a=b#fragment"
+90.         request = requests.Request('GET',
+91.             "http://example.com/path?key=value#fragment", params={"a": "b"}).prepare()
+92.         assert request.url == "http://example.com/path?key=value&a=b#fragment"
+93. 
+94.     def test_mixed_case_scheme_acceptable(self):
+95.         s = requests.Session()
+96.         s.proxies = getproxies()
+97.         parts = urlparse(httpbin('get'))
+98.         schemes = ['http://', 'HTTP://', 'hTTp://', 'HttP://',
+99.                    'https://', 'HTTPS://', 'hTTps://', 'HttPs://']
+100.         for scheme in schemes:
+101.             url = scheme + parts.netloc + parts.path
+102.             r = requests.Request('GET', url)
+103.             r = s.send(r.prepare())
+104.             assert r.status_code == 200, 'failed for scheme {0}'.format(scheme)
+105. 
+106.     def test_HTTP_200_OK_GET_ALTERNATIVE(self):
+107.         r = requests.Request('GET', httpbin('get'))
+108.         s = requests.Session()
+109.         s.proxies = getproxies()
+110. 
+111.         r = s.send(r.prepare())
+112. 
+113.         assert r.status_code == 200
+114. 
+115.     def test_HTTP_302_ALLOW_REDIRECT_GET(self):
+116.         r = requests.get(httpbin('redirect', '1'))
+117.         assert r.status_code == 200
+118.         assert r.history[0].status_code == 302
+119.         assert r.history[0].is_redirect
+120. 
+121.     # def test_HTTP_302_ALLOW_REDIRECT_POST(self):
+122.     #     r = requests.post(httpbin('status', '302'), data={'some': 'data'})
+123.     #     self.assertEqual(r.status_code, 200)
+124. 
+125.     def test_HTTP_200_OK_GET_WITH_PARAMS(self):
+126.         heads = {'User-agent': 'Mozilla/5.0'}
+127. 
+128.         r = requests.get(httpbin('user-agent'), headers=heads)
+129. 
+130.         assert heads['User-agent'] in r.text
+131.         assert r.status_code == 200
+132. 
+133.     def test_HTTP_200_OK_GET_WITH_MIXED_PARAMS(self):
+134.         heads = {'User-agent': 'Mozilla/5.0'}
+135. 
+136.         r = requests.get(httpbin('get') + '?test=true', params={'q': 'test'}, headers=heads)
+137.         assert r.status_code == 200
+138. 
+139.     def test_set_cookie_on_301(self):
+140.         s = requests.session()
+141.         url = httpbin('cookies/set?foo=bar')
+142.         r = s.get(url)
+143.         assert s.cookies['foo'] == 'bar'
+144. 
+145.     def test_cookie_sent_on_redirect(self):
+146.         s = requests.session()
+147.         s.get(httpbin('cookies/set?foo=bar'))
+148.         r = s.get(httpbin('redirect/1'))  # redirects to httpbin('get')
+149.         assert 'Cookie' in r.json()['headers']
+150. 
+151.     def test_cookie_removed_on_expire(self):
+152.         s = requests.session()
+153.         s.get(httpbin('cookies/set?foo=bar'))
+154.         assert s.cookies['foo'] == 'bar'
+155.         s.get(
+156.             httpbin('response-headers'),
+157.             params={
+158.                 'Set-Cookie':
+159.                     'foo=deleted; expires=Thu, 01-Jan-1970 00:00:01 GMT'
+160.             }
+161.         )
+162.         assert 'foo' not in s.cookies
+163. 
+164.     def test_cookie_quote_wrapped(self):
+165.         s = requests.session()
+166.         s.get(httpbin('cookies/set?foo="bar:baz"'))
+167.         assert s.cookies['foo'] == '"bar:baz"'
+168. 
+169.     def test_cookie_persists_via_api(self):
+170.         s = requests.session()
+171.         r = s.get(httpbin('redirect/1'), cookies={'foo': 'bar'})
+172.         assert 'foo' in r.request.headers['Cookie']
+173.         assert 'foo' in r.history[0].request.headers['Cookie']
+174. 
+175.     def test_request_cookie_overrides_session_cookie(self):
+176.         s = requests.session()
+177.         s.cookies['foo'] = 'bar'
+178.         r = s.get(httpbin('cookies'), cookies={'foo': 'baz'})
+179.         assert r.json()['cookies']['foo'] == 'baz'
+180.         # Session cookie should not be modified
+181.         assert s.cookies['foo'] == 'bar'
+182. 
+183.     def test_request_cookies_not_persisted(self):
+184.         s = requests.session()
+185.         s.get(httpbin('cookies'), cookies={'foo': 'baz'})
+186.         # Sending a request with cookies should not add cookies to the session
+187.         assert not s.cookies
+188. 
+189.     def test_generic_cookiejar_works(self):
+190.         cj = cookielib.CookieJar()
+191.         cookiejar_from_dict({'foo': 'bar'}, cj)
+192.         s = requests.session()
+193.         s.cookies = cj
+194.         r = s.get(httpbin('cookies'))
+195.         # Make sure the cookie was sent
+196.         assert r.json()['cookies']['foo'] == 'bar'
+197.         # Make sure the session cj is still the custom one
+198.         assert s.cookies is cj
+199. 
+200.     def test_param_cookiejar_works(self):
+201.         cj = cookielib.CookieJar()
+202.         cookiejar_from_dict({'foo' : 'bar'}, cj)
+203.         s = requests.session()
+204.         r = s.get(httpbin('cookies'), cookies=cj)
+205.         # Make sure the cookie was sent
+206.         assert r.json()['cookies']['foo'] == 'bar'
+207. 
+208.     def test_requests_in_history_are_not_overridden(self):
+209.         resp = requests.get(httpbin('redirect/3'))
+210.         urls = [r.url for r in resp.history]
+211.         req_urls = [r.request.url for r in resp.history]
+212.         assert urls == req_urls
+213. 
+214.     def test_user_agent_transfers(self):
+215. 
+216.         heads = {
+217.             'User-agent': 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+218.         }
+219. 
+220.         r = requests.get(httpbin('user-agent'), headers=heads)
+221.         assert heads['User-agent'] in r.text
+222. 
+223.         heads = {
+224.             'user-agent': 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+225.         }
+226. 
+227.         r = requests.get(httpbin('user-agent'), headers=heads)
+228.         assert heads['user-agent'] in r.text
+229. 
+230.     def test_HTTP_200_OK_HEAD(self):
+231.         r = requests.head(httpbin('get'))
+232.         assert r.status_code == 200
+233. 
+234.     def test_HTTP_200_OK_PUT(self):
+235.         r = requests.put(httpbin('put'))
+236.         assert r.status_code == 200
+237. 
+238.     def test_BASICAUTH_TUPLE_HTTP_200_OK_GET(self):
+239.         auth = ('user', 'pass')
+240.         url = httpbin('basic-auth', 'user', 'pass')
+241. 
+242.         r = requests.get(url, auth=auth)
+243.         assert r.status_code == 200
+244. 
+245.         r = requests.get(url)
+246.         assert r.status_code == 401
+247. 
+248.         s = requests.session()
+249.         s.auth = auth
+250.         r = s.get(url)
+251.         assert r.status_code == 200
+252. 
+253.     def test_basicauth_with_netrc(self):
+254.         auth = ('user', 'pass')
+255.         wrong_auth = ('wronguser', 'wrongpass')
+256.         url = httpbin('basic-auth', 'user', 'pass')
+257. 
+258.         def get_netrc_auth_mock(url):
+259.             return auth
+260.         requests.sessions.get_netrc_auth = get_netrc_auth_mock
+261. 
+262.         # Should use netrc and work.
+263.         r = requests.get(url)
+264.         assert r.status_code == 200
+265. 
+266.         # Given auth should override and fail.
+267.         r = requests.get(url, auth=wrong_auth)
+268.         assert r.status_code == 401
+269. 
+270.         s = requests.session()
+271. 
+272.         # Should use netrc and work.
+273.         r = s.get(url)
+274.         assert r.status_code == 200
+275. 
+276.         # Given auth should override and fail.
+277.         s.auth = wrong_auth
+278.         r = s.get(url)
+279.         assert r.status_code == 401
+280. 
+281.     def test_DIGEST_HTTP_200_OK_GET(self):
+282. 
+283.         auth = HTTPDigestAuth('user', 'pass')
+284.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+285. 
+286.         r = requests.get(url, auth=auth)
+287.         assert r.status_code == 200
+288. 
+289.         r = requests.get(url)
+290.         assert r.status_code == 401
+291. 
+292.         s = requests.session()
+293.         s.auth = HTTPDigestAuth('user', 'pass')
+294.         r = s.get(url)
+295.         assert r.status_code == 200
+296. 
+297.     def test_DIGEST_AUTH_RETURNS_COOKIE(self):
+298.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+299.         auth = HTTPDigestAuth('user', 'pass')
+300.         r = requests.get(url)
+301.         assert r.cookies['fake'] == 'fake_value'
+302. 
+303.         r = requests.get(url, auth=auth)
+304.         assert r.status_code == 200
+305. 
+306.     def test_DIGEST_AUTH_SETS_SESSION_COOKIES(self):
+307.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+308.         auth = HTTPDigestAuth('user', 'pass')
+309.         s = requests.Session()
+310.         s.get(url, auth=auth)
+311.         assert s.cookies['fake'] == 'fake_value'
+312. 
+313.     def test_DIGEST_STREAM(self):
+314. 
+315.         auth = HTTPDigestAuth('user', 'pass')
+316.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+317. 
+318.         r = requests.get(url, auth=auth, stream=True)
+319.         assert r.raw.read() != b''
+320. 
+321.         r = requests.get(url, auth=auth, stream=False)
+322.         assert r.raw.read() == b''
+323. 
+324.     def test_DIGESTAUTH_WRONG_HTTP_401_GET(self):
+325. 
+326.         auth = HTTPDigestAuth('user', 'wrongpass')
+327.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+328. 
+329.         r = requests.get(url, auth=auth)
+330.         assert r.status_code == 401
+331. 
+332.         r = requests.get(url)
+333.         assert r.status_code == 401
+334. 
+335.         s = requests.session()
+336.         s.auth = auth
+337.         r = s.get(url)
+338.         assert r.status_code == 401
+339. 
+340.     def test_DIGESTAUTH_QUOTES_QOP_VALUE(self):
+341. 
+342.         auth = HTTPDigestAuth('user', 'pass')
+343.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+344. 
+345.         r = requests.get(url, auth=auth)
+346.         assert '"auth"' in r.request.headers['Authorization']
+347. 
+348.     def test_POSTBIN_GET_POST_FILES(self):
+349. 
+350.         url = httpbin('post')
+351.         post1 = requests.post(url).raise_for_status()
+352. 
+353.         post1 = requests.post(url, data={'some': 'data'})
+354.         assert post1.status_code == 200
+355. 
+356.         with open('requirements.txt') as f:
+357.             post2 = requests.post(url, files={'some': f})
+358.         assert post2.status_code == 200
+359. 
+360.         post4 = requests.post(url, data='[{"some": "json"}]')
+361.         assert post4.status_code == 200
+362. 
+363.         with pytest.raises(ValueError):
+364.             requests.post(url, files = ['bad file data'])
+365. 
+366.     def test_POSTBIN_GET_POST_FILES_WITH_DATA(self):
+367. 
+368.         url = httpbin('post')
+369.         post1 = requests.post(url).raise_for_status()
+370. 
+371.         post1 = requests.post(url, data={'some': 'data'})
+372.         assert post1.status_code == 200
+373. 
+374.         with open('requirements.txt') as f:
+375.             post2 = requests.post(url, data={'some': 'data'}, files={'some': f})
+376.         assert post2.status_code == 200
+377. 
+378.         post4 = requests.post(url, data='[{"some": "json"}]')
+379.         assert post4.status_code == 200
+380. 
+381.         with pytest.raises(ValueError):
+382.             requests.post(url, files = ['bad file data'])
+383. 
+384.     def test_conflicting_post_params(self):
+385.         url = httpbin('post')
+386.         with open('requirements.txt') as f:
+387.             pytest.raises(ValueError, "requests.post(url, data='[{\"some\": \"data\"}]', files={'some': f})")
+388.             pytest.raises(ValueError, "requests.post(url, data=u'[{\"some\": \"data\"}]', files={'some': f})")
+389. 
+390.     def test_request_ok_set(self):
+391.         r = requests.get(httpbin('status', '404'))
+392.         assert not r.ok
+393. 
+394.     def test_status_raising(self):
+395.         r = requests.get(httpbin('status', '404'))
+396.         with pytest.raises(requests.exceptions.HTTPError):
+397.             r.raise_for_status()
+398. 
+399.         r = requests.get(httpbin('status', '500'))
+400.         assert not r.ok
+401. 
+402.     def test_decompress_gzip(self):
+403.         r = requests.get(httpbin('gzip'))
+404.         r.content.decode('ascii')
+405. 
+406.     def test_unicode_get(self):
+407.         url = httpbin('/get')
+408.         requests.get(url, params={'foo': 'føø'})
+409.         requests.get(url, params={'føø': 'føø'})
+410.         requests.get(url, params={'føø': 'føø'})
+411.         requests.get(url, params={'foo': 'foo'})
+412.         requests.get(httpbin('ø'), params={'foo': 'foo'})
+413. 
+414.     def test_unicode_header_name(self):
+415.         requests.put(httpbin('put'), headers={str('Content-Type'): 'application/octet-stream'}, data='\xff') # compat.str is unicode.
+416. 
+417.     def test_pyopenssl_redirect(self):
+418.         requests.get('https://httpbin.org/status/301')
+419. 
+420.     def test_urlencoded_get_query_multivalued_param(self):
+421. 
+422.         r = requests.get(httpbin('get'), params=dict(test=['foo', 'baz']))
+423.         assert r.status_code == 200
+424.         assert r.url == httpbin('get?test=foo&test=baz')
+425. 
+426.     def test_different_encodings_dont_break_post(self):
+427.         r = requests.post(httpbin('post'),
+428.                           data={'stuff': json.dumps({'a': 123})},
+429.                           params={'blah': 'asdf1234'},
+430.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+431.         assert r.status_code == 200
+432. 
+433.     def test_unicode_multipart_post(self):
+434.         r = requests.post(httpbin('post'),
+435.                           data={'stuff': u'ëlïxr'},
+436.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+437.         assert r.status_code == 200
+438. 
+439.         r = requests.post(httpbin('post'),
+440.                           data={'stuff': u'ëlïxr'.encode('utf-8')},
+441.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+442.         assert r.status_code == 200
+443. 
+444.         r = requests.post(httpbin('post'),
+445.                           data={'stuff': 'elixr'},
+446.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+447.         assert r.status_code == 200
+448. 
+449.         r = requests.post(httpbin('post'),
+450.                           data={'stuff': 'elixr'.encode('utf-8')},
+451.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+452.         assert r.status_code == 200
+453. 
+454.     def test_unicode_multipart_post_fieldnames(self):
+455.         filename = os.path.splitext(__file__)[0] + '.py'
+456.         r = requests.Request(method='POST',
+457.                              url=httpbin('post'),
+458.                              data={'stuff'.encode('utf-8'): 'elixr'},
+459.                              files={'file': ('test_requests.py',
+460.                                              open(filename, 'rb'))})
+461.         prep = r.prepare()
+462.         assert b'name="stuff"' in prep.body
+463.         assert b'name="b\'stuff\'"' not in prep.body
+464. 
+465.     def test_unicode_method_name(self):
+466.         files = {'file': open('test_requests.py', 'rb')}
+467.         r = requests.request(method=u'POST', url=httpbin('post'), files=files)
+468.         assert r.status_code == 200
+469. 
+470.     def test_custom_content_type(self):
+471.         r = requests.post(httpbin('post'),
+472.                           data={'stuff': json.dumps({'a': 123})},
+473.                           files={'file1': ('test_requests.py', open(__file__, 'rb')),
+474.                                  'file2': ('test_requests', open(__file__, 'rb'),
+475.                                            'text/py-content-type')})
+476.         assert r.status_code == 200
+477.         assert b"text/py-content-type" in r.request.body
+478. 
+479.     def test_hook_receives_request_arguments(self):
+480.         def hook(resp, **kwargs):
+481.             assert resp is not None
+482.             assert kwargs != {}
+483. 
+484.         requests.Request('GET', HTTPBIN, hooks={'response': hook})
+485. 
+486.     def test_session_hooks_are_used_with_no_request_hooks(self):
+487.         hook = lambda x, *args, **kwargs: x
+488.         s = requests.Session()
+489.         s.hooks['response'].append(hook)
+490.         r = requests.Request('GET', HTTPBIN)
+491.         prep = s.prepare_request(r)
+492.         assert prep.hooks['response'] != []
+493.         assert prep.hooks['response'] == [hook]
+494. 
+495.     def test_session_hooks_are_overriden_by_request_hooks(self):
+496.         hook1 = lambda x, *args, **kwargs: x
+497.         hook2 = lambda x, *args, **kwargs: x
+498.         assert hook1 is not hook2
+499.         s = requests.Session()
+500.         s.hooks['response'].append(hook2)
+501.         r = requests.Request('GET', HTTPBIN, hooks={'response': [hook1]})
+502.         prep = s.prepare_request(r)
+503.         assert prep.hooks['response'] == [hook1]
+504. 
+505.     def test_prepared_request_hook(self):
+506.         def hook(resp, **kwargs):
+507.             resp.hook_working = True
+508.             return resp
+509. 
+510.         req = requests.Request('GET', HTTPBIN, hooks={'response': hook})
+511.         prep = req.prepare()
+512. 
+513.         s = requests.Session()
+514.         s.proxies = getproxies()
+515.         resp = s.send(prep)
+516. 
+517.         assert hasattr(resp, 'hook_working')
+518. 
+519.     def test_prepared_from_session(self):
+520.         class DummyAuth(requests.auth.AuthBase):
+521.             def __call__(self, r):
+522.                 r.headers['Dummy-Auth-Test'] = 'dummy-auth-test-ok'
+523.                 return r
+524. 
+525.         req = requests.Request('GET', httpbin('headers'))
+526.         assert not req.auth
+527. 
+528.         s = requests.Session()
+529.         s.auth = DummyAuth()
+530. 
+531.         prep = s.prepare_request(req)
+532.         resp = s.send(prep)
+533. 
+534.         assert resp.json()['headers']['Dummy-Auth-Test'] == 'dummy-auth-test-ok'
+535. 
+536.     def test_links(self):
+537.         r = requests.Response()
+538.         r.headers = {
+539.             'cache-control': 'public, max-age=60, s-maxage=60',
+540.             'connection': 'keep-alive',
+541.             'content-encoding': 'gzip',
+542.             'content-type': 'application/json; charset=utf-8',
+543.             'date': 'Sat, 26 Jan 2013 16:47:56 GMT',
+544.             'etag': '"6ff6a73c0e446c1f61614769e3ceb778"',
+545.             'last-modified': 'Sat, 26 Jan 2013 16:22:39 GMT',
+546.             'link': ('<https://api.github.com/users/kennethreitz/repos?'
+547.                      'page=2&per_page=10>; rel="next", <https://api.github.'
+548.                      'com/users/kennethreitz/repos?page=7&per_page=10>; '
+549.                      ' rel="last"'),
+550.             'server': 'GitHub.com',
+551.             'status': '200 OK',
+552.             'vary': 'Accept',
+553.             'x-content-type-options': 'nosniff',
+554.             'x-github-media-type': 'github.beta',
+555.             'x-ratelimit-limit': '60',
+556.             'x-ratelimit-remaining': '57'
+557.         }
+558.         assert r.links['next']['rel'] == 'next'
+559. 
+560.     def test_cookie_parameters(self):
+561.         key = 'some_cookie'
+562.         value = 'some_value'
+563.         secure = True
+564.         domain = 'test.com'
+565.         rest = {'HttpOnly': True}
+566. 
+567.         jar = requests.cookies.RequestsCookieJar()
+568.         jar.set(key, value, secure=secure, domain=domain, rest=rest)
+569. 
+570.         assert len(jar) == 1
+571.         assert 'some_cookie' in jar
+572. 
+573.         cookie = list(jar)[0]
+574.         assert cookie.secure == secure
+575.         assert cookie.domain == domain
+576.         assert cookie._rest['HttpOnly'] == rest['HttpOnly']
+577. 
+578.     def test_cookie_as_dict_keeps_len(self):
+579.         key = 'some_cookie'
+580.         value = 'some_value'
+581. 
+582.         key1 = 'some_cookie1'
+583.         value1 = 'some_value1'
+584. 
+585.         jar = requests.cookies.RequestsCookieJar()
+586.         jar.set(key, value)
+587.         jar.set(key1, value1)
+588. 
+589.         d1 = dict(jar)
+590.         d2 = dict(jar.iteritems())
+591.         d3 = dict(jar.items())
+592. 
+593.         assert len(jar) == 2
+594.         assert len(d1) == 2
+595.         assert len(d2) == 2
+596.         assert len(d3) == 2
+597. 
+598.     def test_cookie_as_dict_keeps_items(self):
+599.         key = 'some_cookie'
+600.         value = 'some_value'
+601. 
+602.         key1 = 'some_cookie1'
+603.         value1 = 'some_value1'
+604. 
+605.         jar = requests.cookies.RequestsCookieJar()
+606.         jar.set(key, value)
+607.         jar.set(key1, value1)
+608. 
+609.         d1 = dict(jar)
+610.         d2 = dict(jar.iteritems())
+611.         d3 = dict(jar.items())
+612. 
+613.         assert d1['some_cookie'] == 'some_value'
+614.         assert d2['some_cookie'] == 'some_value'
+615.         assert d3['some_cookie1'] == 'some_value1'
+616. 
+617.     def test_cookie_as_dict_keys(self):
+618.         key = 'some_cookie'
+619.         value = 'some_value'
+620. 
+621.         key1 = 'some_cookie1'
+622.         value1 = 'some_value1'
+623. 
+624.         jar = requests.cookies.RequestsCookieJar()
+625.         jar.set(key, value)
+626.         jar.set(key1, value1)
+627. 
+628.         keys = jar.keys()
+629.         assert keys == list(keys)
+630.         # make sure one can use keys multiple times
+631.         assert list(keys) == list(keys)
+632. 
+633.     def test_cookie_as_dict_values(self):
+634.         key = 'some_cookie'
+635.         value = 'some_value'
+636. 
+637.         key1 = 'some_cookie1'
+638.         value1 = 'some_value1'
+639. 
+640.         jar = requests.cookies.RequestsCookieJar()
+641.         jar.set(key, value)
+642.         jar.set(key1, value1)
+643. 
+644.         values = jar.values()
+645.         assert values == list(values)
+646.         # make sure one can use values multiple times
+647.         assert list(values) == list(values)
+648. 
+649.     def test_cookie_as_dict_items(self):
+650.         key = 'some_cookie'
+651.         value = 'some_value'
+652. 
+653.         key1 = 'some_cookie1'
+654.         value1 = 'some_value1'
+655. 
+656.         jar = requests.cookies.RequestsCookieJar()
+657.         jar.set(key, value)
+658.         jar.set(key1, value1)
+659. 
+660.         items = jar.items()
+661.         assert items == list(items)
+662.         # make sure one can use items multiple times
+663.         assert list(items) == list(items)
+664. 
+665. 
+666.     def test_time_elapsed_blank(self):
+667.         r = requests.get(httpbin('get'))
+668.         td = r.elapsed
+669.         total_seconds = ((td.microseconds + (td.seconds + td.days * 24 * 3600)
+670.                          * 10**6) / 10**6)
+671.         assert total_seconds > 0.0
+672. 
+673.     def test_response_is_iterable(self):
+674.         r = requests.Response()
+675.         io = StringIO.StringIO('abc')
+676.         read_ = io.read
+677. 
+678.         def read_mock(amt, decode_content=None):
+679.             return read_(amt)
+680.         setattr(io, 'read', read_mock)
+681.         r.raw = io
+682.         assert next(iter(r))
+683.         io.close()
+684. 
+685.     def test_request_and_response_are_pickleable(self):
+686.         r = requests.get(httpbin('get'))
+687. 
+688.         # verify we can pickle the original request
+689.         assert pickle.loads(pickle.dumps(r.request))
+690. 
+691.         # verify we can pickle the response and that we have access to
+692.         # the original request.
+693.         pr = pickle.loads(pickle.dumps(r))
+694.         assert r.request.url == pr.request.url
+695.         assert r.request.headers == pr.request.headers
+696. 
+697.     def test_get_auth_from_url(self):
+698.         url = 'http://user:pass@complex.url.com/path?query=yes'
+699.         assert ('user', 'pass') == requests.utils.get_auth_from_url(url)
+700. 
+701.     def test_get_auth_from_url_encoded_spaces(self):
+702.         url = 'http://user:pass%20pass@complex.url.com/path?query=yes'
+703.         assert ('user', 'pass pass') == requests.utils.get_auth_from_url(url)
+704. 
+705.     def test_get_auth_from_url_not_encoded_spaces(self):
+706.         url = 'http://user:pass pass@complex.url.com/path?query=yes'
+707.         assert ('user', 'pass pass') == requests.utils.get_auth_from_url(url)
+708. 
+709.     def test_get_auth_from_url_percent_chars(self):
+710.         url = 'http://user%25user:pass@complex.url.com/path?query=yes'
+711.         assert ('user%user', 'pass') == requests.utils.get_auth_from_url(url)
+712. 
+713.     def test_get_auth_from_url_encoded_hashes(self):
+714.         url = 'http://user:pass%23pass@complex.url.com/path?query=yes'
+715.         assert ('user', 'pass#pass') == requests.utils.get_auth_from_url(url)
+716. 
+717.     def test_cannot_send_unprepared_requests(self):
+718.         r = requests.Request(url=HTTPBIN)
+719.         with pytest.raises(ValueError):
+720.             requests.Session().send(r)
+721. 
+722.     def test_http_error(self):
+723.         error = requests.exceptions.HTTPError()
+724.         assert not error.response
+725.         response = requests.Response()
+726.         error = requests.exceptions.HTTPError(response=response)
+727.         assert error.response == response
+728.         error = requests.exceptions.HTTPError('message', response=response)
+729.         assert str(error) == 'message'
+730.         assert error.response == response
+731. 
+732.     def test_session_pickling(self):
+733.         r = requests.Request('GET', httpbin('get'))
+734.         s = requests.Session()
+735. 
+736.         s = pickle.loads(pickle.dumps(s))
+737.         s.proxies = getproxies()
+738. 
+739.         r = s.send(r.prepare())
+740.         assert r.status_code == 200
+741. 
+742.     def test_fixes_1329(self):
+743.         """
+744.         Ensure that header updates are done case-insensitively.
+745.         """
+746.         s = requests.Session()
+747.         s.headers.update({'ACCEPT': 'BOGUS'})
+748.         s.headers.update({'accept': 'application/json'})
+749.         r = s.get(httpbin('get'))
+750.         headers = r.request.headers
+751.         assert headers['accept'] == 'application/json'
+752.         assert headers['Accept'] == 'application/json'
+753.         assert headers['ACCEPT'] == 'application/json'
+754. 
+755.     def test_uppercase_scheme_redirect(self):
+756.         parts = urlparse(httpbin('html'))
+757.         url = "HTTP://" + parts.netloc + parts.path
+758.         r = requests.get(httpbin('redirect-to'), params={'url': url})
+759.         assert r.status_code == 200
+760.         assert r.url.lower() == url.lower()
+761. 
+762.     def test_transport_adapter_ordering(self):
+763.         s = requests.Session()
+764.         order = ['https://', 'http://']
+765.         assert order == list(s.adapters)
+766.         s.mount('http://git', HTTPAdapter())
+767.         s.mount('http://github', HTTPAdapter())
+768.         s.mount('http://github.com', HTTPAdapter())
+769.         s.mount('http://github.com/about/', HTTPAdapter())
+770.         order = [
+771.             'http://github.com/about/',
+772.             'http://github.com',
+773.             'http://github',
+774.             'http://git',
+775.             'https://',
+776.             'http://',
+777.         ]
+778.         assert order == list(s.adapters)
+779.         s.mount('http://gittip', HTTPAdapter())
+780.         s.mount('http://gittip.com', HTTPAdapter())
+781.         s.mount('http://gittip.com/about/', HTTPAdapter())
+782.         order = [
+783.             'http://github.com/about/',
+784.             'http://gittip.com/about/',
+785.             'http://github.com',
+786.             'http://gittip.com',
+787.             'http://github',
+788.             'http://gittip',
+789.             'http://git',
+790.             'https://',
+791.             'http://',
+792.         ]
+793.         assert order == list(s.adapters)
+794.         s2 = requests.Session()
+795.         s2.adapters = {'http://': HTTPAdapter()}
+796.         s2.mount('https://', HTTPAdapter())
+797.         assert 'http://' in s2.adapters
+798.         assert 'https://' in s2.adapters
+799. 
+800.     def test_header_remove_is_case_insensitive(self):
+801.         # From issue #1321
+802.         s = requests.Session()
+803.         s.headers['foo'] = 'bar'
+804.         r = s.get(httpbin('get'), headers={'FOO': None})
+805.         assert 'foo' not in r.request.headers
+806. 
+807.     def test_params_are_merged_case_sensitive(self):
+808.         s = requests.Session()
+809.         s.params['foo'] = 'bar'
+810.         r = s.get(httpbin('get'), params={'FOO': 'bar'})
+811.         assert r.json()['args'] == {'foo': 'bar', 'FOO': 'bar'}
+812. 
+813. 
+814.     def test_long_authinfo_in_url(self):
+815.         url = 'http://{0}:{1}@{2}:9000/path?query#frag'.format(
+816.             'E8A3BE87-9E3F-4620-8858-95478E385B5B',
+817.             'EA770032-DA4D-4D84-8CE9-29C6D910BF1E',
+818.             'exactly-------------sixty-----------three------------characters',
+819.         )
+820.         r = requests.Request('GET', url).prepare()
+821.         assert r.url == url
+822. 
+823.     def test_header_keys_are_native(self):
+824.         headers = {u'unicode': 'blah', 'byte'.encode('ascii'): 'blah'}
+825.         r = requests.Request('GET', httpbin('get'), headers=headers)
+826.         p = r.prepare()
+827. 
+828.         # This is testing that they are builtin strings. A bit weird, but there
+829.         # we go.
+830.         assert 'unicode' in p.headers.keys()
+831.         assert 'byte' in p.headers.keys()
+832. 
+833.     def test_can_send_nonstring_objects_with_files(self):
+834.         data = {'a': 0.0}
+835.         files = {'b': 'foo'}
+836.         r = requests.Request('POST', httpbin('post'), data=data, files=files)
+837.         p = r.prepare()
+838. 
+839.         assert 'multipart/form-data' in p.headers['Content-Type']
+840. 
+841.     def test_autoset_header_values_are_native(self):
+842.         data = 'this is a string'
+843.         length = '16'
+844.         req = requests.Request('POST', httpbin('post'), data=data)
+845.         p = req.prepare()
+846. 
+847.         assert p.headers['Content-Length'] == length
+848. 
+849.     def test_oddball_schemes_dont_check_URLs(self):
+850.         test_urls = (
+851.             'data:image/gif;base64,R0lGODlhAQABAHAAACH5BAUAAAAALAAAAAABAAEAAAICRAEAOw==',
+852.             'file:///etc/passwd',
+853.             'magnet:?xt=urn:btih:be08f00302bc2d1d3cfa3af02024fa647a271431',
+854.         )
+855.         for test_url in test_urls:
+856.             req = requests.Request('GET', test_url)
+857.             preq = req.prepare()
+858.             assert test_url == preq.url
+859. 
+860. 
+861. class TestContentEncodingDetection(unittest.TestCase):
+862. 
+863.     def test_none(self):
+864.         encodings = requests.utils.get_encodings_from_content('')
+865.         assert not len(encodings)
+866. 
+867.     def test_html_charset(self):
+868.         """HTML5 meta charset attribute"""
+869.         content = '<meta charset="UTF-8">'
+870.         encodings = requests.utils.get_encodings_from_content(content)
+871.         assert len(encodings) == 1
+872.         assert encodings[0] == 'UTF-8'
+873. 
+874.     def test_html4_pragma(self):
+875.         """HTML4 pragma directive"""
+876.         content = '<meta http-equiv="Content-type" content="text/html;charset=UTF-8">'
+877.         encodings = requests.utils.get_encodings_from_content(content)
+878.         assert len(encodings) == 1
+879.         assert encodings[0] == 'UTF-8'
+880. 
+881.     def test_xhtml_pragma(self):
+882.         """XHTML 1.x served with text/html MIME type"""
+883.         content = '<meta http-equiv="Content-type" content="text/html;charset=UTF-8" />'
+884.         encodings = requests.utils.get_encodings_from_content(content)
+885.         assert len(encodings) == 1
+886.         assert encodings[0] == 'UTF-8'
+887. 
+888.     def test_xml(self):
+889.         """XHTML 1.x served as XML"""
+890.         content = '<?xml version="1.0" encoding="UTF-8"?>'
+891.         encodings = requests.utils.get_encodings_from_content(content)
+892.         assert len(encodings) == 1
+893.         assert encodings[0] == 'UTF-8'
+894. 
+895.     def test_precedence(self):
+896.         content = '''
+897.         <?xml version="1.0" encoding="XML"?>
+898.         <meta charset="HTML5">
+899.         <meta http-equiv="Content-type" content="text/html;charset=HTML4" />
+900.         '''.strip()
+901.         encodings = requests.utils.get_encodings_from_content(content)
+902.         assert encodings == ['HTML5', 'HTML4', 'XML']
+903. 
+904. 
+905. class TestCaseInsensitiveDict(unittest.TestCase):
+906. 
+907.     def test_mapping_init(self):
+908.         cid = CaseInsensitiveDict({'Foo': 'foo','BAr': 'bar'})
+909.         assert len(cid) == 2
+910.         assert 'foo' in cid
+911.         assert 'bar' in cid
+912. 
+913.     def test_iterable_init(self):
+914.         cid = CaseInsensitiveDict([('Foo', 'foo'), ('BAr', 'bar')])
+915.         assert len(cid) == 2
+916.         assert 'foo' in cid
+917.         assert 'bar' in cid
+918. 
+919.     def test_kwargs_init(self):
+920.         cid = CaseInsensitiveDict(FOO='foo', BAr='bar')
+921.         assert len(cid) == 2
+922.         assert 'foo' in cid
+923.         assert 'bar' in cid
+924. 
+925.     def test_docstring_example(self):
+926.         cid = CaseInsensitiveDict()
+927.         cid['Accept'] = 'application/json'
+928.         assert cid['aCCEPT'] == 'application/json'
+929.         assert list(cid) == ['Accept']
+930. 
+931.     def test_len(self):
+932.         cid = CaseInsensitiveDict({'a': 'a', 'b': 'b'})
+933.         cid['A'] = 'a'
+934.         assert len(cid) == 2
+935. 
+936.     def test_getitem(self):
+937.         cid = CaseInsensitiveDict({'Spam': 'blueval'})
+938.         assert cid['spam'] == 'blueval'
+939.         assert cid['SPAM'] == 'blueval'
+940. 
+941.     def test_fixes_649(self):
+942.         """__setitem__ should behave case-insensitively."""
+943.         cid = CaseInsensitiveDict()
+944.         cid['spam'] = 'oneval'
+945.         cid['Spam'] = 'twoval'
+946.         cid['sPAM'] = 'redval'
+947.         cid['SPAM'] = 'blueval'
+948.         assert cid['spam'] == 'blueval'
+949.         assert cid['SPAM'] == 'blueval'
+950.         assert list(cid.keys()) == ['SPAM']
+951. 
+952.     def test_delitem(self):
+953.         cid = CaseInsensitiveDict()
+954.         cid['Spam'] = 'someval'
+955.         del cid['sPam']
+956.         assert 'spam' not in cid
+957.         assert len(cid) == 0
+958. 
+959.     def test_contains(self):
+960.         cid = CaseInsensitiveDict()
+961.         cid['Spam'] = 'someval'
+962.         assert 'Spam' in cid
+963.         assert 'spam' in cid
+964.         assert 'SPAM' in cid
+965.         assert 'sPam' in cid
+966.         assert 'notspam' not in cid
+967. 
+968.     def test_get(self):
+969.         cid = CaseInsensitiveDict()
+970.         cid['spam'] = 'oneval'
+971.         cid['SPAM'] = 'blueval'
+972.         assert cid.get('spam') == 'blueval'
+973.         assert cid.get('SPAM') == 'blueval'
+974.         assert cid.get('sPam') == 'blueval'
+975.         assert cid.get('notspam', 'default') == 'default'
+976. 
+977.     def test_update(self):
+978.         cid = CaseInsensitiveDict()
+979.         cid['spam'] = 'blueval'
+980.         cid.update({'sPam': 'notblueval'})
+981.         assert cid['spam'] == 'notblueval'
+982.         cid = CaseInsensitiveDict({'Foo': 'foo','BAr': 'bar'})
+983.         cid.update({'fOO': 'anotherfoo', 'bAR': 'anotherbar'})
+984.         assert len(cid) == 2
+985.         assert cid['foo'] == 'anotherfoo'
+986.         assert cid['bar'] == 'anotherbar'
+987. 
+988.     def test_update_retains_unchanged(self):
+989.         cid = CaseInsensitiveDict({'foo': 'foo', 'bar': 'bar'})
+990.         cid.update({'foo': 'newfoo'})
+991.         assert cid['bar'] == 'bar'
+992. 
+993.     def test_iter(self):
+994.         cid = CaseInsensitiveDict({'Spam': 'spam', 'Eggs': 'eggs'})
+995.         keys = frozenset(['Spam', 'Eggs'])
+996.         assert frozenset(iter(cid)) == keys
+997. 
+998.     def test_equality(self):
+999.         cid = CaseInsensitiveDict({'SPAM': 'blueval', 'Eggs': 'redval'})
+1000.         othercid = CaseInsensitiveDict({'spam': 'blueval', 'eggs': 'redval'})
+1001.         assert cid == othercid
+1002.         del othercid['spam']
+1003.         assert cid != othercid
+1004.         assert cid == {'spam': 'blueval', 'eggs': 'redval'}
+1005. 
+1006.     def test_setdefault(self):
+1007.         cid = CaseInsensitiveDict({'Spam': 'blueval'})
+1008.         assert cid.setdefault('spam', 'notblueval') == 'blueval'
+1009.         assert cid.setdefault('notspam', 'notblueval') == 'notblueval'
+1010. 
+1011.     def test_lower_items(self):
+1012.         cid = CaseInsensitiveDict({
+1013.             'Accept': 'application/json',
+1014.             'user-Agent': 'requests',
+1015.         })
+1016.         keyset = frozenset(lowerkey for lowerkey, v in cid.lower_items())
+1017.         lowerkeyset = frozenset(['accept', 'user-agent'])
+1018.         assert keyset == lowerkeyset
+1019. 
+1020.     def test_preserve_key_case(self):
+1021.         cid = CaseInsensitiveDict({
+1022.             'Accept': 'application/json',
+1023.             'user-Agent': 'requests',
+1024.         })
+1025.         keyset = frozenset(['Accept', 'user-Agent'])
+1026.         assert frozenset(i[0] for i in cid.items()) == keyset
+1027.         assert frozenset(cid.keys()) == keyset
+1028.         assert frozenset(cid) == keyset
+1029. 
+1030.     def test_preserve_last_key_case(self):
+1031.         cid = CaseInsensitiveDict({
+1032.             'Accept': 'application/json',
+1033.             'user-Agent': 'requests',
+1034.         })
+1035.         cid.update({'ACCEPT': 'application/json'})
+1036.         cid['USER-AGENT'] = 'requests'
+1037.         keyset = frozenset(['ACCEPT', 'USER-AGENT'])
+1038.         assert frozenset(i[0] for i in cid.items()) == keyset
+1039.         assert frozenset(cid.keys()) == keyset
+1040.         assert frozenset(cid) == keyset
+1041. 
+1042. 
+1043. class UtilsTestCase(unittest.TestCase):
+1044. 
+1045.     def test_super_len_io_streams(self):
+1046.         """ Ensures that we properly deal with different kinds of IO streams. """
+1047.         # uses StringIO or io.StringIO (see import above)
+1048.         from io import BytesIO
+1049.         from requests.utils import super_len
+1050. 
+1051.         assert super_len(StringIO.StringIO()) == 0
+1052.         assert super_len(StringIO.StringIO('with so much drama in the LBC')) == 29
+1053. 
+1054.         assert super_len(BytesIO()) == 0
+1055.         assert super_len(BytesIO(b"it's kinda hard bein' snoop d-o-double-g")) == 40
+1056. 
+1057.         try:
+1058.             import cStringIO
+1059.         except ImportError:
+1060.             pass
+1061.         else:
+1062.             assert super_len(cStringIO.StringIO('but some how, some way...')) == 25
+1063. 
+1064.     def test_get_environ_proxies_ip_ranges(self):
+1065.         """ Ensures that IP addresses are correctly matches with ranges in no_proxy variable """
+1066.         from requests.utils import get_environ_proxies
+1067.         os.environ['no_proxy'] = "192.168.0.0/24,127.0.0.1,localhost.localdomain,172.16.1.1"
+1068.         assert get_environ_proxies('http://192.168.0.1:5000/') == {}
+1069.         assert get_environ_proxies('http://192.168.0.1/') == {}
+1070.         assert get_environ_proxies('http://172.16.1.1/') == {}
+1071.         assert get_environ_proxies('http://172.16.1.1:5000/') == {}
+1072.         assert get_environ_proxies('http://192.168.1.1:5000/') != {}
+1073.         assert get_environ_proxies('http://192.168.1.1/') != {}
+1074. 
+1075.     def test_get_environ_proxies(self):
+1076.         """ Ensures that IP addresses are correctly matches with ranges in no_proxy variable """
+1077.         from requests.utils import get_environ_proxies
+1078.         os.environ['no_proxy'] = "127.0.0.1,localhost.localdomain,192.168.0.0/24,172.16.1.1"
+1079.         assert get_environ_proxies('http://localhost.localdomain:5000/v1.0/') == {}
+1080.         assert get_environ_proxies('http://www.requests.com/') != {}
+1081. 
+1082.     def test_is_ipv4_address(self):
+1083.         from requests.utils import is_ipv4_address
+1084.         assert is_ipv4_address('8.8.8.8')
+1085.         assert not is_ipv4_address('8.8.8.8.8')
+1086.         assert not is_ipv4_address('localhost.localdomain')
+1087. 
+1088.     def test_is_valid_cidr(self):
+1089.         from requests.utils import is_valid_cidr
+1090.         assert not is_valid_cidr('8.8.8.8')
+1091.         assert is_valid_cidr('192.168.1.0/24')
+1092. 
+1093.     def test_dotted_netmask(self):
+1094.         from requests.utils import dotted_netmask
+1095.         assert dotted_netmask(8) == '255.0.0.0'
+1096.         assert dotted_netmask(24) == '255.255.255.0'
+1097.         assert dotted_netmask(25) == '255.255.255.128'
+1098. 
+1099.     def test_address_in_network(self):
+1100.         from requests.utils import address_in_network
+1101.         assert address_in_network('192.168.1.1', '192.168.1.0/24')
+1102.         assert not address_in_network('172.16.0.1', '192.168.1.0/24')
+1103. 
+1104.     def test_get_auth_from_url(self):
+1105.         """ Ensures that username and password in well-encoded URI as per RFC 3986 are correclty extracted """
+1106.         from requests.utils import get_auth_from_url
+1107.         from requests.compat import quote
+1108.         percent_encoding_test_chars = "%!*'();:@&=+$,/?#[] "
+1109.         url_address = "request.com/url.html#test"
+1110.         url = "http://" + quote(percent_encoding_test_chars, '') + ':' + quote(percent_encoding_test_chars, '') + '@' + url_address
+1111.         (username, password) = get_auth_from_url(url)
+1112.         assert username == percent_encoding_test_chars
+1113.         assert password == percent_encoding_test_chars
+1114. 
+1115. 
+1116. class TestMorselToCookieExpires(unittest.TestCase):
+1117. 
+1118.     """Tests for morsel_to_cookie when morsel contains expires."""
+1119. 
+1120.     def test_expires_valid_str(self):
+1121.         """Test case where we convert expires from string time."""
+1122. 
+1123.         morsel = Morsel()
+1124.         morsel['expires'] = 'Thu, 01-Jan-1970 00:00:01 GMT'
+1125.         cookie = morsel_to_cookie(morsel)
+1126.         assert cookie.expires == 1
+1127. 
+1128.     def test_expires_invalid_int(self):
+1129.         """Test case where an invalid type is passed for expires."""
+1130. 
+1131.         morsel = Morsel()
+1132.         morsel['expires'] = 100
+1133.         with pytest.raises(TypeError):
+1134.             morsel_to_cookie(morsel)
+1135. 
+1136.     def test_expires_invalid_str(self):
+1137.         """Test case where an invalid string is input."""
+1138. 
+1139.         morsel = Morsel()
+1140.         morsel['expires'] = 'woops'
+1141.         with pytest.raises(ValueError):
+1142.             morsel_to_cookie(morsel)
+1143. 
+1144.     def test_expires_none(self):
+1145.         """Test case where expires is None."""
+1146. 
+1147.         morsel = Morsel()
+1148.         morsel['expires'] = None
+1149.         cookie = morsel_to_cookie(morsel)
+1150.         assert cookie.expires is None
+1151. 
+1152. 
+1153. class TestMorselToCookieMaxAge(unittest.TestCase):
+1154. 
+1155.     """Tests for morsel_to_cookie when morsel contains max-age."""
+1156. 
+1157.     def test_max_age_valid_int(self):
+1158.         """Test case where a valid max age in seconds is passed."""
+1159. 
+1160.         morsel = Morsel()
+1161.         morsel['max-age'] = 60
+1162.         cookie = morsel_to_cookie(morsel)
+1163.         assert isinstance(cookie.expires, int)
+1164. 
+1165.     def test_max_age_invalid_str(self):
+1166.         """Test case where a invalid max age is passed."""
+1167. 
+1168.         morsel = Morsel()
+1169.         morsel['max-age'] = 'woops'
+1170.         with pytest.raises(TypeError):
+1171.             morsel_to_cookie(morsel)
+1172. 
+1173. 
+1174. if __name__ == '__main__':
+1175.     unittest.main()
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 17:30:14,888 - thread-124604689417920.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The current context, which contains the entirety of `test_requests.py`, is sufficient to fulfill the user's request. I have identified three relevant test cases within this file that demonstrate functionality similar to the reported bug, covering session header manipulation, including setting, updating, and removing headers. All necessary imports, test setup, and helper functions are present in the provided context, so no further information is required." query='' extra_requirements='' purpose=''
+2025-12-21 17:30:14,889 - thread-124604689417920.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

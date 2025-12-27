@@ -1,0 +1,1733 @@
+2025-12-20 22:15:35,141 - thread-138379146561216.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Lexer "python3" in --pastebin feature causes HTTP errors
+
+Description: The `--pastebin` option currently submits the output of `pytest` to `bpaste.net` using `lexer=python3`: https://github.com/pytest-dev/pytest/blob/d47b9d04d4cf824150caef46c9c888779c1b3f58/src/_pytest/pastebin.py#L68-L73
+
+For some `contents`, this will raise a "HTTP Error 400: Bad Request".
+
+As an example:
+~~~
+>>> from urllib.request import urlopen
+>>> with open("data.txt", "rb") as in_fh:
+...     data = in_fh.read()
+>>> url = "https://bpaste.net"
+>>> urlopen(url, data=data)
+HTTPError: Bad Request
+~~~
+with the attached [data.txt](https://github.com/pytest-dev/pytest/files/3561212/data.txt).
+
+This is the underlying cause for the problems mentioned in #5764.
+
+The call goes through fine if `lexer` is changed from `python3` to `text`. This would seem like the right thing to do in any case: the console output of a `pytest` run that is being uploaded is not Python code, but arbitrary text.
+
+
+Patch information:
+diff --git a/src/_pytest/pastebin.py b/src/_pytest/pastebin.py
+index 41576a615..307a61f42 100644
+--- a/src/_pytest/pastebin.py
++++ b/src/_pytest/pastebin.py
+@@ -66,7 +66,7 @@ def create_new_paste(contents):
+     """
+     Creates a new paste using bpaste.net service.
+ 
+-    :contents: paste contents as utf-8 encoded bytes
++    :contents: paste contents as a text string or utf-8 encoded bytes
+     :returns: url to the pasted contents
+     """
+     import re
+@@ -78,8 +78,8 @@ def create_new_paste(contents):
+         from urllib.parse import urlencode
+ 
+     params = {
+-        "code": contents,
+-        "lexer": "python3" if sys.version_info[0] >= 3 else "python",
++        "code": contents.decode("utf-8", "replace") if isinstance(contents, six.binary_type) else contents,
++        "lexer": "text",
+         "expiry": "1week",
+     }
+     url = "https://bpaste.net"
+diff --git a/testing/test_pastebin.py b/testing/test_pastebin.py
+index bac8f9802..aac0b651e 100644
+--- a/testing/test_pastebin.py
++++ b/testing/test_pastebin.py
+@@ -126,8 +126,7 @@ class TestPaste(object):
+         assert len(mocked_urlopen) == 1
+         url, data = mocked_urlopen[0]
+         assert type(data) is bytes
+-        lexer = "python3" if sys.version_info[0] >= 3 else "python"
+         assert url == "https://bpaste.net"
+-        assert "lexer=%s" % lexer in data.decode()
++        assert "lexer=text" in data.decode()
+         assert "code=full-paste-contents" in data.decode()
+         assert "expiry=1week" in data.decode()
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-20 22:15:35,256 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── config.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CONTRIBUTING.rst
+├── HOWTORELEASE.rst
+├── README.rst
+├── TIDELIFT.rst
+├── azure-pipelines.yml
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 5801.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   └── sidebarintro.html
+|       ├── _themes
+|       |   ├── flask
+|       |   |   ├── layout.html
+|       |   |   ├── relations.html
+|       |   |   └── static
+|       |   └── flask_theme_support.py
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── costlysetup
+|       |   |   ├── conftest.py
+|       |   |   ├── sub_a
+|       |   |   └── sub_b
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── py2py3
+|       |   |   ├── conftest.py
+|       |   |   ├── test_py2.py
+|       |   |   └── test_py3.py
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── publish_gh_release_notes.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   └── release.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── _py2traceback.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   └── saferepr.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── legacy.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── deprecated
+    |   |   └── test_fixture_named_request.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   └── test_setup_skip_module.py
+    |   └── warnings
+    |       └── test_group_warnings_by_message.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   └── test_saferepr.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   ├── setup_only.py
+    |   ├── setup_plan.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_mark.py
+    ├── test_modimport.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pdb.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Lexer "python3" in --pastebin feature causes HTTP errors
+
+Description: The `--pastebin` option currently submits the output of `pytest` to `bpaste.net` using `lexer=python3`: https://github.com/pytest-dev/pytest/blob/d47b9d04d4cf824150caef46c9c888779c1b3f58/src/_pytest/pastebin.py#L68-L73
+
+For some `contents`, this will raise a "HTTP Error 400: Bad Request".
+
+As an example:
+~~~
+>>> from urllib.request import urlopen
+>>> with open("data.txt", "rb") as in_fh:
+...     data = in_fh.read()
+>>> url = "https://bpaste.net"
+>>> urlopen(url, data=data)
+HTTPError: Bad Request
+~~~
+with the attached [data.txt](https://github.com/pytest-dev/pytest/files/3561212/data.txt).
+
+This is the underlying cause for the problems mentioned in #5764.
+
+The call goes through fine if `lexer` is changed from `python3` to `text`. This would seem like the right thing to do in any case: the console output of a `pytest` run that is being uploaded is not Python code, but arbitrary text.
+
+
+Patch information:
+diff --git a/src/_pytest/pastebin.py b/src/_pytest/pastebin.py
+index 41576a615..307a61f42 100644
+--- a/src/_pytest/pastebin.py
++++ b/src/_pytest/pastebin.py
+@@ -66,7 +66,7 @@ def create_new_paste(contents):
+     """
+     Creates a new paste using bpaste.net service.
+ 
+-    :contents: paste contents as utf-8 encoded bytes
++    :contents: paste contents as a text string or utf-8 encoded bytes
+     :returns: url to the pasted contents
+     """
+     import re
+@@ -78,8 +78,8 @@ def create_new_paste(contents):
+         from urllib.parse import urlencode
+ 
+     params = {
+-        "code": contents,
+-        "lexer": "python3" if sys.version_info[0] >= 3 else "python",
++        "code": contents.decode("utf-8", "replace") if isinstance(contents, six.binary_type) else contents,
++        "lexer": "text",
+         "expiry": "1week",
+     }
+     url = "https://bpaste.net"
+diff --git a/testing/test_pastebin.py b/testing/test_pastebin.py
+index bac8f9802..aac0b651e 100644
+--- a/testing/test_pastebin.py
++++ b/testing/test_pastebin.py
+@@ -126,8 +126,7 @@ class TestPaste(object):
+         assert len(mocked_urlopen) == 1
+         url, data = mocked_urlopen[0]
+         assert type(data) is bytes
+-        lexer = "python3" if sys.version_info[0] >= 3 else "python"
+         assert url == "https://bpaste.net"
+-        assert "lexer=%s" % lexer in data.decode()
++        assert "lexer=text" in data.decode()
+         assert "code=full-paste-contents" in data.decode()
+         assert "expiry=1week" in data.decode()
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 22:15:42,667 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to find 3 relevant test cases for a bug in the `--pastebin` feature. The patch and file structure indicate that `testing/test_pastebin.py` contains the relevant tests. The current context is empty, so I need the content of this file to proceed.' query='Please provide the full content of testing/test_pastebin.py.' extra_requirements='' purpose='I need the content of this file to identify and extract the 3 most relevant test cases as requested by the user.'
+2025-12-20 22:15:42,668 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of testing/test_pastebin.py.
+2025-12-20 22:15:42,668 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-20 22:15:42,669 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-20 22:15:42,669 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-20 22:15:42,669 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of testing/test_pastebin.py.
+Purpose: I need the content of this file to identify and extract the 3 most relevant test cases as requested by the user.
+2025-12-20 22:15:45,054 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the `testing/test_pastebin.py` file. I will now analyze the content to identify the three most relevant test cases as requested.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/test_pastebin.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2044, 'candidates_token_count': 59, 'total_token_count': 2219, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2044}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 59}], 'thoughts_token_count': 116, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.1392331689091052, 'model_name': 'gemini-2.5-pro'} id='run--5c9c65fb-19ef-4dad-a16c-d5c32c3a25c6-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/test_pastebin.py'}, 'id': 'e7bdc010-c0a7-4a44-8df5-935a9496ef67', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2044, 'output_tokens': 59, 'total_tokens': 2219, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 116}}
+2025-12-20 22:15:57,174 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the content of `testing/test_pastebin.py` and analyzed it to identify the three most relevant test cases. The selected tests are `test_failed`, `test_all`, and `test_create_new_paste`, as they cover the primary modes of the pastebin functionality for test reporting and the core functionality of creating a paste.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'citation_metadata': {'citations': [{'start_index': 1931, 'end_index': 2307, 'uri': 'https://github.com/pytest-dev/pytest', 'license_': 'MIT', 'title': ''}, {'start_index': 2363, 'end_index': 3110, 'uri': 'https://github.com/pytest-dev/pytest', 'license_': 'MIT', 'title': ''}, {'start_index': 3210, 'end_index': 3495, 'uri': 'https://github.com/pytest-dev/pytest', 'license_': 'MIT', 'title': ''}, {'start_index': 3369, 'end_index': 3702, 'uri': 'https://github.com/pytest-dev/pytest', 'license_': 'MIT', 'title': ''}]}, 'usage_metadata': {'prompt_token_count': 3856, 'candidates_token_count': 75, 'total_token_count': 5237, 'cached_content_token_count': 1639, 'prompt_tokens_details': [{'modality': 1, 'token_count': 3856}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1639}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 75}], 'thoughts_token_count': 1306}, 'finish_reason': 'STOP', 'avg_logprobs': -0.9431675211588542, 'model_name': 'gemini-2.5-pro'} id='run--89a161f5-e83a-40a8-a5f0-76a971cc8c42-0' usage_metadata={'input_tokens': 3856, 'output_tokens': 75, 'total_tokens': 5237, 'input_token_details': {'cache_read': 1639}, 'output_token_details': {'reasoning': 1306}}
+2025-12-20 22:15:57,176 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of testing/test_pastebin.py.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the content of this file to identify and extract the 3 most relevant test cases as requested by the user.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/test_pastebin.py
+Line number range: 1 - 133
+Content:
+1. # -*- coding: utf-8 -*-
+2. from __future__ import absolute_import
+3. from __future__ import division
+4. from __future__ import print_function
+5. 
+6. import sys
+7. 
+8. import pytest
+9. 
+10. 
+11. class TestPasteCapture(object):
+12.     @pytest.fixture
+13.     def pastebinlist(self, monkeypatch, request):
+14.         pastebinlist = []
+15.         plugin = request.config.pluginmanager.getplugin("pastebin")
+16.         monkeypatch.setattr(plugin, "create_new_paste", pastebinlist.append)
+17.         return pastebinlist
+18. 
+19.     def test_failed(self, testdir, pastebinlist):
+20.         testpath = testdir.makepyfile(
+21.             """
+22.             import pytest
+23.             def test_pass():
+24.                 pass
+25.             def test_fail():
+26.                 assert 0
+27.             def test_skip():
+28.                 pytest.skip("")
+29.         """
+30.         )
+31.         reprec = testdir.inline_run(testpath, "--paste=failed")
+32.         assert len(pastebinlist) == 1
+33.         s = pastebinlist[0]
+34.         assert s.find("def test_fail") != -1
+35.         assert reprec.countoutcomes() == [1, 1, 1]
+36. 
+37.     def test_all(self, testdir, pastebinlist):
+38.         from _pytest.pytester import LineMatcher
+39. 
+40.         testpath = testdir.makepyfile(
+41.             """
+42.             import pytest
+43.             def test_pass():
+44.                 pass
+45.             def test_fail():
+46.                 assert 0
+47.             def test_skip():
+48.                 pytest.skip("")
+49.         """
+50.         )
+51.         reprec = testdir.inline_run(testpath, "--pastebin=all", "-v")
+52.         assert reprec.countoutcomes() == [1, 1, 1]
+53.         assert len(pastebinlist) == 1
+54.         contents = pastebinlist[0].decode("utf-8")
+55.         matcher = LineMatcher(contents.splitlines())
+56.         matcher.fnmatch_lines(
+57.             [
+58.                 "*test_pass PASSED*",
+59.                 "*test_fail FAILED*",
+60.                 "*test_skip SKIPPED*",
+61.                 "*== 1 failed, 1 passed, 1 skipped in *",
+62.             ]
+63.         )
+64. 
+65.     def test_non_ascii_paste_text(self, testdir):
+66.         """Make sure that text which contains non-ascii characters is pasted
+67.         correctly. See #1219.
+68.         """
+69.         testdir.makepyfile(
+70.             test_unicode="""
+71.             # -*- coding: utf-8 -*-
+72.             def test():
+73.                 assert '☺' == 1
+74.         """
+75.         )
+76.         result = testdir.runpytest("--pastebin=all")
+77.         if sys.version_info[0] >= 3:
+78.             expected_msg = "*assert '☺' == 1*"
+79.         else:
+80.             expected_msg = "*assert '\\xe2\\x98\\xba' == 1*"
+81.         result.stdout.fnmatch_lines(
+82.             [
+83.                 expected_msg,
+84.                 "*== 1 failed in *",
+85.                 "*Sending information to Paste Service*",
+86.             ]
+87.         )
+88. 
+89. 
+90. class TestPaste(object):
+91.     @pytest.fixture
+92.     def pastebin(self, request):
+93.         return request.config.pluginmanager.getplugin("pastebin")
+94. 
+95.     @pytest.fixture
+96.     def mocked_urlopen(self, monkeypatch):
+97.         """
+98.         monkeypatch the actual urlopen calls done by the internal plugin
+99.         function that connects to bpaste service.
+100.         """
+101.         calls = []
+102. 
+103.         def mocked(url, data):
+104.             calls.append((url, data))
+105. 
+106.             class DummyFile(object):
+107.                 def read(self):
+108.                     # part of html of a normal response
+109.                     return b'View <a href="/raw/3c0c6750bd">raw</a>.'
+110. 
+111.             return DummyFile()
+112. 
+113.         if sys.version_info < (3, 0):
+114.             import urllib
+115. 
+116.             monkeypatch.setattr(urllib, "urlopen", mocked)
+117.         else:
+118.             import urllib.request
+119. 
+120.             monkeypatch.setattr(urllib.request, "urlopen", mocked)
+121.         return calls
+122. 
+123.     def test_create_new_paste(self, pastebin, mocked_urlopen):
+124.         result = pastebin.create_new_paste(b"full-paste-contents")
+125.         assert result == "https://bpaste.net/show/3c0c6750bd"
+126.         assert len(mocked_urlopen) == 1
+127.         url, data = mocked_urlopen[0]
+128.         assert type(data) is bytes
+129.         lexer = "python3" if sys.version_info[0] >= 3 else "python"
+130.         assert url == "https://bpaste.net"
+131.         assert "lexer=%s" % lexer in data.decode()
+132.         assert "code=full-paste-contents" in data.decode()
+133.         assert "expiry=1week" in data.decode()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-20 22:16:00,795 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asks for the 'full content' of the file 'testing/test_pastebin.py'.\n2. Extended relevance:\n   - The provided context contains the file 'testing/test_pastebin.py' from line 1 to 133, which represents the entire file content.\n   - To fulfill the user's request, the entire file content must be returned.", relative_path='testing/test_pastebin.py', start_line=1, end_line=133)]
+2025-12-20 22:16:00,796 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of testing/test_pastebin.py.
+2025-12-20 22:16:00,796 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-20 22:16:00,796 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-20 22:16:00,797 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-20 22:16:00,797 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-20 22:16:00,797 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── config.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CONTRIBUTING.rst
+├── HOWTORELEASE.rst
+├── README.rst
+├── TIDELIFT.rst
+├── azure-pipelines.yml
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 5801.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   └── sidebarintro.html
+|       ├── _themes
+|       |   ├── flask
+|       |   |   ├── layout.html
+|       |   |   ├── relations.html
+|       |   |   └── static
+|       |   └── flask_theme_support.py
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── costlysetup
+|       |   |   ├── conftest.py
+|       |   |   ├── sub_a
+|       |   |   └── sub_b
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── py2py3
+|       |   |   ├── conftest.py
+|       |   |   ├── test_py2.py
+|       |   |   └── test_py3.py
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── publish_gh_release_notes.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   └── release.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── _py2traceback.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   └── saferepr.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── legacy.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── deprecated
+    |   |   └── test_fixture_named_request.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   └── test_setup_skip_module.py
+    |   └── warnings
+    |       └── test_group_warnings_by_message.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   └── test_saferepr.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   ├── setup_only.py
+    |   ├── setup_plan.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_mark.py
+    ├── test_modimport.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pdb.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Lexer "python3" in --pastebin feature causes HTTP errors
+
+Description: The `--pastebin` option currently submits the output of `pytest` to `bpaste.net` using `lexer=python3`: https://github.com/pytest-dev/pytest/blob/d47b9d04d4cf824150caef46c9c888779c1b3f58/src/_pytest/pastebin.py#L68-L73
+
+For some `contents`, this will raise a "HTTP Error 400: Bad Request".
+
+As an example:
+~~~
+>>> from urllib.request import urlopen
+>>> with open("data.txt", "rb") as in_fh:
+...     data = in_fh.read()
+>>> url = "https://bpaste.net"
+>>> urlopen(url, data=data)
+HTTPError: Bad Request
+~~~
+with the attached [data.txt](https://github.com/pytest-dev/pytest/files/3561212/data.txt).
+
+This is the underlying cause for the problems mentioned in #5764.
+
+The call goes through fine if `lexer` is changed from `python3` to `text`. This would seem like the right thing to do in any case: the console output of a `pytest` run that is being uploaded is not Python code, but arbitrary text.
+
+
+Patch information:
+diff --git a/src/_pytest/pastebin.py b/src/_pytest/pastebin.py
+index 41576a615..307a61f42 100644
+--- a/src/_pytest/pastebin.py
++++ b/src/_pytest/pastebin.py
+@@ -66,7 +66,7 @@ def create_new_paste(contents):
+     """
+     Creates a new paste using bpaste.net service.
+ 
+-    :contents: paste contents as utf-8 encoded bytes
++    :contents: paste contents as a text string or utf-8 encoded bytes
+     :returns: url to the pasted contents
+     """
+     import re
+@@ -78,8 +78,8 @@ def create_new_paste(contents):
+         from urllib.parse import urlencode
+ 
+     params = {
+-        "code": contents,
+-        "lexer": "python3" if sys.version_info[0] >= 3 else "python",
++        "code": contents.decode("utf-8", "replace") if isinstance(contents, six.binary_type) else contents,
++        "lexer": "text",
+         "expiry": "1week",
+     }
+     url = "https://bpaste.net"
+diff --git a/testing/test_pastebin.py b/testing/test_pastebin.py
+index bac8f9802..aac0b651e 100644
+--- a/testing/test_pastebin.py
++++ b/testing/test_pastebin.py
+@@ -126,8 +126,7 @@ class TestPaste(object):
+         assert len(mocked_urlopen) == 1
+         url, data = mocked_urlopen[0]
+         assert type(data) is bytes
+-        lexer = "python3" if sys.version_info[0] >= 3 else "python"
+         assert url == "https://bpaste.net"
+-        assert "lexer=%s" % lexer in data.decode()
++        assert "lexer=text" in data.decode()
+         assert "code=full-paste-contents" in data.decode()
+         assert "expiry=1week" in data.decode()
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of testing/test_pastebin.py.
+Extra Requirements: 
+Purpose: I need the content of this file to identify and extract the 3 most relevant test cases as requested by the user.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/test_pastebin.py
+Line number range: 1 - 133
+Content:
+1. # -*- coding: utf-8 -*-
+2. from __future__ import absolute_import
+3. from __future__ import division
+4. from __future__ import print_function
+5. 
+6. import sys
+7. 
+8. import pytest
+9. 
+10. 
+11. class TestPasteCapture(object):
+12.     @pytest.fixture
+13.     def pastebinlist(self, monkeypatch, request):
+14.         pastebinlist = []
+15.         plugin = request.config.pluginmanager.getplugin("pastebin")
+16.         monkeypatch.setattr(plugin, "create_new_paste", pastebinlist.append)
+17.         return pastebinlist
+18. 
+19.     def test_failed(self, testdir, pastebinlist):
+20.         testpath = testdir.makepyfile(
+21.             """
+22.             import pytest
+23.             def test_pass():
+24.                 pass
+25.             def test_fail():
+26.                 assert 0
+27.             def test_skip():
+28.                 pytest.skip("")
+29.         """
+30.         )
+31.         reprec = testdir.inline_run(testpath, "--paste=failed")
+32.         assert len(pastebinlist) == 1
+33.         s = pastebinlist[0]
+34.         assert s.find("def test_fail") != -1
+35.         assert reprec.countoutcomes() == [1, 1, 1]
+36. 
+37.     def test_all(self, testdir, pastebinlist):
+38.         from _pytest.pytester import LineMatcher
+39. 
+40.         testpath = testdir.makepyfile(
+41.             """
+42.             import pytest
+43.             def test_pass():
+44.                 pass
+45.             def test_fail():
+46.                 assert 0
+47.             def test_skip():
+48.                 pytest.skip("")
+49.         """
+50.         )
+51.         reprec = testdir.inline_run(testpath, "--pastebin=all", "-v")
+52.         assert reprec.countoutcomes() == [1, 1, 1]
+53.         assert len(pastebinlist) == 1
+54.         contents = pastebinlist[0].decode("utf-8")
+55.         matcher = LineMatcher(contents.splitlines())
+56.         matcher.fnmatch_lines(
+57.             [
+58.                 "*test_pass PASSED*",
+59.                 "*test_fail FAILED*",
+60.                 "*test_skip SKIPPED*",
+61.                 "*== 1 failed, 1 passed, 1 skipped in *",
+62.             ]
+63.         )
+64. 
+65.     def test_non_ascii_paste_text(self, testdir):
+66.         """Make sure that text which contains non-ascii characters is pasted
+67.         correctly. See #1219.
+68.         """
+69.         testdir.makepyfile(
+70.             test_unicode="""
+71.             # -*- coding: utf-8 -*-
+72.             def test():
+73.                 assert '☺' == 1
+74.         """
+75.         )
+76.         result = testdir.runpytest("--pastebin=all")
+77.         if sys.version_info[0] >= 3:
+78.             expected_msg = "*assert '☺' == 1*"
+79.         else:
+80.             expected_msg = "*assert '\\xe2\\x98\\xba' == 1*"
+81.         result.stdout.fnmatch_lines(
+82.             [
+83.                 expected_msg,
+84.                 "*== 1 failed in *",
+85.                 "*Sending information to Paste Service*",
+86.             ]
+87.         )
+88. 
+89. 
+90. class TestPaste(object):
+91.     @pytest.fixture
+92.     def pastebin(self, request):
+93.         return request.config.pluginmanager.getplugin("pastebin")
+94. 
+95.     @pytest.fixture
+96.     def mocked_urlopen(self, monkeypatch):
+97.         """
+98.         monkeypatch the actual urlopen calls done by the internal plugin
+99.         function that connects to bpaste service.
+100.         """
+101.         calls = []
+102. 
+103.         def mocked(url, data):
+104.             calls.append((url, data))
+105. 
+106.             class DummyFile(object):
+107.                 def read(self):
+108.                     # part of html of a normal response
+109.                     return b'View <a href="/raw/3c0c6750bd">raw</a>.'
+110. 
+111.             return DummyFile()
+112. 
+113.         if sys.version_info < (3, 0):
+114.             import urllib
+115. 
+116.             monkeypatch.setattr(urllib, "urlopen", mocked)
+117.         else:
+118.             import urllib.request
+119. 
+120.             monkeypatch.setattr(urllib.request, "urlopen", mocked)
+121.         return calls
+122. 
+123.     def test_create_new_paste(self, pastebin, mocked_urlopen):
+124.         result = pastebin.create_new_paste(b"full-paste-contents")
+125.         assert result == "https://bpaste.net/show/3c0c6750bd"
+126.         assert len(mocked_urlopen) == 1
+127.         url, data = mocked_urlopen[0]
+128.         assert type(data) is bytes
+129.         lexer = "python3" if sys.version_info[0] >= 3 else "python"
+130.         assert url == "https://bpaste.net"
+131.         assert "lexer=%s" % lexer in data.decode()
+132.         assert "code=full-paste-contents" in data.decode()
+133.         assert "expiry=1week" in data.decode()
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-20 22:16:23,600 - thread-138379146561216.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="I have analyzed the provided file `testing/test_pastebin.py` and it contains sufficient information to extract three relevant test cases that cover different aspects of the `pastebin` functionality as described in the user's request. The file includes unit tests for the core function, integration tests for the command-line options, and tests for content encoding. All necessary fixtures and imports are present within the file. Therefore, no additional context is needed." query='' extra_requirements='' purpose=''
+2025-12-20 22:16:23,601 - thread-138379146561216.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

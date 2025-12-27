@@ -1,0 +1,2515 @@
+2025-12-23 09:52:26,637 - thread-130025381672640.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-23 09:52:26,697 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9917.bugfix.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 09:52:38,781 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='To find relevant test cases for the `caplog` fixture bug, I need to examine the tests that exercise its functionality. The most relevant file for this is likely `testing/logging/test_fixture.py`, which I currently do not have access to. I need the content of this file to identify tests that use `caplog.clear()` and `caplog.get_records()` and check their interactions, as described in the bug report.' query='Please provide the full content of `testing/logging/test_fixture.py`.' extra_requirements='' purpose="I need the content of this test file to find existing tests that are relevant to the user's bug report concerning `caplog.clear()` and `caplog.get_records()`."
+2025-12-23 09:52:38,783 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `testing/logging/test_fixture.py`.
+2025-12-23 09:52:38,783 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-23 09:52:38,783 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-23 09:52:38,784 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-23 09:52:38,784 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `testing/logging/test_fixture.py`.
+Purpose: I need the content of this test file to find existing tests that are relevant to the user's bug report concerning `caplog.clear()` and `caplog.get_records()`.
+2025-12-23 09:52:41,305 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content="I have retrieved the full content of `testing/logging/test_fixture.py` to help you find existing tests related to `caplog.clear()` and `caplog.get_records()`. This will allow you to examine the file for relevant test cases that might be related to the user's bug report." additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/logging/test_fixture.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2055, 'candidates_token_count': 89, 'total_token_count': 2227, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2055}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 89}], 'thoughts_token_count': 83, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.07670909367250593, 'model_name': 'gemini-2.5-pro'} id='run--edc21d9e-5e30-4790-b8b1-9ce6db9797f3-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/logging/test_fixture.py'}, 'id': '65e88c55-8671-49a0-8605-631571fab8a6', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2055, 'output_tokens': 89, 'total_tokens': 2227, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 83}}
+2025-12-23 09:52:46,058 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have found the content of `testing/logging/test_fixture.py` and located tests relevant to your query. Specifically, the file contains `test_clear` which tests `caplog.clear()`, and `test_caplog_captures_for_all_stages` which uses `caplog.get_records()`. These examples should help you understand the usage of these functions in the test suite.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"relative_path": "testing/logging/test_fixture.py", "text": "def test_clear(caplog):"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6489, 'candidates_token_count': 127, 'total_token_count': 6846, 'cached_content_token_count': 1759, 'prompt_tokens_details': [{'modality': 1, 'token_count': 6489}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1759}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 127}], 'thoughts_token_count': 230}, 'finish_reason': 'STOP', 'avg_logprobs': -0.15183097358763686, 'model_name': 'gemini-2.5-pro'} id='run--26a31db2-569b-4b08-98a7-52a4b797b5fd-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'relative_path': 'testing/logging/test_fixture.py', 'text': 'def test_clear(caplog):'}, 'id': '5a343724-8fab-45ff-bf1c-53429c808a5f', 'type': 'tool_call'}] usage_metadata={'input_tokens': 6489, 'output_tokens': 127, 'total_tokens': 6846, 'input_token_details': {'cache_read': 1759}, 'output_token_details': {'reasoning': 230}}
+2025-12-23 09:52:54,019 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `testing/logging/test_fixture.py` to help you find existing tests related to `caplog.clear()` and `caplog.get_records()`. I found a test named `test_clear` that specifically examines the functionality of `caplog.clear()`, and also located the usage of `caplog.get_records()` within the `test_caplog_captures_for_all_stages` test. This should give you a clear picture of how these functions are being tested in the codebase.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"relative_path": "testing/logging/test_fixture.py", "text": "caplog.get_records("}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6810, 'candidates_token_count': 155, 'total_token_count': 7578, 'cached_content_token_count': 5277, 'prompt_tokens_details': [{'modality': 1, 'token_count': 6810}], 'cache_tokens_details': [{'modality': 1, 'token_count': 5277}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 155}], 'thoughts_token_count': 613}, 'finish_reason': 'STOP', 'avg_logprobs': -0.3232445747621598, 'model_name': 'gemini-2.5-pro'} id='run--da9a41f7-dab5-4709-b883-d575a7a96231-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'relative_path': 'testing/logging/test_fixture.py', 'text': 'caplog.get_records('}, 'id': '9518ae84-2794-4766-8fc8-aeb22b2638ee', 'type': 'tool_call'}] usage_metadata={'input_tokens': 6810, 'output_tokens': 155, 'total_tokens': 7578, 'input_token_details': {'cache_read': 5277}, 'output_token_details': {'reasoning': 613}}
+2025-12-23 09:53:08,589 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `testing/logging/test_fixture.py` for you. Within this file, I have located specific tests that are relevant to your query. The `test_clear` function directly tests the functionality of `caplog.clear()`, and the `test_caplog_captures_for_all_stages` function provides an example of how `caplog.get_records()` is used to assert on captured log records.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 7453, 'candidates_token_count': 96, 'total_token_count': 8875, 'cached_content_token_count': 5288, 'prompt_tokens_details': [{'modality': 1, 'token_count': 7453}], 'cache_tokens_details': [{'modality': 1, 'token_count': 5288}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 96}], 'thoughts_token_count': 1326}, 'finish_reason': 'STOP', 'avg_logprobs': -1.1930699348449707, 'model_name': 'gemini-2.5-pro'} id='run--98c45348-9168-4572-803d-4f3985cfd22e-0' usage_metadata={'input_tokens': 7453, 'output_tokens': 96, 'total_tokens': 8875, 'input_token_details': {'cache_read': 5288}, 'output_token_details': {'reasoning': 1326}}
+2025-12-23 09:53:08,591 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `testing/logging/test_fixture.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the content of this test file to find existing tests that are relevant to the user's bug report concerning `caplog.clear()` and `caplog.get_records()`.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/logging/test_fixture.py
+Line number range: 1 - 310
+Content:
+1. import logging
+2. 
+3. import pytest
+4. from _pytest.logging import caplog_records_key
+5. from _pytest.pytester import Pytester
+6. 
+7. logger = logging.getLogger(__name__)
+8. sublogger = logging.getLogger(__name__ + ".baz")
+9. 
+10. 
+11. def test_fixture_help(pytester: Pytester) -> None:
+12.     result = pytester.runpytest("--fixtures")
+13.     result.stdout.fnmatch_lines(["*caplog*"])
+14. 
+15. 
+16. def test_change_level(caplog):
+17.     caplog.set_level(logging.INFO)
+18.     logger.debug("handler DEBUG level")
+19.     logger.info("handler INFO level")
+20. 
+21.     caplog.set_level(logging.CRITICAL, logger=sublogger.name)
+22.     sublogger.warning("logger WARNING level")
+23.     sublogger.critical("logger CRITICAL level")
+24. 
+25.     assert "DEBUG" not in caplog.text
+26.     assert "INFO" in caplog.text
+27.     assert "WARNING" not in caplog.text
+28.     assert "CRITICAL" in caplog.text
+29. 
+30. 
+31. def test_change_level_undo(pytester: Pytester) -> None:
+32.     """Ensure that 'set_level' is undone after the end of the test.
+33. 
+34.     Tests the logging output themselves (affacted both by logger and handler levels).
+35.     """
+36.     pytester.makepyfile(
+37.         """
+38.         import logging
+39. 
+40.         def test1(caplog):
+41.             caplog.set_level(logging.INFO)
+42.             # using + operator here so fnmatch_lines doesn't match the code in the traceback
+43.             logging.info('log from ' + 'test1')
+44.             assert 0
+45. 
+46.         def test2(caplog):
+47.             # using + operator here so fnmatch_lines doesn't match the code in the traceback
+48.             logging.info('log from ' + 'test2')
+49.             assert 0
+50.     """
+51.     )
+52.     result = pytester.runpytest()
+53.     result.stdout.fnmatch_lines(["*log from test1*", "*2 failed in *"])
+54.     result.stdout.no_fnmatch_line("*log from test2*")
+55. 
+56. 
+57. def test_change_level_undos_handler_level(pytester: Pytester) -> None:
+58.     """Ensure that 'set_level' is undone after the end of the test (handler).
+59. 
+60.     Issue #7569. Tests the handler level specifically.
+61.     """
+62.     pytester.makepyfile(
+63.         """
+64.         import logging
+65. 
+66.         def test1(caplog):
+67.             assert caplog.handler.level == 0
+68.             caplog.set_level(9999)
+69.             caplog.set_level(41)
+70.             assert caplog.handler.level == 41
+71. 
+72.         def test2(caplog):
+73.             assert caplog.handler.level == 0
+74. 
+75.         def test3(caplog):
+76.             assert caplog.handler.level == 0
+77.             caplog.set_level(43)
+78.             assert caplog.handler.level == 43
+79.     """
+80.     )
+81.     result = pytester.runpytest()
+82.     result.assert_outcomes(passed=3)
+83. 
+84. 
+85. def test_with_statement(caplog):
+86.     with caplog.at_level(logging.INFO):
+87.         logger.debug("handler DEBUG level")
+88.         logger.info("handler INFO level")
+89. 
+90.         with caplog.at_level(logging.CRITICAL, logger=sublogger.name):
+91.             sublogger.warning("logger WARNING level")
+92.             sublogger.critical("logger CRITICAL level")
+93. 
+94.     assert "DEBUG" not in caplog.text
+95.     assert "INFO" in caplog.text
+96.     assert "WARNING" not in caplog.text
+97.     assert "CRITICAL" in caplog.text
+98. 
+99. 
+100. def test_log_access(caplog):
+101.     caplog.set_level(logging.INFO)
+102.     logger.info("boo %s", "arg")
+103.     assert caplog.records[0].levelname == "INFO"
+104.     assert caplog.records[0].msg == "boo %s"
+105.     assert "boo arg" in caplog.text
+106. 
+107. 
+108. def test_messages(caplog):
+109.     caplog.set_level(logging.INFO)
+110.     logger.info("boo %s", "arg")
+111.     logger.info("bar %s\nbaz %s", "arg1", "arg2")
+112.     assert "boo arg" == caplog.messages[0]
+113.     assert "bar arg1\nbaz arg2" == caplog.messages[1]
+114.     assert caplog.text.count("\n") > len(caplog.messages)
+115.     assert len(caplog.text.splitlines()) > len(caplog.messages)
+116. 
+117.     try:
+118.         raise Exception("test")
+119.     except Exception:
+120.         logger.exception("oops")
+121. 
+122.     assert "oops" in caplog.text
+123.     assert "oops" in caplog.messages[-1]
+124.     # Tracebacks are stored in the record and not added until the formatter or handler.
+125.     assert "Exception" in caplog.text
+126.     assert "Exception" not in caplog.messages[-1]
+127. 
+128. 
+129. def test_record_tuples(caplog):
+130.     caplog.set_level(logging.INFO)
+131.     logger.info("boo %s", "arg")
+132. 
+133.     assert caplog.record_tuples == [(__name__, logging.INFO, "boo arg")]
+134. 
+135. 
+136. def test_unicode(caplog):
+137.     caplog.set_level(logging.INFO)
+138.     logger.info("bū")
+139.     assert caplog.records[0].levelname == "INFO"
+140.     assert caplog.records[0].msg == "bū"
+141.     assert "bū" in caplog.text
+142. 
+143. 
+144. def test_clear(caplog):
+145.     caplog.set_level(logging.INFO)
+146.     logger.info("bū")
+147.     assert len(caplog.records)
+148.     assert caplog.text
+149.     caplog.clear()
+150.     assert not len(caplog.records)
+151.     assert not caplog.text
+152. 
+153. 
+154. @pytest.fixture
+155. def logging_during_setup_and_teardown(caplog):
+156.     caplog.set_level("INFO")
+157.     logger.info("a_setup_log")
+158.     yield
+159.     logger.info("a_teardown_log")
+160.     assert [x.message for x in caplog.get_records("teardown")] == ["a_teardown_log"]
+161. 
+162. 
+163. def test_caplog_captures_for_all_stages(caplog, logging_during_setup_and_teardown):
+164.     assert not caplog.records
+165.     assert not caplog.get_records("call")
+166.     logger.info("a_call_log")
+167.     assert [x.message for x in caplog.get_records("call")] == ["a_call_log"]
+168. 
+169.     assert [x.message for x in caplog.get_records("setup")] == ["a_setup_log"]
+170. 
+171.     # This reaches into private API, don't use this type of thing in real tests!
+172.     assert set(caplog._item.stash[caplog_records_key]) == {"setup", "call"}
+173. 
+174. 
+175. def test_ini_controls_global_log_level(pytester: Pytester) -> None:
+176.     pytester.makepyfile(
+177.         """
+178.         import pytest
+179.         import logging
+180.         def test_log_level_override(request, caplog):
+181.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+182.             assert plugin.log_level == logging.ERROR
+183.             logger = logging.getLogger('catchlog')
+184.             logger.warning("WARNING message won't be shown")
+185.             logger.error("ERROR message will be shown")
+186.             assert 'WARNING' not in caplog.text
+187.             assert 'ERROR' in caplog.text
+188.     """
+189.     )
+190.     pytester.makeini(
+191.         """
+192.         [pytest]
+193.         log_level=ERROR
+194.     """
+195.     )
+196. 
+197.     result = pytester.runpytest()
+198.     # make sure that that we get a '0' exit code for the testsuite
+199.     assert result.ret == 0
+200. 
+201. 
+202. def test_caplog_can_override_global_log_level(pytester: Pytester) -> None:
+203.     pytester.makepyfile(
+204.         """
+205.         import pytest
+206.         import logging
+207.         def test_log_level_override(request, caplog):
+208.             logger = logging.getLogger('catchlog')
+209.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+210.             assert plugin.log_level == logging.WARNING
+211. 
+212.             logger.info("INFO message won't be shown")
+213. 
+214.             caplog.set_level(logging.INFO, logger.name)
+215. 
+216.             with caplog.at_level(logging.DEBUG, logger.name):
+217.                 logger.debug("DEBUG message will be shown")
+218. 
+219.             logger.debug("DEBUG message won't be shown")
+220. 
+221.             with caplog.at_level(logging.CRITICAL, logger.name):
+222.                 logger.warning("WARNING message won't be shown")
+223. 
+224.             logger.debug("DEBUG message won't be shown")
+225.             logger.info("INFO message will be shown")
+226. 
+227.             assert "message won't be shown" not in caplog.text
+228.     """
+229.     )
+230.     pytester.makeini(
+231.         """
+232.         [pytest]
+233.         log_level=WARNING
+234.     """
+235.     )
+236. 
+237.     result = pytester.runpytest()
+238.     assert result.ret == 0
+239. 
+240. 
+241. def test_caplog_captures_despite_exception(pytester: Pytester) -> None:
+242.     pytester.makepyfile(
+243.         """
+244.         import pytest
+245.         import logging
+246.         def test_log_level_override(request, caplog):
+247.             logger = logging.getLogger('catchlog')
+248.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+249.             assert plugin.log_level == logging.WARNING
+250. 
+251.             logger.error("ERROR message " + "will be shown")
+252. 
+253.             with caplog.at_level(logging.DEBUG, logger.name):
+254.                 logger.debug("DEBUG message " + "won't be shown")
+255.                 raise Exception()
+256.     """
+257.     )
+258.     pytester.makeini(
+259.         """
+260.         [pytest]
+261.         log_level=WARNING
+262.     """
+263.     )
+264. 
+265.     result = pytester.runpytest()
+266.     result.stdout.fnmatch_lines(["*ERROR message will be shown*"])
+267.     result.stdout.no_fnmatch_line("*DEBUG message won't be shown*")
+268.     assert result.ret == 1
+269. 
+270. 
+271. def test_log_report_captures_according_to_config_option_upon_failure(
+272.     pytester: Pytester,
+273. ) -> None:
+274.     """Test that upon failure:
+275.     (1) `caplog` succeeded to capture the DEBUG message and assert on it => No `Exception` is raised.
+276.     (2) The `DEBUG` message does NOT appear in the `Captured log call` report.
+277.     (3) The stdout, `INFO`, and `WARNING` messages DO appear in the test reports due to `--log-level=INFO`.
+278.     """
+279.     pytester.makepyfile(
+280.         """
+281.         import pytest
+282.         import logging
+283. 
+284.         def function_that_logs():
+285.             logging.debug('DEBUG log ' + 'message')
+286.             logging.info('INFO log ' + 'message')
+287.             logging.warning('WARNING log ' + 'message')
+288.             print('Print ' + 'message')
+289. 
+290.         def test_that_fails(request, caplog):
+291.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+292.             assert plugin.log_level == logging.INFO
+293. 
+294.             with caplog.at_level(logging.DEBUG):
+295.                 function_that_logs()
+296. 
+297.             if 'DEBUG log ' + 'message' not in caplog.text:
+298.                 raise Exception('caplog failed to ' + 'capture DEBUG')
+299. 
+300.             assert False
+301.     """
+302.     )
+303. 
+304.     result = pytester.runpytest("--log-level=INFO")
+305.     result.stdout.no_fnmatch_line("*Exception: caplog failed to capture DEBUG*")
+306.     result.stdout.no_fnmatch_line("*DEBUG log message*")
+307.     result.stdout.fnmatch_lines(
+308.         ["*Print message*", "*INFO log message*", "*WARNING log message*"]
+309.     )
+310.     assert result.ret == 1
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-23 09:53:12,791 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='The user requested the full content of `testing/logging/test_fixture.py`. The context provided contains the entire file, from line 1 to 310. Therefore, the entire file content is relevant and selected.', relative_path='testing/logging/test_fixture.py', start_line=1, end_line=310)]
+2025-12-23 09:53:12,793 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `testing/logging/test_fixture.py`.
+2025-12-23 09:53:12,793 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-23 09:53:12,793 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-23 09:53:12,793 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-23 09:53:12,793 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-23 09:53:12,794 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9917.bugfix.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `testing/logging/test_fixture.py`.
+Extra Requirements: 
+Purpose: I need the content of this test file to find existing tests that are relevant to the user's bug report concerning `caplog.clear()` and `caplog.get_records()`.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/logging/test_fixture.py
+Line number range: 1 - 310
+Content:
+1. import logging
+2. 
+3. import pytest
+4. from _pytest.logging import caplog_records_key
+5. from _pytest.pytester import Pytester
+6. 
+7. logger = logging.getLogger(__name__)
+8. sublogger = logging.getLogger(__name__ + ".baz")
+9. 
+10. 
+11. def test_fixture_help(pytester: Pytester) -> None:
+12.     result = pytester.runpytest("--fixtures")
+13.     result.stdout.fnmatch_lines(["*caplog*"])
+14. 
+15. 
+16. def test_change_level(caplog):
+17.     caplog.set_level(logging.INFO)
+18.     logger.debug("handler DEBUG level")
+19.     logger.info("handler INFO level")
+20. 
+21.     caplog.set_level(logging.CRITICAL, logger=sublogger.name)
+22.     sublogger.warning("logger WARNING level")
+23.     sublogger.critical("logger CRITICAL level")
+24. 
+25.     assert "DEBUG" not in caplog.text
+26.     assert "INFO" in caplog.text
+27.     assert "WARNING" not in caplog.text
+28.     assert "CRITICAL" in caplog.text
+29. 
+30. 
+31. def test_change_level_undo(pytester: Pytester) -> None:
+32.     """Ensure that 'set_level' is undone after the end of the test.
+33. 
+34.     Tests the logging output themselves (affacted both by logger and handler levels).
+35.     """
+36.     pytester.makepyfile(
+37.         """
+38.         import logging
+39. 
+40.         def test1(caplog):
+41.             caplog.set_level(logging.INFO)
+42.             # using + operator here so fnmatch_lines doesn't match the code in the traceback
+43.             logging.info('log from ' + 'test1')
+44.             assert 0
+45. 
+46.         def test2(caplog):
+47.             # using + operator here so fnmatch_lines doesn't match the code in the traceback
+48.             logging.info('log from ' + 'test2')
+49.             assert 0
+50.     """
+51.     )
+52.     result = pytester.runpytest()
+53.     result.stdout.fnmatch_lines(["*log from test1*", "*2 failed in *"])
+54.     result.stdout.no_fnmatch_line("*log from test2*")
+55. 
+56. 
+57. def test_change_level_undos_handler_level(pytester: Pytester) -> None:
+58.     """Ensure that 'set_level' is undone after the end of the test (handler).
+59. 
+60.     Issue #7569. Tests the handler level specifically.
+61.     """
+62.     pytester.makepyfile(
+63.         """
+64.         import logging
+65. 
+66.         def test1(caplog):
+67.             assert caplog.handler.level == 0
+68.             caplog.set_level(9999)
+69.             caplog.set_level(41)
+70.             assert caplog.handler.level == 41
+71. 
+72.         def test2(caplog):
+73.             assert caplog.handler.level == 0
+74. 
+75.         def test3(caplog):
+76.             assert caplog.handler.level == 0
+77.             caplog.set_level(43)
+78.             assert caplog.handler.level == 43
+79.     """
+80.     )
+81.     result = pytester.runpytest()
+82.     result.assert_outcomes(passed=3)
+83. 
+84. 
+85. def test_with_statement(caplog):
+86.     with caplog.at_level(logging.INFO):
+87.         logger.debug("handler DEBUG level")
+88.         logger.info("handler INFO level")
+89. 
+90.         with caplog.at_level(logging.CRITICAL, logger=sublogger.name):
+91.             sublogger.warning("logger WARNING level")
+92.             sublogger.critical("logger CRITICAL level")
+93. 
+94.     assert "DEBUG" not in caplog.text
+95.     assert "INFO" in caplog.text
+96.     assert "WARNING" not in caplog.text
+97.     assert "CRITICAL" in caplog.text
+98. 
+99. 
+100. def test_log_access(caplog):
+101.     caplog.set_level(logging.INFO)
+102.     logger.info("boo %s", "arg")
+103.     assert caplog.records[0].levelname == "INFO"
+104.     assert caplog.records[0].msg == "boo %s"
+105.     assert "boo arg" in caplog.text
+106. 
+107. 
+108. def test_messages(caplog):
+109.     caplog.set_level(logging.INFO)
+110.     logger.info("boo %s", "arg")
+111.     logger.info("bar %s\nbaz %s", "arg1", "arg2")
+112.     assert "boo arg" == caplog.messages[0]
+113.     assert "bar arg1\nbaz arg2" == caplog.messages[1]
+114.     assert caplog.text.count("\n") > len(caplog.messages)
+115.     assert len(caplog.text.splitlines()) > len(caplog.messages)
+116. 
+117.     try:
+118.         raise Exception("test")
+119.     except Exception:
+120.         logger.exception("oops")
+121. 
+122.     assert "oops" in caplog.text
+123.     assert "oops" in caplog.messages[-1]
+124.     # Tracebacks are stored in the record and not added until the formatter or handler.
+125.     assert "Exception" in caplog.text
+126.     assert "Exception" not in caplog.messages[-1]
+127. 
+128. 
+129. def test_record_tuples(caplog):
+130.     caplog.set_level(logging.INFO)
+131.     logger.info("boo %s", "arg")
+132. 
+133.     assert caplog.record_tuples == [(__name__, logging.INFO, "boo arg")]
+134. 
+135. 
+136. def test_unicode(caplog):
+137.     caplog.set_level(logging.INFO)
+138.     logger.info("bū")
+139.     assert caplog.records[0].levelname == "INFO"
+140.     assert caplog.records[0].msg == "bū"
+141.     assert "bū" in caplog.text
+142. 
+143. 
+144. def test_clear(caplog):
+145.     caplog.set_level(logging.INFO)
+146.     logger.info("bū")
+147.     assert len(caplog.records)
+148.     assert caplog.text
+149.     caplog.clear()
+150.     assert not len(caplog.records)
+151.     assert not caplog.text
+152. 
+153. 
+154. @pytest.fixture
+155. def logging_during_setup_and_teardown(caplog):
+156.     caplog.set_level("INFO")
+157.     logger.info("a_setup_log")
+158.     yield
+159.     logger.info("a_teardown_log")
+160.     assert [x.message for x in caplog.get_records("teardown")] == ["a_teardown_log"]
+161. 
+162. 
+163. def test_caplog_captures_for_all_stages(caplog, logging_during_setup_and_teardown):
+164.     assert not caplog.records
+165.     assert not caplog.get_records("call")
+166.     logger.info("a_call_log")
+167.     assert [x.message for x in caplog.get_records("call")] == ["a_call_log"]
+168. 
+169.     assert [x.message for x in caplog.get_records("setup")] == ["a_setup_log"]
+170. 
+171.     # This reaches into private API, don't use this type of thing in real tests!
+172.     assert set(caplog._item.stash[caplog_records_key]) == {"setup", "call"}
+173. 
+174. 
+175. def test_ini_controls_global_log_level(pytester: Pytester) -> None:
+176.     pytester.makepyfile(
+177.         """
+178.         import pytest
+179.         import logging
+180.         def test_log_level_override(request, caplog):
+181.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+182.             assert plugin.log_level == logging.ERROR
+183.             logger = logging.getLogger('catchlog')
+184.             logger.warning("WARNING message won't be shown")
+185.             logger.error("ERROR message will be shown")
+186.             assert 'WARNING' not in caplog.text
+187.             assert 'ERROR' in caplog.text
+188.     """
+189.     )
+190.     pytester.makeini(
+191.         """
+192.         [pytest]
+193.         log_level=ERROR
+194.     """
+195.     )
+196. 
+197.     result = pytester.runpytest()
+198.     # make sure that that we get a '0' exit code for the testsuite
+199.     assert result.ret == 0
+200. 
+201. 
+202. def test_caplog_can_override_global_log_level(pytester: Pytester) -> None:
+203.     pytester.makepyfile(
+204.         """
+205.         import pytest
+206.         import logging
+207.         def test_log_level_override(request, caplog):
+208.             logger = logging.getLogger('catchlog')
+209.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+210.             assert plugin.log_level == logging.WARNING
+211. 
+212.             logger.info("INFO message won't be shown")
+213. 
+214.             caplog.set_level(logging.INFO, logger.name)
+215. 
+216.             with caplog.at_level(logging.DEBUG, logger.name):
+217.                 logger.debug("DEBUG message will be shown")
+218. 
+219.             logger.debug("DEBUG message won't be shown")
+220. 
+221.             with caplog.at_level(logging.CRITICAL, logger.name):
+222.                 logger.warning("WARNING message won't be shown")
+223. 
+224.             logger.debug("DEBUG message won't be shown")
+225.             logger.info("INFO message will be shown")
+226. 
+227.             assert "message won't be shown" not in caplog.text
+228.     """
+229.     )
+230.     pytester.makeini(
+231.         """
+232.         [pytest]
+233.         log_level=WARNING
+234.     """
+235.     )
+236. 
+237.     result = pytester.runpytest()
+238.     assert result.ret == 0
+239. 
+240. 
+241. def test_caplog_captures_despite_exception(pytester: Pytester) -> None:
+242.     pytester.makepyfile(
+243.         """
+244.         import pytest
+245.         import logging
+246.         def test_log_level_override(request, caplog):
+247.             logger = logging.getLogger('catchlog')
+248.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+249.             assert plugin.log_level == logging.WARNING
+250. 
+251.             logger.error("ERROR message " + "will be shown")
+252. 
+253.             with caplog.at_level(logging.DEBUG, logger.name):
+254.                 logger.debug("DEBUG message " + "won't be shown")
+255.                 raise Exception()
+256.     """
+257.     )
+258.     pytester.makeini(
+259.         """
+260.         [pytest]
+261.         log_level=WARNING
+262.     """
+263.     )
+264. 
+265.     result = pytester.runpytest()
+266.     result.stdout.fnmatch_lines(["*ERROR message will be shown*"])
+267.     result.stdout.no_fnmatch_line("*DEBUG message won't be shown*")
+268.     assert result.ret == 1
+269. 
+270. 
+271. def test_log_report_captures_according_to_config_option_upon_failure(
+272.     pytester: Pytester,
+273. ) -> None:
+274.     """Test that upon failure:
+275.     (1) `caplog` succeeded to capture the DEBUG message and assert on it => No `Exception` is raised.
+276.     (2) The `DEBUG` message does NOT appear in the `Captured log call` report.
+277.     (3) The stdout, `INFO`, and `WARNING` messages DO appear in the test reports due to `--log-level=INFO`.
+278.     """
+279.     pytester.makepyfile(
+280.         """
+281.         import pytest
+282.         import logging
+283. 
+284.         def function_that_logs():
+285.             logging.debug('DEBUG log ' + 'message')
+286.             logging.info('INFO log ' + 'message')
+287.             logging.warning('WARNING log ' + 'message')
+288.             print('Print ' + 'message')
+289. 
+290.         def test_that_fails(request, caplog):
+291.             plugin = request.config.pluginmanager.getplugin('logging-plugin')
+292.             assert plugin.log_level == logging.INFO
+293. 
+294.             with caplog.at_level(logging.DEBUG):
+295.                 function_that_logs()
+296. 
+297.             if 'DEBUG log ' + 'message' not in caplog.text:
+298.                 raise Exception('caplog failed to ' + 'capture DEBUG')
+299. 
+300.             assert False
+301.     """
+302.     )
+303. 
+304.     result = pytester.runpytest("--log-level=INFO")
+305.     result.stdout.no_fnmatch_line("*Exception: caplog failed to capture DEBUG*")
+306.     result.stdout.no_fnmatch_line("*DEBUG log message*")
+307.     result.stdout.fnmatch_lines(
+308.         ["*Print message*", "*INFO log message*", "*WARNING log message*"]
+309.     )
+310.     assert result.ret == 1
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 09:53:44,819 - thread-130025381672640.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The provided context, which includes the full content of `testing/logging/test_fixture.py`, is sufficient to identify relevant test cases. This file contains tests for `caplog.clear()` and `caplog.get_records()`, the key functions related to the bug. I can find tests that exercise these functionalities, even if they don't replicate the exact bug scenario. For example, `test_clear` demonstrates the clearing mechanism, and `test_caplog_captures_for_all_stages` shows the usage of `get_records` across different test phases. Another test like `test_log_access` shows direct record inspection. These are sufficient to fulfill the user's request for similar existing tests." query='' extra_requirements='' purpose=''
+2025-12-23 09:53:44,820 - thread-130025381672640.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

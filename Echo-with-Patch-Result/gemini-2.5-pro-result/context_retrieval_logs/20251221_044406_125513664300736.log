@@ -1,0 +1,3744 @@
+2025-12-21 04:44:06,636 - thread-125513664300736.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: 1-element tuple rendered incorrectly
+
+Description: **Describe the bug**
+This is a followup to #7964 which has been addressed in #8265.
+
+However the special case of a 1-element tuple is still not handled correctly.
+
+`(1,)` is rendered as `(1)`, but should keep the trailing comma.
+
+**To Reproduce**
+Add a testcase
+```
+    ("(1,)", "(1,)"),                           # Tuple (single element)
+```
+at https://github.com/sphinx-doc/sphinx/blob/e0b1e1002b500acc63dfd0806f8095dd6b27037b/tests/test_pycode_ast.py#L57
+
+
+
+Patch information:
+diff --git a/sphinx/pycode/ast.py b/sphinx/pycode/ast.py
+index f541ec0a9..2b4f0d434 100644
+--- a/sphinx/pycode/ast.py
++++ b/sphinx/pycode/ast.py
+@@ -213,10 +213,12 @@ class _UnparseVisitor(ast.NodeVisitor):
+         return "%s %s" % (self.visit(node.op), self.visit(node.operand))
+ 
+     def visit_Tuple(self, node: ast.Tuple) -> str:
+-        if node.elts:
+-            return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+-        else:
++        if not node.elts:
+             return "()"
++        elif len(node.elts) == 1:
++            return "(" + self.visit(node.elts[0]) + ",)"
++        else:
++            return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+ 
+     if sys.version_info < (3, 8):
+         # these ast nodes were deprecated in python 3.8
+diff --git a/tests/test_pycode_ast.py b/tests/test_pycode_ast.py
+index e80062351..70fa7f686 100644
+--- a/tests/test_pycode_ast.py
++++ b/tests/test_pycode_ast.py
+@@ -54,6 +54,7 @@ from sphinx.pycode import ast
+     ("- 1", "- 1"),                             # UnaryOp
+     ("- a", "- a"),                             # USub
+     ("(1, 2, 3)", "(1, 2, 3)"),                   # Tuple
++    ("(1,)", "(1,)"),                             # Tuple (single element)
+     ("()", "()"),                               # Tuple (empty)
+ ])
+ def test_unparse(source, expected):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-21 04:44:06,694 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sphinx
+├── .circleci
+|   └── config.yml
+├── .codecov.yml
+├── .github
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bug_report.md
+|   |   ├── config.yml
+|   |   └── feature_request.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── workflows
+|       ├── builddoc.yml
+|       ├── lint.yml
+|       ├── main.yml
+|       ├── nodejs.yml
+|       └── transifex.yml
+├── .readthedocs.yml
+├── CONTRIBUTING.rst
+├── README.rst
+├── bindep.txt
+├── doc
+|   ├── _static
+|   |   ├── conf.py.txt
+|   |   ├── themes
+|   |   |   └── fullsize
+|   |   └── tutorial
+|   ├── _templates
+|   |   ├── index.html
+|   |   └── indexsidebar.html
+|   ├── _themes
+|   |   └── sphinx13
+|   |       ├── layout.html
+|   |       └── static
+|   |           └── sphinx13.css
+|   ├── changes.rst
+|   ├── conf.py
+|   ├── contents.rst
+|   ├── development
+|   |   ├── builders.rst
+|   |   ├── index.rst
+|   |   ├── overview.rst
+|   |   ├── theming.rst
+|   |   └── tutorials
+|   |       ├── autodoc_ext.rst
+|   |       ├── examples
+|   |       |   ├── README.rst
+|   |       |   ├── autodoc_intenum.py
+|   |       |   ├── helloworld.py
+|   |       |   ├── recipe.py
+|   |       |   └── todo.py
+|   |       ├── helloworld.rst
+|   |       ├── index.rst
+|   |       ├── recipe.rst
+|   |       └── todo.rst
+|   ├── examples.rst
+|   ├── extdev
+|   |   ├── appapi.rst
+|   |   ├── builderapi.rst
+|   |   ├── collectorapi.rst
+|   |   ├── deprecated.rst
+|   |   ├── domainapi.rst
+|   |   ├── envapi.rst
+|   |   ├── i18n.rst
+|   |   ├── index.rst
+|   |   ├── logging.rst
+|   |   ├── markupapi.rst
+|   |   ├── nodes.rst
+|   |   ├── parserapi.rst
+|   |   ├── projectapi.rst
+|   |   └── utils.rst
+|   ├── faq.rst
+|   ├── glossary.rst
+|   ├── internals
+|   |   ├── authors.rst
+|   |   ├── code-of-conduct.rst
+|   |   ├── contributing.rst
+|   |   ├── index.rst
+|   |   ├── organization.rst
+|   |   └── release-process.rst
+|   ├── latex.rst
+|   ├── man
+|   |   ├── index.rst
+|   |   ├── sphinx-apidoc.rst
+|   |   ├── sphinx-autogen.rst
+|   |   ├── sphinx-build.rst
+|   |   └── sphinx-quickstart.rst
+|   ├── templating.rst
+|   ├── tutorial
+|   |   └── index.rst
+|   └── usage
+|       ├── advanced
+|       |   ├── intl.rst
+|       |   ├── setuptools.rst
+|       |   └── websupport
+|       |       ├── api.rst
+|       |       ├── index.rst
+|       |       ├── quickstart.rst
+|       |       ├── searchadapters.rst
+|       |       └── storagebackends.rst
+|       ├── builders
+|       |   └── index.rst
+|       ├── configuration.rst
+|       ├── extensions
+|       |   ├── autodoc.rst
+|       |   ├── autosectionlabel.rst
+|       |   ├── autosummary.rst
+|       |   ├── coverage.rst
+|       |   ├── doctest.rst
+|       |   ├── duration.rst
+|       |   ├── example_google.py
+|       |   ├── example_google.rst
+|       |   ├── example_numpy.py
+|       |   ├── example_numpy.rst
+|       |   ├── extlinks.rst
+|       |   ├── githubpages.rst
+|       |   ├── graphviz.rst
+|       |   ├── ifconfig.rst
+|       |   ├── imgconverter.rst
+|       |   ├── index.rst
+|       |   ├── inheritance.rst
+|       |   ├── intersphinx.rst
+|       |   ├── linkcode.rst
+|       |   ├── math.rst
+|       |   ├── napoleon.rst
+|       |   ├── todo.rst
+|       |   └── viewcode.rst
+|       ├── index.rst
+|       ├── installation.rst
+|       ├── markdown.rst
+|       ├── quickstart.rst
+|       ├── restructuredtext
+|       |   ├── basics.rst
+|       |   ├── directives.rst
+|       |   ├── domains.rst
+|       |   ├── field-lists.rst
+|       |   ├── index.rst
+|       |   └── roles.rst
+|       └── theming.rst
+├── karma.conf.js
+├── setup.py
+├── sphinx
+|   ├── __init__.py
+|   ├── __main__.py
+|   ├── addnodes.py
+|   ├── application.py
+|   ├── builders
+|   |   ├── __init__.py
+|   |   ├── _epub_base.py
+|   |   ├── changes.py
+|   |   ├── dirhtml.py
+|   |   ├── dummy.py
+|   |   ├── epub3.py
+|   |   ├── gettext.py
+|   |   ├── html
+|   |   |   ├── __init__.py
+|   |   |   └── transforms.py
+|   |   ├── latex
+|   |   |   ├── __init__.py
+|   |   |   ├── constants.py
+|   |   |   ├── nodes.py
+|   |   |   ├── theming.py
+|   |   |   ├── transforms.py
+|   |   |   └── util.py
+|   |   ├── linkcheck.py
+|   |   ├── manpage.py
+|   |   ├── singlehtml.py
+|   |   ├── texinfo.py
+|   |   ├── text.py
+|   |   └── xml.py
+|   ├── cmd
+|   |   ├── __init__.py
+|   |   ├── build.py
+|   |   ├── make_mode.py
+|   |   └── quickstart.py
+|   ├── config.py
+|   ├── deprecation.py
+|   ├── directives
+|   |   ├── __init__.py
+|   |   ├── code.py
+|   |   ├── other.py
+|   |   └── patches.py
+|   ├── domains
+|   |   ├── __init__.py
+|   |   ├── c.py
+|   |   ├── changeset.py
+|   |   ├── citation.py
+|   |   ├── cpp.py
+|   |   ├── index.py
+|   |   ├── javascript.py
+|   |   ├── math.py
+|   |   ├── python.py
+|   |   ├── rst.py
+|   |   └── std.py
+|   ├── environment
+|   |   ├── __init__.py
+|   |   ├── adapters
+|   |   |   ├── __init__.py
+|   |   |   ├── asset.py
+|   |   |   ├── indexentries.py
+|   |   |   └── toctree.py
+|   |   └── collectors
+|   |       ├── __init__.py
+|   |       ├── asset.py
+|   |       ├── dependencies.py
+|   |       ├── metadata.py
+|   |       ├── title.py
+|   |       └── toctree.py
+|   ├── errors.py
+|   ├── events.py
+|   ├── ext
+|   |   ├── __init__.py
+|   |   ├── apidoc.py
+|   |   ├── autodoc
+|   |   |   ├── __init__.py
+|   |   |   ├── deprecated.py
+|   |   |   ├── directive.py
+|   |   |   ├── importer.py
+|   |   |   ├── mock.py
+|   |   |   ├── preserve_defaults.py
+|   |   |   ├── type_comment.py
+|   |   |   └── typehints.py
+|   |   ├── autosectionlabel.py
+|   |   ├── autosummary
+|   |   |   ├── __init__.py
+|   |   |   ├── generate.py
+|   |   |   └── templates
+|   |   |       └── autosummary
+|   |   ├── coverage.py
+|   |   ├── doctest.py
+|   |   ├── duration.py
+|   |   ├── extlinks.py
+|   |   ├── githubpages.py
+|   |   ├── graphviz.py
+|   |   ├── ifconfig.py
+|   |   ├── imgconverter.py
+|   |   ├── imgmath.py
+|   |   ├── inheritance_diagram.py
+|   |   ├── intersphinx.py
+|   |   ├── linkcode.py
+|   |   ├── mathjax.py
+|   |   ├── napoleon
+|   |   |   ├── __init__.py
+|   |   |   ├── docstring.py
+|   |   |   └── iterators.py
+|   |   ├── todo.py
+|   |   └── viewcode.py
+|   ├── extension.py
+|   ├── highlighting.py
+|   ├── io.py
+|   ├── jinja2glue.py
+|   ├── locale
+|   |   ├── __init__.py
+|   |   ├── ar
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── bg
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── bn
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ca
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── cak
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── cs
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── cy
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── da
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── de
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── el
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── eo
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── es
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── et
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── eu
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fa
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fi
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fr_FR
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── he
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hi
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hi_IN
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hu
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── id
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── it
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ja
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ko
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── lt
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── lv
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── mk
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── nb_NO
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ne
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── nl
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pl
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pt
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pt_BR
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pt_PT
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ro
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ru
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── si
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sk
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sl
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sq
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sr@latin
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sr_RS
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sv
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ta
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── te
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── tr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── uk_UA
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ur
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── vi
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── zh_CN
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   └── zh_TW
+|   |       └── LC_MESSAGES
+|   |           └── sphinx.js
+|   ├── parsers.py
+|   ├── project.py
+|   ├── pycode
+|   |   ├── __init__.py
+|   |   ├── ast.py
+|   |   └── parser.py
+|   ├── pygments_styles.py
+|   ├── registry.py
+|   ├── roles.py
+|   ├── search
+|   |   ├── __init__.py
+|   |   ├── da.py
+|   |   ├── de.py
+|   |   ├── en.py
+|   |   ├── es.py
+|   |   ├── fi.py
+|   |   ├── fr.py
+|   |   ├── hu.py
+|   |   ├── it.py
+|   |   ├── ja.py
+|   |   ├── jssplitter.py
+|   |   ├── minified-js
+|   |   |   ├── base-stemmer.js
+|   |   |   ├── danish-stemmer.js
+|   |   |   ├── dutch-stemmer.js
+|   |   |   ├── finnish-stemmer.js
+|   |   |   ├── french-stemmer.js
+|   |   |   ├── german-stemmer.js
+|   |   |   ├── hungarian-stemmer.js
+|   |   |   ├── italian-stemmer.js
+|   |   |   ├── norwegian-stemmer.js
+|   |   |   ├── porter-stemmer.js
+|   |   |   ├── portuguese-stemmer.js
+|   |   |   ├── romanian-stemmer.js
+|   |   |   ├── russian-stemmer.js
+|   |   |   ├── spanish-stemmer.js
+|   |   |   ├── swedish-stemmer.js
+|   |   |   └── turkish-stemmer.js
+|   |   ├── nl.py
+|   |   ├── no.py
+|   |   ├── non-minified-js
+|   |   |   ├── base-stemmer.js
+|   |   |   ├── danish-stemmer.js
+|   |   |   ├── dutch-stemmer.js
+|   |   |   ├── finnish-stemmer.js
+|   |   |   ├── french-stemmer.js
+|   |   |   ├── german-stemmer.js
+|   |   |   ├── hungarian-stemmer.js
+|   |   |   ├── italian-stemmer.js
+|   |   |   ├── norwegian-stemmer.js
+|   |   |   ├── porter-stemmer.js
+|   |   |   ├── portuguese-stemmer.js
+|   |   |   ├── romanian-stemmer.js
+|   |   |   ├── russian-stemmer.js
+|   |   |   ├── spanish-stemmer.js
+|   |   |   ├── swedish-stemmer.js
+|   |   |   └── turkish-stemmer.js
+|   |   ├── pt.py
+|   |   ├── ro.py
+|   |   ├── ru.py
+|   |   ├── sv.py
+|   |   ├── tr.py
+|   |   └── zh.py
+|   ├── setup_command.py
+|   ├── templates
+|   |   ├── apidoc
+|   |   ├── epub3
+|   |   |   └── container.xml
+|   |   ├── gettext
+|   |   ├── graphviz
+|   |   |   └── graphviz.css
+|   |   ├── htmlhelp
+|   |   ├── imgmath
+|   |   ├── latex
+|   |   ├── quickstart
+|   |   └── texinfo
+|   ├── testing
+|   |   ├── __init__.py
+|   |   ├── comparer.py
+|   |   ├── fixtures.py
+|   |   ├── path.py
+|   |   ├── restructuredtext.py
+|   |   └── util.py
+|   ├── texinputs
+|   ├── texinputs_win
+|   ├── themes
+|   |   ├── agogo
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── basic
+|   |   |   ├── changes
+|   |   |   |   ├── frameset.html
+|   |   |   |   ├── rstsource.html
+|   |   |   |   └── versionchanges.html
+|   |   |   ├── defindex.html
+|   |   |   ├── domainindex.html
+|   |   |   ├── genindex-single.html
+|   |   |   ├── genindex-split.html
+|   |   |   ├── genindex.html
+|   |   |   ├── globaltoc.html
+|   |   |   ├── layout.html
+|   |   |   ├── localtoc.html
+|   |   |   ├── opensearch.xml
+|   |   |   ├── page.html
+|   |   |   ├── relations.html
+|   |   |   ├── search.html
+|   |   |   ├── searchbox.html
+|   |   |   ├── sourcelink.html
+|   |   |   └── static
+|   |   |       ├── doctools.js
+|   |   |       ├── jquery-3.5.1.js
+|   |   |       ├── jquery.js
+|   |   |       ├── searchtools.js
+|   |   |       ├── underscore-1.13.1.js
+|   |   |       └── underscore.js
+|   |   ├── bizstyle
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       ├── css3-mediaqueries.js
+|   |   |       └── css3-mediaqueries_src.js
+|   |   ├── classic
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── default
+|   |   |   └── static
+|   |   |       └── default.css
+|   |   ├── epub
+|   |   |   ├── epub-cover.html
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── haiku
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── nature
+|   |   |   └── static
+|   |   ├── nonav
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       └── nonav.css
+|   |   ├── pyramid
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       ├── epub.css
+|   |   |       └── ie6.css
+|   |   ├── scrolls
+|   |   |   ├── artwork
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       ├── print.css
+|   |   |       └── theme_extras.js
+|   |   ├── sphinxdoc
+|   |   |   └── static
+|   |   └── traditional
+|   |       └── static
+|   ├── theming.py
+|   ├── transforms
+|   |   ├── __init__.py
+|   |   ├── compact_bullet_list.py
+|   |   ├── i18n.py
+|   |   ├── post_transforms
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── images.py
+|   |   └── references.py
+|   ├── util
+|   |   ├── __init__.py
+|   |   ├── build_phase.py
+|   |   ├── cfamily.py
+|   |   ├── compat.py
+|   |   ├── console.py
+|   |   ├── docfields.py
+|   |   ├── docstrings.py
+|   |   ├── docutils.py
+|   |   ├── fileutil.py
+|   |   ├── i18n.py
+|   |   ├── images.py
+|   |   ├── inspect.py
+|   |   ├── inventory.py
+|   |   ├── jsdump.py
+|   |   ├── logging.py
+|   |   ├── matching.py
+|   |   ├── math.py
+|   |   ├── nodes.py
+|   |   ├── osutil.py
+|   |   ├── parallel.py
+|   |   ├── png.py
+|   |   ├── pycompat.py
+|   |   ├── requests.py
+|   |   ├── rst.py
+|   |   ├── smartypants.py
+|   |   ├── stemmer
+|   |   |   ├── __init__.py
+|   |   |   └── porter.py
+|   |   ├── tags.py
+|   |   ├── template.py
+|   |   ├── texescape.py
+|   |   └── typing.py
+|   ├── versioning.py
+|   └── writers
+|       ├── __init__.py
+|       ├── html.py
+|       ├── html5.py
+|       ├── latex.py
+|       ├── manpage.py
+|       ├── texinfo.py
+|       ├── text.py
+|       └── xml.py
+├── tests
+|   ├── __init__.py
+|   ├── certs
+|   ├── conftest.py
+|   ├── ext_napoleon_pep526_data_google.py
+|   ├── ext_napoleon_pep526_data_numpy.py
+|   ├── js
+|   |   ├── doctools.js
+|   |   └── searchtools.js
+|   ├── roots
+|   |   ├── test-add_enumerable_node
+|   |   |   ├── conf.py
+|   |   |   ├── enumerable_node.py
+|   |   |   └── index.rst
+|   |   ├── test-add_source_parser
+|   |   |   ├── conf.py
+|   |   |   └── source_parser.py
+|   |   ├── test-add_source_parser-conflicts-with-users-setting
+|   |   |   ├── conf.py
+|   |   |   └── source_parser.py
+|   |   ├── test-api-set-translator
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── nonext
+|   |   |   |   └── conf.py
+|   |   |   └── translator.py
+|   |   ├── test-apidoc-pep420
+|   |   |   └── a
+|   |   |       └── b
+|   |   ├── test-apidoc-subpackage-in-toc
+|   |   |   └── parent
+|   |   |       ├── __init__.py
+|   |   |       └── child
+|   |   ├── test-apidoc-toc
+|   |   |   └── mypackage
+|   |   |       ├── __init__.py
+|   |   |       ├── main.py
+|   |   |       ├── no_init
+|   |   |       ├── resource
+|   |   |       └── something
+|   |   ├── test-apidoc-trailing-underscore
+|   |   |   └── package_
+|   |   |       ├── __init__.py
+|   |   |       └── module_.py
+|   |   ├── test-autosummary
+|   |   |   ├── conf.py
+|   |   |   ├── dummy_module.py
+|   |   |   ├── index.rst
+|   |   |   ├── sphinx.rst
+|   |   |   └── underscore_module_.py
+|   |   ├── test-basic
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-build-html-translator
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-build-text
+|   |   |   ├── conf.py
+|   |   |   ├── doc1.txt
+|   |   |   ├── doc2.txt
+|   |   |   ├── index.txt
+|   |   |   ├── lineblock.txt
+|   |   |   ├── listitems.txt
+|   |   |   ├── maxwidth.txt
+|   |   |   ├── nonascii_maxwidth.txt
+|   |   |   ├── nonascii_table.txt
+|   |   |   ├── nonascii_title.txt
+|   |   |   ├── table.txt
+|   |   |   ├── table_colspan.txt
+|   |   |   ├── table_colspan_and_rowspan.txt
+|   |   |   ├── table_colspan_left.txt
+|   |   |   └── table_rowspan.txt
+|   |   ├── test-builder-dirhtml
+|   |   |   ├── bar.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo
+|   |   |   |   ├── foo_1.rst
+|   |   |   |   ├── foo_2.rst
+|   |   |   |   └── index.rst
+|   |   |   └── index.rst
+|   |   ├── test-builder-gettext-dont-rebuild-mo
+|   |   |   ├── bom.rst
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── xx
+|   |   |       └── LC_MESSAGES
+|   |   ├── test-changes
+|   |   |   ├── base.rst
+|   |   |   ├── c-api.rst
+|   |   |   ├── conf.py
+|   |   |   ├── contents.rst
+|   |   |   └── library
+|   |   |       └── utils.rst
+|   |   ├── test-circular
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── sub.rst
+|   |   ├── test-config
+|   |   |   └── conf.py
+|   |   ├── test-correct-year
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-default_role
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-directive-code
+|   |   |   ├── caption.rst
+|   |   |   ├── classes.rst
+|   |   |   ├── conf.py
+|   |   |   ├── emphasize.rst
+|   |   |   ├── force.rst
+|   |   |   ├── highlight.rst
+|   |   |   ├── index.rst
+|   |   |   ├── linenos.rst
+|   |   |   ├── linenothreshold.rst
+|   |   |   ├── namedblocks.rst
+|   |   |   ├── py-decorators.rst
+|   |   |   ├── python.rst
+|   |   |   └── target.py
+|   |   ├── test-directive-csv-table
+|   |   |   ├── conf.py
+|   |   |   └── subdir
+|   |   ├── test-directive-only
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── only.rst
+|   |   ├── test-directives-raw
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-docutilsconf
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-c
+|   |   |   ├── anon-dup-decl.rst
+|   |   |   ├── conf.py
+|   |   |   ├── field-role.rst
+|   |   |   ├── function_param_target.rst
+|   |   |   ├── index.rst
+|   |   |   ├── namespace.rst
+|   |   |   └── ns_lookup.rst
+|   |   ├── test-domain-c-intersphinx
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-cpp
+|   |   |   ├── anon-dup-decl.rst
+|   |   |   ├── any-role.rst
+|   |   |   ├── backslash.rst
+|   |   |   ├── conf.py
+|   |   |   ├── field-role.rst
+|   |   |   ├── index.rst
+|   |   |   ├── lookup-key-overload.rst
+|   |   |   ├── multi-decl-lookup.rst
+|   |   |   ├── roles-targets-ok.rst
+|   |   |   ├── roles-targets-warn.rst
+|   |   |   ├── roles.rst
+|   |   |   ├── roles2.rst
+|   |   |   ├── semicolon.rst
+|   |   |   ├── warn-template-param-qualified-name.rst
+|   |   |   └── xref_consistency.rst
+|   |   ├── test-domain-cpp-intersphinx
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-js
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── module.rst
+|   |   |   └── roles.rst
+|   |   ├── test-domain-py
+|   |   |   ├── abbr.rst
+|   |   |   ├── canonical.rst
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── module.rst
+|   |   |   ├── module_option.rst
+|   |   |   └── roles.rst
+|   |   ├── test-domain-py-python_use_unqualified_type_names
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-py-xref-warning
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-double-inheriting-theme
+|   |   |   ├── base_themes_dir
+|   |   |   |   ├── base_theme1
+|   |   |   |   └── base_theme2
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-epub-anchor-id
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autodoc
+|   |   |   ├── autodoc_dummy_bar.py
+|   |   |   ├── autodoc_dummy_module.py
+|   |   |   ├── bug2437
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── autodoc_dummy_foo.py
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── target
+|   |   |       ├── TYPE_CHECKING.py
+|   |   |       ├── __init__.py
+|   |   |       ├── abstractmethods.py
+|   |   |       ├── annotated.py
+|   |   |       ├── autoclass_content.py
+|   |   |       ├── autodoc_type_aliases.py
+|   |   |       ├── bound_method.py
+|   |   |       ├── cached_property.py
+|   |   |       ├── callable.py
+|   |   |       ├── canonical
+|   |   |       ├── classes.py
+|   |   |       ├── coroutine.py
+|   |   |       ├── decorator.py
+|   |   |       ├── descriptor.py
+|   |   |       ├── docstring_signature.py
+|   |   |       ├── empty_all.py
+|   |   |       ├── enums.py
+|   |   |       ├── final.py
+|   |   |       ├── functions.py
+|   |   |       ├── generic_class.py
+|   |   |       ├── genericalias.py
+|   |   |       ├── hide_value.py
+|   |   |       ├── imported_members.py
+|   |   |       ├── inheritance.py
+|   |   |       ├── instance_variable.py
+|   |   |       ├── metadata.py
+|   |   |       ├── methods.py
+|   |   |       ├── module.py
+|   |   |       ├── name_conflict
+|   |   |       ├── name_mangling.py
+|   |   |       ├── need_mocks.py
+|   |   |       ├── overload.py
+|   |   |       ├── overload2.py
+|   |   |       ├── partialfunction.py
+|   |   |       ├── partialmethod.py
+|   |   |       ├── pep570.py
+|   |   |       ├── pep604.py
+|   |   |       ├── preserve_defaults.py
+|   |   |       ├── private.py
+|   |   |       ├── process_docstring.py
+|   |   |       ├── properties.py
+|   |   |       ├── singledispatch.py
+|   |   |       ├── singledispatchmethod.py
+|   |   |       ├── slots.py
+|   |   |       ├── sort_by_all.py
+|   |   |       ├── typed_vars.py
+|   |   |       ├── typehints.py
+|   |   |       ├── typevar.py
+|   |   |       ├── uninitialized_attributes.py
+|   |   |       └── wrappedfunction.py
+|   |   ├── test-ext-autosectionlabel
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosectionlabel-prefix-document
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary
+|   |   |   ├── autosummary_dummy_module.py
+|   |   |   ├── autosummary_importfail.py
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-filename-map
+|   |   |   ├── autosummary_dummy_module.py
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-imported_members
+|   |   |   ├── autosummary_dummy_package
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── autosummary_dummy_module.py
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-mock_imports
+|   |   |   ├── conf.py
+|   |   |   ├── foo.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-recursive
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── package
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── module.py
+|   |   |   |   ├── module_importfail.py
+|   |   |   |   └── package
+|   |   |   └── package2
+|   |   |       ├── __init__.py
+|   |   |       └── module.py
+|   |   ├── test-ext-autosummary-skip-member
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── target.py
+|   |   ├── test-ext-autosummary-template
+|   |   |   ├── _templates
+|   |   |   |   └── empty.rst
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── target.py
+|   |   ├── test-ext-coverage
+|   |   |   ├── conf.py
+|   |   |   ├── coverage_ignored.py
+|   |   |   ├── coverage_not_ignored.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-doctest
+|   |   |   ├── conf.py
+|   |   |   └── doctest.txt
+|   |   ├── test-ext-doctest-skipif
+|   |   |   ├── conf.py
+|   |   |   └── skipif.txt
+|   |   ├── test-ext-doctest-with-autodoc
+|   |   |   ├── conf.py
+|   |   |   ├── dir
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── bar.py
+|   |   |   |   └── inner.rst
+|   |   |   ├── foo.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-githubpages
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-graphviz
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-ifconfig
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-imgconverter
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-inheritance_diagram
+|   |   |   ├── conf.py
+|   |   |   ├── example
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── sphinx.py
+|   |   |   ├── index.rst
+|   |   |   └── test.py
+|   |   ├── test-ext-intersphinx-cppdomain
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-math
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── math.rst
+|   |   |   ├── nomath.rst
+|   |   |   └── page.rst
+|   |   ├── test-ext-math-compat
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-math-simple
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-todo
+|   |   |   ├── bar.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-ext-viewcode
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── objects.rst
+|   |   |   └── spam
+|   |   |       ├── __init__.py
+|   |   |       ├── mod1.py
+|   |   |       ├── mod2.py
+|   |   |       └── mod3.py
+|   |   ├── test-ext-viewcode-find
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── not_a_package
+|   |   |       ├── __init__.py
+|   |   |       └── submodule.py
+|   |   ├── test-extensions
+|   |   |   ├── conf.py
+|   |   |   ├── read_parallel.py
+|   |   |   ├── read_serial.py
+|   |   |   ├── write_parallel.py
+|   |   |   └── write_serial.py
+|   |   ├── test-footnotes
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-gettext-template
+|   |   |   ├── _templates
+|   |   |   |   ├── template1.html
+|   |   |   |   └── template2.html
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-glossary
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-highlight_options
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-html_assets
+|   |   |   ├── conf.py
+|   |   |   ├── extra
+|   |   |   |   ├── css
+|   |   |   |   ├── index.rst
+|   |   |   |   └── subdir
+|   |   |   ├── index.rst
+|   |   |   ├── static
+|   |   |   |   ├── css
+|   |   |   |   ├── index.rst
+|   |   |   |   ├── js
+|   |   |   |   └── subdir
+|   |   |   └── subdir
+|   |   |       └── _build
+|   |   ├── test-html_entity
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-html_scaled_image_link
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-html_style
+|   |   |   ├── _static
+|   |   |   |   └── default.css
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-image-in-parsed-literal
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-image-in-section
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-images
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── subdir
+|   |   |       └── index.rst
+|   |   ├── test-index_on_title
+|   |   |   ├── conf.py
+|   |   |   └── contents.rst
+|   |   ├── test-inheritance
+|   |   |   ├── basic_diagram.rst
+|   |   |   ├── conf.py
+|   |   |   ├── diagram_module_w_2_top_classes.rst
+|   |   |   ├── diagram_w_1_top_class.rst
+|   |   |   ├── diagram_w_2_top_classes.rst
+|   |   |   ├── diagram_w_nested_classes.rst
+|   |   |   ├── diagram_w_parts.rst
+|   |   |   ├── dummy
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── test.py
+|   |   |   |   └── test_nested.py
+|   |   |   └── index.rst
+|   |   ├── test-intl
+|   |   |   ├── _templates
+|   |   |   |   └── contents.html
+|   |   |   ├── admonitions.txt
+|   |   |   ├── bom.txt
+|   |   |   ├── conf.py
+|   |   |   ├── definition_terms.txt
+|   |   |   ├── docfields.txt
+|   |   |   ├── external_links.txt
+|   |   |   ├── figure.txt
+|   |   |   ├── footnote.txt
+|   |   |   ├── glossary_terms.txt
+|   |   |   ├── glossary_terms_inconsistency.txt
+|   |   |   ├── index.txt
+|   |   |   ├── index_entries.txt
+|   |   |   ├── label_target.txt
+|   |   |   ├── literalblock.txt
+|   |   |   ├── only.txt
+|   |   |   ├── raw.txt
+|   |   |   ├── refs.txt
+|   |   |   ├── refs_inconsistency.txt
+|   |   |   ├── refs_python_domain.txt
+|   |   |   ├── role_xref.txt
+|   |   |   ├── rubric.txt
+|   |   |   ├── section.txt
+|   |   |   ├── seealso.txt
+|   |   |   ├── subdir
+|   |   |   |   └── index.txt
+|   |   |   ├── table.txt
+|   |   |   ├── toctree.txt
+|   |   |   ├── topic.txt
+|   |   |   ├── versionchange.txt
+|   |   |   ├── warnings.txt
+|   |   |   └── xx
+|   |   |       └── LC_MESSAGES
+|   |   ├── test-keep_warnings
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-babel
+|   |   |   ├── bar.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-latex-equations
+|   |   |   ├── conf.py
+|   |   |   ├── equations.rst
+|   |   |   └── expects
+|   |   ├── test-latex-figure-in-admonition
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-includegraphics
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-index
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-labels
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── otherdoc.rst
+|   |   ├── test-latex-numfig
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── indexhowto.rst
+|   |   |   └── indexmanual.rst
+|   |   ├── test-latex-table
+|   |   |   ├── _mytemplates
+|   |   |   |   └── latex
+|   |   |   ├── complex.rst
+|   |   |   ├── conf.py
+|   |   |   ├── expects
+|   |   |   ├── index.rst
+|   |   |   ├── longtable.rst
+|   |   |   └── tabular.rst
+|   |   ├── test-latex-theme
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── theme
+|   |   |       └── custom
+|   |   ├── test-latex-title
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-unicode
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-linkcheck
+|   |   |   ├── conf.py
+|   |   |   └── links.txt
+|   |   ├── test-linkcheck-localserver
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-linkcheck-localserver-anchor
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-linkcheck-localserver-https
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-locale
+|   |   |   ├── locale1
+|   |   |   |   └── en
+|   |   |   └── locale2
+|   |   |       └── en
+|   |   ├── test-manpage_url
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-markup-citation
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-markup-rubric
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-maxlistdepth
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-metadata
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-need-escaped
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   ├── quux.rst
+|   |   |   └── qux.rst
+|   |   ├── test-nested-enumerated-list
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-nested-tables
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-nitpicky-warnings
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-numbered-circular
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── sub.rst
+|   |   ├── test-numfig
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-productionlist
+|   |   |   ├── Bare.rst
+|   |   |   ├── Dup1.rst
+|   |   |   ├── Dup2.rst
+|   |   |   ├── LineContinuation.rst
+|   |   |   ├── P1.rst
+|   |   |   ├── P2.rst
+|   |   |   ├── conf.py
+|   |   |   ├── firstLineRule.rst
+|   |   |   └── index.rst
+|   |   ├── test-prolog
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── markdown.md
+|   |   |   ├── prolog_markdown_parser.py
+|   |   |   └── restructuredtext.rst
+|   |   ├── test-pycode
+|   |   |   └── cp_1251_coded.py
+|   |   ├── test-pycode-egg
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── src
+|   |   |       ├── sample.py
+|   |   |       └── setup.py
+|   |   ├── test-reST-code-block
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-refonly_bullet_list
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-roles-download
+|   |   |   ├── another
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-root
+|   |   |   ├── _templates
+|   |   |   |   ├── contentssb.html
+|   |   |   |   ├── customsb.html
+|   |   |   |   └── layout.html
+|   |   |   ├── autodoc.txt
+|   |   |   ├── autodoc_target.py
+|   |   |   ├── bom.txt
+|   |   |   ├── conf.py
+|   |   |   ├── extapi.txt
+|   |   |   ├── extensions.txt
+|   |   |   ├── footnote.txt
+|   |   |   ├── images.txt
+|   |   |   ├── includes.txt
+|   |   |   ├── index.txt
+|   |   |   ├── lists.txt
+|   |   |   ├── markup.txt
+|   |   |   ├── math.txt
+|   |   |   ├── objects.txt
+|   |   |   ├── parsermod.py
+|   |   |   ├── special
+|   |   |   |   └── code.py
+|   |   |   └── subdir
+|   |   |       ├── excluded.txt
+|   |   |       ├── images.txt
+|   |   |       └── includes.txt
+|   |   ├── test-search
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── nosearch.rst
+|   |   |   └── tocitem.rst
+|   |   ├── test-setup
+|   |   |   ├── doc
+|   |   |   |   ├── conf.py
+|   |   |   |   └── index.txt
+|   |   |   └── setup.py
+|   |   ├── test-smartquotes
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-stylesheets
+|   |   |   ├── _templates
+|   |   |   |   └── layout.html
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-templating
+|   |   |   ├── _templates
+|   |   |   |   ├── autosummary
+|   |   |   |   └── layout.html
+|   |   |   ├── autosummary_templating.txt
+|   |   |   ├── conf.py
+|   |   |   └── index.txt
+|   |   ├── test-theming
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── setup.py
+|   |   |   └── test_theme
+|   |   |       ├── __init__.py
+|   |   |       ├── staticfiles
+|   |   |       └── test-theme
+|   |   ├── test-tocdepth
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-toctree
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   ├── quux.rst
+|   |   |   ├── qux.rst
+|   |   |   └── tocdepth.rst
+|   |   ├── test-toctree-duplicated
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-toctree-empty
+|   |   |   ├── _templates
+|   |   |   |   └── localtoc.html
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-toctree-glob
+|   |   |   ├── bar
+|   |   |   |   ├── bar_1.rst
+|   |   |   |   ├── bar_2.rst
+|   |   |   |   ├── bar_3.rst
+|   |   |   |   ├── bar_4
+|   |   |   |   └── index.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   ├── quux.rst
+|   |   |   └── qux
+|   |   |       ├── index.rst
+|   |   |       ├── qux_1.rst
+|   |   |       └── qux_2.rst
+|   |   ├── test-toctree-maxdepth
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   └── qux.rst
+|   |   ├── test-transforms-post_transforms-missing-reference
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-trim_doctest_flags
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-versioning
+|   |   |   ├── added.txt
+|   |   |   ├── conf.py
+|   |   |   ├── deleted.txt
+|   |   |   ├── deleted_end.txt
+|   |   |   ├── index.txt
+|   |   |   ├── insert.txt
+|   |   |   ├── insert_beginning.txt
+|   |   |   ├── insert_similar.txt
+|   |   |   ├── modified.txt
+|   |   |   └── original.txt
+|   |   └── test-warnings
+|   |       ├── autodoc_fodder.py
+|   |       ├── conf.py
+|   |       ├── index.rst
+|   |       └── undecodable.rst
+|   ├── test_api_translator.py
+|   ├── test_application.py
+|   ├── test_build.py
+|   ├── test_build_changes.py
+|   ├── test_build_dirhtml.py
+|   ├── test_build_epub.py
+|   ├── test_build_gettext.py
+|   ├── test_build_html.py
+|   ├── test_build_latex.py
+|   ├── test_build_linkcheck.py
+|   ├── test_build_manpage.py
+|   ├── test_build_texinfo.py
+|   ├── test_build_text.py
+|   ├── test_builder.py
+|   ├── test_catalogs.py
+|   ├── test_config.py
+|   ├── test_correct_year.py
+|   ├── test_directive_code.py
+|   ├── test_directive_only.py
+|   ├── test_directive_other.py
+|   ├── test_directive_patch.py
+|   ├── test_docutilsconf.py
+|   ├── test_domain_c.py
+|   ├── test_domain_cpp.py
+|   ├── test_domain_js.py
+|   ├── test_domain_py.py
+|   ├── test_domain_rst.py
+|   ├── test_domain_std.py
+|   ├── test_environment.py
+|   ├── test_environment_indexentries.py
+|   ├── test_environment_toctree.py
+|   ├── test_errors.py
+|   ├── test_events.py
+|   ├── test_ext_apidoc.py
+|   ├── test_ext_autodoc.py
+|   ├── test_ext_autodoc_autoattribute.py
+|   ├── test_ext_autodoc_autoclass.py
+|   ├── test_ext_autodoc_autodata.py
+|   ├── test_ext_autodoc_autofunction.py
+|   ├── test_ext_autodoc_automodule.py
+|   ├── test_ext_autodoc_autoproperty.py
+|   ├── test_ext_autodoc_configs.py
+|   ├── test_ext_autodoc_events.py
+|   ├── test_ext_autodoc_mock.py
+|   ├── test_ext_autodoc_preserve_defaults.py
+|   ├── test_ext_autodoc_private_members.py
+|   ├── test_ext_autosectionlabel.py
+|   ├── test_ext_autosummary.py
+|   ├── test_ext_coverage.py
+|   ├── test_ext_doctest.py
+|   ├── test_ext_duration.py
+|   ├── test_ext_githubpages.py
+|   ├── test_ext_graphviz.py
+|   ├── test_ext_ifconfig.py
+|   ├── test_ext_imgconverter.py
+|   ├── test_ext_inheritance_diagram.py
+|   ├── test_ext_intersphinx.py
+|   ├── test_ext_math.py
+|   ├── test_ext_napoleon.py
+|   ├── test_ext_napoleon_docstring.py
+|   ├── test_ext_napoleon_iterators.py
+|   ├── test_ext_todo.py
+|   ├── test_ext_viewcode.py
+|   ├── test_highlighting.py
+|   ├── test_intl.py
+|   ├── test_locale.py
+|   ├── test_markup.py
+|   ├── test_metadata.py
+|   ├── test_parser.py
+|   ├── test_project.py
+|   ├── test_pycode.py
+|   ├── test_pycode_ast.py
+|   ├── test_pycode_parser.py
+|   ├── test_quickstart.py
+|   ├── test_roles.py
+|   ├── test_search.py
+|   ├── test_setup_command.py
+|   ├── test_smartquotes.py
+|   ├── test_templating.py
+|   ├── test_theming.py
+|   ├── test_toctree.py
+|   ├── test_transforms_post_transforms.py
+|   ├── test_transforms_post_transforms_code.py
+|   ├── test_util.py
+|   ├── test_util_docstrings.py
+|   ├── test_util_docutils.py
+|   ├── test_util_fileutil.py
+|   ├── test_util_i18n.py
+|   ├── test_util_images.py
+|   ├── test_util_inspect.py
+|   ├── test_util_inventory.py
+|   ├── test_util_jsdump.py
+|   ├── test_util_logging.py
+|   ├── test_util_matching.py
+|   ├── test_util_nodes.py
+|   ├── test_util_rst.py
+|   ├── test_util_template.py
+|   ├── test_util_typing.py
+|   ├── test_versioning.py
+|   ├── test_writer_latex.py
+|   ├── typing_test_data.py
+|   └── utils.py
+└── utils
+    ├── __init__.py
+    ├── bump_docker.sh
+    ├── bump_version.py
+    ├── checks.py
+    ├── doclinter.py
+    └── jssplitter_generator.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: 1-element tuple rendered incorrectly
+
+Description: **Describe the bug**
+This is a followup to #7964 which has been addressed in #8265.
+
+However the special case of a 1-element tuple is still not handled correctly.
+
+`(1,)` is rendered as `(1)`, but should keep the trailing comma.
+
+**To Reproduce**
+Add a testcase
+```
+    ("(1,)", "(1,)"),                           # Tuple (single element)
+```
+at https://github.com/sphinx-doc/sphinx/blob/e0b1e1002b500acc63dfd0806f8095dd6b27037b/tests/test_pycode_ast.py#L57
+
+
+
+Patch information:
+diff --git a/sphinx/pycode/ast.py b/sphinx/pycode/ast.py
+index f541ec0a9..2b4f0d434 100644
+--- a/sphinx/pycode/ast.py
++++ b/sphinx/pycode/ast.py
+@@ -213,10 +213,12 @@ class _UnparseVisitor(ast.NodeVisitor):
+         return "%s %s" % (self.visit(node.op), self.visit(node.operand))
+ 
+     def visit_Tuple(self, node: ast.Tuple) -> str:
+-        if node.elts:
+-            return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+-        else:
++        if not node.elts:
+             return "()"
++        elif len(node.elts) == 1:
++            return "(" + self.visit(node.elts[0]) + ",)"
++        else:
++            return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+ 
+     if sys.version_info < (3, 8):
+         # these ast nodes were deprecated in python 3.8
+diff --git a/tests/test_pycode_ast.py b/tests/test_pycode_ast.py
+index e80062351..70fa7f686 100644
+--- a/tests/test_pycode_ast.py
++++ b/tests/test_pycode_ast.py
+@@ -54,6 +54,7 @@ from sphinx.pycode import ast
+     ("- 1", "- 1"),                             # UnaryOp
+     ("- a", "- a"),                             # USub
+     ("(1, 2, 3)", "(1, 2, 3)"),                   # Tuple
++    ("(1,)", "(1,)"),                             # Tuple (single element)
+     ("()", "()"),                               # Tuple (empty)
+ ])
+ def test_unparse(source, expected):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 04:44:19,624 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to fix a bug in `sphinx/pycode/ast.py` related to rendering 1-element tuples. The provided patch points to the `_UnparseVisitor` class in that file. To understand the context of the change, I need the full source code of `sphinx/pycode/ast.py`, which should contain the `_UnparseVisitor` class and any functions that use it, like `unparse`. The current context is empty.' query='Please provide the full content of sphinx/pycode/ast.py.' extra_requirements='' purpose='I need to examine the `_UnparseVisitor` class and its usage to understand how to correctly apply the fix for rendering 1-element tuples.'
+2025-12-21 04:44:19,625 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of sphinx/pycode/ast.py.
+2025-12-21 04:44:19,625 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 04:44:19,626 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 04:44:19,626 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 04:44:19,626 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of sphinx/pycode/ast.py.
+Purpose: I need to examine the `_UnparseVisitor` class and its usage to understand how to correctly apply the fix for rendering 1-element tuples.
+2025-12-21 04:44:22,607 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the `sphinx/pycode/ast.py` file. This will allow you to examine the `_UnparseVisitor` class and its usage in detail.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "sphinx/pycode/ast.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2082, 'candidates_token_count': 62, 'total_token_count': 2350, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2082}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 62}], 'thoughts_token_count': 206, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.12612604325817478, 'model_name': 'gemini-2.5-pro'} id='run--d2e6ada4-a592-4efc-a8cc-366290fd3424-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'sphinx/pycode/ast.py'}, 'id': 'a5448476-ad2c-4b62-b256-33fa14ea910c', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2082, 'output_tokens': 62, 'total_tokens': 2350, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 206}}
+2025-12-21 04:44:28,437 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have fetched the entire content of `sphinx/pycode/ast.py` for you. You can now inspect the `_UnparseVisitor` class and its methods, particularly `visit_Tuple`, to understand how abstract syntax trees are converted back into Python code. This will help you determine the best way to implement the fix for rendering 1-element tuples correctly.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 5801, 'candidates_token_count': 76, 'total_token_count': 6412, 'cached_content_token_count': 1748, 'prompt_tokens_details': [{'modality': 1, 'token_count': 5801}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1748}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 76}], 'thoughts_token_count': 535}, 'finish_reason': 'STOP', 'avg_logprobs': -0.6124940671418843, 'model_name': 'gemini-2.5-pro'} id='run--4ff9e317-38d2-4fbf-9f03-a1438863225a-0' usage_metadata={'input_tokens': 5801, 'output_tokens': 76, 'total_tokens': 6412, 'input_token_details': {'cache_read': 1748}, 'output_token_details': {'reasoning': 535}}
+2025-12-21 04:44:28,438 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of sphinx/pycode/ast.py.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to examine the `_UnparseVisitor` class and its usage to understand how to correctly apply the fix for rendering 1-element tuples.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: sphinx/pycode/ast.py
+Line number range: 1 - 239
+Content:
+1. """
+2.     sphinx.pycode.ast
+3.     ~~~~~~~~~~~~~~~~~
+4. 
+5.     Helpers for AST (Abstract Syntax Tree).
+6. 
+7.     :copyright: Copyright 2007-2021 by the Sphinx team, see AUTHORS.
+8.     :license: BSD, see LICENSE for details.
+9. """
+10. 
+11. import sys
+12. from typing import Dict, List, Optional, Type, overload
+13. 
+14. if sys.version_info > (3, 8):
+15.     import ast
+16. else:
+17.     try:
+18.         # use typed_ast module if installed
+19.         from typed_ast import ast3 as ast
+20.     except ImportError:
+21.         import ast  # type: ignore
+22. 
+23. 
+24. OPERATORS: Dict[Type[ast.AST], str] = {
+25.     ast.Add: "+",
+26.     ast.And: "and",
+27.     ast.BitAnd: "&",
+28.     ast.BitOr: "|",
+29.     ast.BitXor: "^",
+30.     ast.Div: "/",
+31.     ast.FloorDiv: "//",
+32.     ast.Invert: "~",
+33.     ast.LShift: "<<",
+34.     ast.MatMult: "@",
+35.     ast.Mult: "*",
+36.     ast.Mod: "%",
+37.     ast.Not: "not",
+38.     ast.Pow: "**",
+39.     ast.Or: "or",
+40.     ast.RShift: ">>",
+41.     ast.Sub: "-",
+42.     ast.UAdd: "+",
+43.     ast.USub: "-",
+44. }
+45. 
+46. 
+47. def parse(code: str, mode: str = 'exec') -> "ast.AST":
+48.     """Parse the *code* using built-in ast or typed_ast.
+49. 
+50.     This enables "type_comments" feature if possible.
+51.     """
+52.     try:
+53.         # type_comments parameter is available on py38+
+54.         return ast.parse(code, mode=mode, type_comments=True)  # type: ignore
+55.     except SyntaxError:
+56.         # Some syntax error found. To ignore invalid type comments, retry parsing without
+57.         # type_comments parameter (refs: https://github.com/sphinx-doc/sphinx/issues/8652).
+58.         return ast.parse(code, mode=mode)
+59.     except TypeError:
+60.         # fallback to ast module.
+61.         # typed_ast is used to parse type_comments if installed.
+62.         return ast.parse(code, mode=mode)
+63. 
+64. 
+65. @overload
+66. def unparse(node: None, code: str = '') -> None:
+67.     ...
+68. 
+69. 
+70. @overload
+71. def unparse(node: ast.AST, code: str = '') -> str:
+72.     ...
+73. 
+74. 
+75. def unparse(node: Optional[ast.AST], code: str = '') -> Optional[str]:
+76.     """Unparse an AST to string."""
+77.     if node is None:
+78.         return None
+79.     elif isinstance(node, str):
+80.         return node
+81.     return _UnparseVisitor(code).visit(node)
+82. 
+83. 
+84. # a greatly cut-down version of `ast._Unparser`
+85. class _UnparseVisitor(ast.NodeVisitor):
+86.     def __init__(self, code: str = '') -> None:
+87.         self.code = code
+88. 
+89.     def _visit_op(self, node: ast.AST) -> str:
+90.         return OPERATORS[node.__class__]
+91.     for _op in OPERATORS:
+92.         locals()['visit_{}'.format(_op.__name__)] = _visit_op
+93. 
+94.     def visit_arg(self, node: ast.arg) -> str:
+95.         if node.annotation:
+96.             return "%s: %s" % (node.arg, self.visit(node.annotation))
+97.         else:
+98.             return node.arg
+99. 
+100.     def _visit_arg_with_default(self, arg: ast.arg, default: Optional[ast.AST]) -> str:
+101.         """Unparse a single argument to a string."""
+102.         name = self.visit(arg)
+103.         if default:
+104.             if arg.annotation:
+105.                 name += " = %s" % self.visit(default)
+106.             else:
+107.                 name += "=%s" % self.visit(default)
+108.         return name
+109. 
+110.     def visit_arguments(self, node: ast.arguments) -> str:
+111.         defaults: List[Optional[ast.expr]] = list(node.defaults)
+112.         positionals = len(node.args)
+113.         posonlyargs = 0
+114.         if hasattr(node, "posonlyargs"):  # for py38+
+115.             posonlyargs += len(node.posonlyargs)  # type:ignore
+116.             positionals += posonlyargs
+117.         for _ in range(len(defaults), positionals):
+118.             defaults.insert(0, None)
+119. 
+120.         kw_defaults: List[Optional[ast.expr]] = list(node.kw_defaults)
+121.         for _ in range(len(kw_defaults), len(node.kwonlyargs)):
+122.             kw_defaults.insert(0, None)
+123. 
+124.         args: List[str] = []
+125.         if hasattr(node, "posonlyargs"):  # for py38+
+126.             for i, arg in enumerate(node.posonlyargs):  # type: ignore
+127.                 args.append(self._visit_arg_with_default(arg, defaults[i]))
+128. 
+129.             if node.posonlyargs:  # type: ignore
+130.                 args.append('/')
+131. 
+132.         for i, arg in enumerate(node.args):
+133.             args.append(self._visit_arg_with_default(arg, defaults[i + posonlyargs]))
+134. 
+135.         if node.vararg:
+136.             args.append("*" + self.visit(node.vararg))
+137. 
+138.         if node.kwonlyargs and not node.vararg:
+139.             args.append('*')
+140.         for i, arg in enumerate(node.kwonlyargs):
+141.             args.append(self._visit_arg_with_default(arg, kw_defaults[i]))
+142. 
+143.         if node.kwarg:
+144.             args.append("**" + self.visit(node.kwarg))
+145. 
+146.         return ", ".join(args)
+147. 
+148.     def visit_Attribute(self, node: ast.Attribute) -> str:
+149.         return "%s.%s" % (self.visit(node.value), node.attr)
+150. 
+151.     def visit_BinOp(self, node: ast.BinOp) -> str:
+152.         return " ".join(self.visit(e) for e in [node.left, node.op, node.right])
+153. 
+154.     def visit_BoolOp(self, node: ast.BoolOp) -> str:
+155.         op = " %s " % self.visit(node.op)
+156.         return op.join(self.visit(e) for e in node.values)
+157. 
+158.     def visit_Call(self, node: ast.Call) -> str:
+159.         args = ([self.visit(e) for e in node.args] +
+160.                 ["%s=%s" % (k.arg, self.visit(k.value)) for k in node.keywords])
+161.         return "%s(%s)" % (self.visit(node.func), ", ".join(args))
+162. 
+163.     def visit_Constant(self, node: ast.Constant) -> str:  # type: ignore
+164.         if node.value is Ellipsis:
+165.             return "..."
+166.         elif isinstance(node.value, (int, float, complex)):
+167.             if self.code and sys.version_info > (3, 8):
+168.                 return ast.get_source_segment(self.code, node)  # type: ignore
+169.             else:
+170.                 return repr(node.value)
+171.         else:
+172.             return repr(node.value)
+173. 
+174.     def visit_Dict(self, node: ast.Dict) -> str:
+175.         keys = (self.visit(k) for k in node.keys)
+176.         values = (self.visit(v) for v in node.values)
+177.         items = (k + ": " + v for k, v in zip(keys, values))
+178.         return "{" + ", ".join(items) + "}"
+179. 
+180.     def visit_Index(self, node: ast.Index) -> str:
+181.         return self.visit(node.value)
+182. 
+183.     def visit_Lambda(self, node: ast.Lambda) -> str:
+184.         return "lambda %s: ..." % self.visit(node.args)
+185. 
+186.     def visit_List(self, node: ast.List) -> str:
+187.         return "[" + ", ".join(self.visit(e) for e in node.elts) + "]"
+188. 
+189.     def visit_Name(self, node: ast.Name) -> str:
+190.         return node.id
+191. 
+192.     def visit_Set(self, node: ast.Set) -> str:
+193.         return "{" + ", ".join(self.visit(e) for e in node.elts) + "}"
+194. 
+195.     def visit_Subscript(self, node: ast.Subscript) -> str:
+196.         def is_simple_tuple(value: ast.AST) -> bool:
+197.             return (
+198.                 isinstance(value, ast.Tuple) and
+199.                 bool(value.elts) and
+200.                 not any(isinstance(elt, ast.Starred) for elt in value.elts)
+201.             )
+202. 
+203.         if is_simple_tuple(node.slice):
+204.             elts = ", ".join(self.visit(e) for e in node.slice.elts)  # type: ignore
+205.             return "%s[%s]" % (self.visit(node.value), elts)
+206.         elif isinstance(node.slice, ast.Index) and is_simple_tuple(node.slice.value):
+207.             elts = ", ".join(self.visit(e) for e in node.slice.value.elts)  # type: ignore
+208.             return "%s[%s]" % (self.visit(node.value), elts)
+209.         else:
+210.             return "%s[%s]" % (self.visit(node.value), self.visit(node.slice))
+211. 
+212.     def visit_UnaryOp(self, node: ast.UnaryOp) -> str:
+213.         return "%s %s" % (self.visit(node.op), self.visit(node.operand))
+214. 
+215.     def visit_Tuple(self, node: ast.Tuple) -> str:
+216.         if node.elts:
+217.             return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+218.         else:
+219.             return "()"
+220. 
+221.     if sys.version_info < (3, 8):
+222.         # these ast nodes were deprecated in python 3.8
+223.         def visit_Bytes(self, node: ast.Bytes) -> str:
+224.             return repr(node.s)
+225. 
+226.         def visit_Ellipsis(self, node: ast.Ellipsis) -> str:
+227.             return "..."
+228. 
+229.         def visit_NameConstant(self, node: ast.NameConstant) -> str:
+230.             return repr(node.value)
+231. 
+232.         def visit_Num(self, node: ast.Num) -> str:
+233.             return repr(node.n)
+234. 
+235.         def visit_Str(self, node: ast.Str) -> str:
+236.             return repr(node.s)
+237. 
+238.     def generic_visit(self, node):
+239.         raise NotImplementedError('Unable to parse %s object' % type(node).__name__)
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 04:44:35,590 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asks for the full content of the file `sphinx/pycode/ast.py`.\n   - The provided context contains the content of this file from line 1 to 239.\n2. Extended relevance:\n   - The user's stated purpose is to examine the `_UnparseVisitor` class and its usage, particularly for rendering 1-element tuples. This class and its methods, including `visit_Tuple`, are fully contained within the provided file content. Providing the entire file is necessary to fulfill the user's request and purpose.", relative_path='sphinx/pycode/ast.py', start_line=1, end_line=239)]
+2025-12-21 04:44:35,591 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of sphinx/pycode/ast.py.
+2025-12-21 04:44:35,591 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 04:44:35,591 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 04:44:35,591 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 04:44:35,592 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 04:44:35,592 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+sphinx
+├── .circleci
+|   └── config.yml
+├── .codecov.yml
+├── .github
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bug_report.md
+|   |   ├── config.yml
+|   |   └── feature_request.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   └── workflows
+|       ├── builddoc.yml
+|       ├── lint.yml
+|       ├── main.yml
+|       ├── nodejs.yml
+|       └── transifex.yml
+├── .readthedocs.yml
+├── CONTRIBUTING.rst
+├── README.rst
+├── bindep.txt
+├── doc
+|   ├── _static
+|   |   ├── conf.py.txt
+|   |   ├── themes
+|   |   |   └── fullsize
+|   |   └── tutorial
+|   ├── _templates
+|   |   ├── index.html
+|   |   └── indexsidebar.html
+|   ├── _themes
+|   |   └── sphinx13
+|   |       ├── layout.html
+|   |       └── static
+|   |           └── sphinx13.css
+|   ├── changes.rst
+|   ├── conf.py
+|   ├── contents.rst
+|   ├── development
+|   |   ├── builders.rst
+|   |   ├── index.rst
+|   |   ├── overview.rst
+|   |   ├── theming.rst
+|   |   └── tutorials
+|   |       ├── autodoc_ext.rst
+|   |       ├── examples
+|   |       |   ├── README.rst
+|   |       |   ├── autodoc_intenum.py
+|   |       |   ├── helloworld.py
+|   |       |   ├── recipe.py
+|   |       |   └── todo.py
+|   |       ├── helloworld.rst
+|   |       ├── index.rst
+|   |       ├── recipe.rst
+|   |       └── todo.rst
+|   ├── examples.rst
+|   ├── extdev
+|   |   ├── appapi.rst
+|   |   ├── builderapi.rst
+|   |   ├── collectorapi.rst
+|   |   ├── deprecated.rst
+|   |   ├── domainapi.rst
+|   |   ├── envapi.rst
+|   |   ├── i18n.rst
+|   |   ├── index.rst
+|   |   ├── logging.rst
+|   |   ├── markupapi.rst
+|   |   ├── nodes.rst
+|   |   ├── parserapi.rst
+|   |   ├── projectapi.rst
+|   |   └── utils.rst
+|   ├── faq.rst
+|   ├── glossary.rst
+|   ├── internals
+|   |   ├── authors.rst
+|   |   ├── code-of-conduct.rst
+|   |   ├── contributing.rst
+|   |   ├── index.rst
+|   |   ├── organization.rst
+|   |   └── release-process.rst
+|   ├── latex.rst
+|   ├── man
+|   |   ├── index.rst
+|   |   ├── sphinx-apidoc.rst
+|   |   ├── sphinx-autogen.rst
+|   |   ├── sphinx-build.rst
+|   |   └── sphinx-quickstart.rst
+|   ├── templating.rst
+|   ├── tutorial
+|   |   └── index.rst
+|   └── usage
+|       ├── advanced
+|       |   ├── intl.rst
+|       |   ├── setuptools.rst
+|       |   └── websupport
+|       |       ├── api.rst
+|       |       ├── index.rst
+|       |       ├── quickstart.rst
+|       |       ├── searchadapters.rst
+|       |       └── storagebackends.rst
+|       ├── builders
+|       |   └── index.rst
+|       ├── configuration.rst
+|       ├── extensions
+|       |   ├── autodoc.rst
+|       |   ├── autosectionlabel.rst
+|       |   ├── autosummary.rst
+|       |   ├── coverage.rst
+|       |   ├── doctest.rst
+|       |   ├── duration.rst
+|       |   ├── example_google.py
+|       |   ├── example_google.rst
+|       |   ├── example_numpy.py
+|       |   ├── example_numpy.rst
+|       |   ├── extlinks.rst
+|       |   ├── githubpages.rst
+|       |   ├── graphviz.rst
+|       |   ├── ifconfig.rst
+|       |   ├── imgconverter.rst
+|       |   ├── index.rst
+|       |   ├── inheritance.rst
+|       |   ├── intersphinx.rst
+|       |   ├── linkcode.rst
+|       |   ├── math.rst
+|       |   ├── napoleon.rst
+|       |   ├── todo.rst
+|       |   └── viewcode.rst
+|       ├── index.rst
+|       ├── installation.rst
+|       ├── markdown.rst
+|       ├── quickstart.rst
+|       ├── restructuredtext
+|       |   ├── basics.rst
+|       |   ├── directives.rst
+|       |   ├── domains.rst
+|       |   ├── field-lists.rst
+|       |   ├── index.rst
+|       |   └── roles.rst
+|       └── theming.rst
+├── karma.conf.js
+├── setup.py
+├── sphinx
+|   ├── __init__.py
+|   ├── __main__.py
+|   ├── addnodes.py
+|   ├── application.py
+|   ├── builders
+|   |   ├── __init__.py
+|   |   ├── _epub_base.py
+|   |   ├── changes.py
+|   |   ├── dirhtml.py
+|   |   ├── dummy.py
+|   |   ├── epub3.py
+|   |   ├── gettext.py
+|   |   ├── html
+|   |   |   ├── __init__.py
+|   |   |   └── transforms.py
+|   |   ├── latex
+|   |   |   ├── __init__.py
+|   |   |   ├── constants.py
+|   |   |   ├── nodes.py
+|   |   |   ├── theming.py
+|   |   |   ├── transforms.py
+|   |   |   └── util.py
+|   |   ├── linkcheck.py
+|   |   ├── manpage.py
+|   |   ├── singlehtml.py
+|   |   ├── texinfo.py
+|   |   ├── text.py
+|   |   └── xml.py
+|   ├── cmd
+|   |   ├── __init__.py
+|   |   ├── build.py
+|   |   ├── make_mode.py
+|   |   └── quickstart.py
+|   ├── config.py
+|   ├── deprecation.py
+|   ├── directives
+|   |   ├── __init__.py
+|   |   ├── code.py
+|   |   ├── other.py
+|   |   └── patches.py
+|   ├── domains
+|   |   ├── __init__.py
+|   |   ├── c.py
+|   |   ├── changeset.py
+|   |   ├── citation.py
+|   |   ├── cpp.py
+|   |   ├── index.py
+|   |   ├── javascript.py
+|   |   ├── math.py
+|   |   ├── python.py
+|   |   ├── rst.py
+|   |   └── std.py
+|   ├── environment
+|   |   ├── __init__.py
+|   |   ├── adapters
+|   |   |   ├── __init__.py
+|   |   |   ├── asset.py
+|   |   |   ├── indexentries.py
+|   |   |   └── toctree.py
+|   |   └── collectors
+|   |       ├── __init__.py
+|   |       ├── asset.py
+|   |       ├── dependencies.py
+|   |       ├── metadata.py
+|   |       ├── title.py
+|   |       └── toctree.py
+|   ├── errors.py
+|   ├── events.py
+|   ├── ext
+|   |   ├── __init__.py
+|   |   ├── apidoc.py
+|   |   ├── autodoc
+|   |   |   ├── __init__.py
+|   |   |   ├── deprecated.py
+|   |   |   ├── directive.py
+|   |   |   ├── importer.py
+|   |   |   ├── mock.py
+|   |   |   ├── preserve_defaults.py
+|   |   |   ├── type_comment.py
+|   |   |   └── typehints.py
+|   |   ├── autosectionlabel.py
+|   |   ├── autosummary
+|   |   |   ├── __init__.py
+|   |   |   ├── generate.py
+|   |   |   └── templates
+|   |   |       └── autosummary
+|   |   ├── coverage.py
+|   |   ├── doctest.py
+|   |   ├── duration.py
+|   |   ├── extlinks.py
+|   |   ├── githubpages.py
+|   |   ├── graphviz.py
+|   |   ├── ifconfig.py
+|   |   ├── imgconverter.py
+|   |   ├── imgmath.py
+|   |   ├── inheritance_diagram.py
+|   |   ├── intersphinx.py
+|   |   ├── linkcode.py
+|   |   ├── mathjax.py
+|   |   ├── napoleon
+|   |   |   ├── __init__.py
+|   |   |   ├── docstring.py
+|   |   |   └── iterators.py
+|   |   ├── todo.py
+|   |   └── viewcode.py
+|   ├── extension.py
+|   ├── highlighting.py
+|   ├── io.py
+|   ├── jinja2glue.py
+|   ├── locale
+|   |   ├── __init__.py
+|   |   ├── ar
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── bg
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── bn
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ca
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── cak
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── cs
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── cy
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── da
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── de
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── el
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── eo
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── es
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── et
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── eu
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fa
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fi
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── fr_FR
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── he
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hi
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hi_IN
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── hu
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── id
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── it
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ja
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ko
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── lt
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── lv
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── mk
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── nb_NO
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ne
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── nl
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pl
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pt
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pt_BR
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── pt_PT
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ro
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ru
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── si
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sk
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sl
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sq
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sr@latin
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sr_RS
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── sv
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ta
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── te
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── tr
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── uk_UA
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── ur
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── vi
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   ├── zh_CN
+|   |   |   └── LC_MESSAGES
+|   |   |       └── sphinx.js
+|   |   └── zh_TW
+|   |       └── LC_MESSAGES
+|   |           └── sphinx.js
+|   ├── parsers.py
+|   ├── project.py
+|   ├── pycode
+|   |   ├── __init__.py
+|   |   ├── ast.py
+|   |   └── parser.py
+|   ├── pygments_styles.py
+|   ├── registry.py
+|   ├── roles.py
+|   ├── search
+|   |   ├── __init__.py
+|   |   ├── da.py
+|   |   ├── de.py
+|   |   ├── en.py
+|   |   ├── es.py
+|   |   ├── fi.py
+|   |   ├── fr.py
+|   |   ├── hu.py
+|   |   ├── it.py
+|   |   ├── ja.py
+|   |   ├── jssplitter.py
+|   |   ├── minified-js
+|   |   |   ├── base-stemmer.js
+|   |   |   ├── danish-stemmer.js
+|   |   |   ├── dutch-stemmer.js
+|   |   |   ├── finnish-stemmer.js
+|   |   |   ├── french-stemmer.js
+|   |   |   ├── german-stemmer.js
+|   |   |   ├── hungarian-stemmer.js
+|   |   |   ├── italian-stemmer.js
+|   |   |   ├── norwegian-stemmer.js
+|   |   |   ├── porter-stemmer.js
+|   |   |   ├── portuguese-stemmer.js
+|   |   |   ├── romanian-stemmer.js
+|   |   |   ├── russian-stemmer.js
+|   |   |   ├── spanish-stemmer.js
+|   |   |   ├── swedish-stemmer.js
+|   |   |   └── turkish-stemmer.js
+|   |   ├── nl.py
+|   |   ├── no.py
+|   |   ├── non-minified-js
+|   |   |   ├── base-stemmer.js
+|   |   |   ├── danish-stemmer.js
+|   |   |   ├── dutch-stemmer.js
+|   |   |   ├── finnish-stemmer.js
+|   |   |   ├── french-stemmer.js
+|   |   |   ├── german-stemmer.js
+|   |   |   ├── hungarian-stemmer.js
+|   |   |   ├── italian-stemmer.js
+|   |   |   ├── norwegian-stemmer.js
+|   |   |   ├── porter-stemmer.js
+|   |   |   ├── portuguese-stemmer.js
+|   |   |   ├── romanian-stemmer.js
+|   |   |   ├── russian-stemmer.js
+|   |   |   ├── spanish-stemmer.js
+|   |   |   ├── swedish-stemmer.js
+|   |   |   └── turkish-stemmer.js
+|   |   ├── pt.py
+|   |   ├── ro.py
+|   |   ├── ru.py
+|   |   ├── sv.py
+|   |   ├── tr.py
+|   |   └── zh.py
+|   ├── setup_command.py
+|   ├── templates
+|   |   ├── apidoc
+|   |   ├── epub3
+|   |   |   └── container.xml
+|   |   ├── gettext
+|   |   ├── graphviz
+|   |   |   └── graphviz.css
+|   |   ├── htmlhelp
+|   |   ├── imgmath
+|   |   ├── latex
+|   |   ├── quickstart
+|   |   └── texinfo
+|   ├── testing
+|   |   ├── __init__.py
+|   |   ├── comparer.py
+|   |   ├── fixtures.py
+|   |   ├── path.py
+|   |   ├── restructuredtext.py
+|   |   └── util.py
+|   ├── texinputs
+|   ├── texinputs_win
+|   ├── themes
+|   |   ├── agogo
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── basic
+|   |   |   ├── changes
+|   |   |   |   ├── frameset.html
+|   |   |   |   ├── rstsource.html
+|   |   |   |   └── versionchanges.html
+|   |   |   ├── defindex.html
+|   |   |   ├── domainindex.html
+|   |   |   ├── genindex-single.html
+|   |   |   ├── genindex-split.html
+|   |   |   ├── genindex.html
+|   |   |   ├── globaltoc.html
+|   |   |   ├── layout.html
+|   |   |   ├── localtoc.html
+|   |   |   ├── opensearch.xml
+|   |   |   ├── page.html
+|   |   |   ├── relations.html
+|   |   |   ├── search.html
+|   |   |   ├── searchbox.html
+|   |   |   ├── sourcelink.html
+|   |   |   └── static
+|   |   |       ├── doctools.js
+|   |   |       ├── jquery-3.5.1.js
+|   |   |       ├── jquery.js
+|   |   |       ├── searchtools.js
+|   |   |       ├── underscore-1.13.1.js
+|   |   |       └── underscore.js
+|   |   ├── bizstyle
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       ├── css3-mediaqueries.js
+|   |   |       └── css3-mediaqueries_src.js
+|   |   ├── classic
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── default
+|   |   |   └── static
+|   |   |       └── default.css
+|   |   ├── epub
+|   |   |   ├── epub-cover.html
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── haiku
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   ├── nature
+|   |   |   └── static
+|   |   ├── nonav
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       └── nonav.css
+|   |   ├── pyramid
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       ├── epub.css
+|   |   |       └── ie6.css
+|   |   ├── scrolls
+|   |   |   ├── artwork
+|   |   |   ├── layout.html
+|   |   |   └── static
+|   |   |       ├── print.css
+|   |   |       └── theme_extras.js
+|   |   ├── sphinxdoc
+|   |   |   └── static
+|   |   └── traditional
+|   |       └── static
+|   ├── theming.py
+|   ├── transforms
+|   |   ├── __init__.py
+|   |   ├── compact_bullet_list.py
+|   |   ├── i18n.py
+|   |   ├── post_transforms
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── images.py
+|   |   └── references.py
+|   ├── util
+|   |   ├── __init__.py
+|   |   ├── build_phase.py
+|   |   ├── cfamily.py
+|   |   ├── compat.py
+|   |   ├── console.py
+|   |   ├── docfields.py
+|   |   ├── docstrings.py
+|   |   ├── docutils.py
+|   |   ├── fileutil.py
+|   |   ├── i18n.py
+|   |   ├── images.py
+|   |   ├── inspect.py
+|   |   ├── inventory.py
+|   |   ├── jsdump.py
+|   |   ├── logging.py
+|   |   ├── matching.py
+|   |   ├── math.py
+|   |   ├── nodes.py
+|   |   ├── osutil.py
+|   |   ├── parallel.py
+|   |   ├── png.py
+|   |   ├── pycompat.py
+|   |   ├── requests.py
+|   |   ├── rst.py
+|   |   ├── smartypants.py
+|   |   ├── stemmer
+|   |   |   ├── __init__.py
+|   |   |   └── porter.py
+|   |   ├── tags.py
+|   |   ├── template.py
+|   |   ├── texescape.py
+|   |   └── typing.py
+|   ├── versioning.py
+|   └── writers
+|       ├── __init__.py
+|       ├── html.py
+|       ├── html5.py
+|       ├── latex.py
+|       ├── manpage.py
+|       ├── texinfo.py
+|       ├── text.py
+|       └── xml.py
+├── tests
+|   ├── __init__.py
+|   ├── certs
+|   ├── conftest.py
+|   ├── ext_napoleon_pep526_data_google.py
+|   ├── ext_napoleon_pep526_data_numpy.py
+|   ├── js
+|   |   ├── doctools.js
+|   |   └── searchtools.js
+|   ├── roots
+|   |   ├── test-add_enumerable_node
+|   |   |   ├── conf.py
+|   |   |   ├── enumerable_node.py
+|   |   |   └── index.rst
+|   |   ├── test-add_source_parser
+|   |   |   ├── conf.py
+|   |   |   └── source_parser.py
+|   |   ├── test-add_source_parser-conflicts-with-users-setting
+|   |   |   ├── conf.py
+|   |   |   └── source_parser.py
+|   |   ├── test-api-set-translator
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── nonext
+|   |   |   |   └── conf.py
+|   |   |   └── translator.py
+|   |   ├── test-apidoc-pep420
+|   |   |   └── a
+|   |   |       └── b
+|   |   ├── test-apidoc-subpackage-in-toc
+|   |   |   └── parent
+|   |   |       ├── __init__.py
+|   |   |       └── child
+|   |   ├── test-apidoc-toc
+|   |   |   └── mypackage
+|   |   |       ├── __init__.py
+|   |   |       ├── main.py
+|   |   |       ├── no_init
+|   |   |       ├── resource
+|   |   |       └── something
+|   |   ├── test-apidoc-trailing-underscore
+|   |   |   └── package_
+|   |   |       ├── __init__.py
+|   |   |       └── module_.py
+|   |   ├── test-autosummary
+|   |   |   ├── conf.py
+|   |   |   ├── dummy_module.py
+|   |   |   ├── index.rst
+|   |   |   ├── sphinx.rst
+|   |   |   └── underscore_module_.py
+|   |   ├── test-basic
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-build-html-translator
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-build-text
+|   |   |   ├── conf.py
+|   |   |   ├── doc1.txt
+|   |   |   ├── doc2.txt
+|   |   |   ├── index.txt
+|   |   |   ├── lineblock.txt
+|   |   |   ├── listitems.txt
+|   |   |   ├── maxwidth.txt
+|   |   |   ├── nonascii_maxwidth.txt
+|   |   |   ├── nonascii_table.txt
+|   |   |   ├── nonascii_title.txt
+|   |   |   ├── table.txt
+|   |   |   ├── table_colspan.txt
+|   |   |   ├── table_colspan_and_rowspan.txt
+|   |   |   ├── table_colspan_left.txt
+|   |   |   └── table_rowspan.txt
+|   |   ├── test-builder-dirhtml
+|   |   |   ├── bar.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo
+|   |   |   |   ├── foo_1.rst
+|   |   |   |   ├── foo_2.rst
+|   |   |   |   └── index.rst
+|   |   |   └── index.rst
+|   |   ├── test-builder-gettext-dont-rebuild-mo
+|   |   |   ├── bom.rst
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── xx
+|   |   |       └── LC_MESSAGES
+|   |   ├── test-changes
+|   |   |   ├── base.rst
+|   |   |   ├── c-api.rst
+|   |   |   ├── conf.py
+|   |   |   ├── contents.rst
+|   |   |   └── library
+|   |   |       └── utils.rst
+|   |   ├── test-circular
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── sub.rst
+|   |   ├── test-config
+|   |   |   └── conf.py
+|   |   ├── test-correct-year
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-default_role
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-directive-code
+|   |   |   ├── caption.rst
+|   |   |   ├── classes.rst
+|   |   |   ├── conf.py
+|   |   |   ├── emphasize.rst
+|   |   |   ├── force.rst
+|   |   |   ├── highlight.rst
+|   |   |   ├── index.rst
+|   |   |   ├── linenos.rst
+|   |   |   ├── linenothreshold.rst
+|   |   |   ├── namedblocks.rst
+|   |   |   ├── py-decorators.rst
+|   |   |   ├── python.rst
+|   |   |   └── target.py
+|   |   ├── test-directive-csv-table
+|   |   |   ├── conf.py
+|   |   |   └── subdir
+|   |   ├── test-directive-only
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── only.rst
+|   |   ├── test-directives-raw
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-docutilsconf
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-c
+|   |   |   ├── anon-dup-decl.rst
+|   |   |   ├── conf.py
+|   |   |   ├── field-role.rst
+|   |   |   ├── function_param_target.rst
+|   |   |   ├── index.rst
+|   |   |   ├── namespace.rst
+|   |   |   └── ns_lookup.rst
+|   |   ├── test-domain-c-intersphinx
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-cpp
+|   |   |   ├── anon-dup-decl.rst
+|   |   |   ├── any-role.rst
+|   |   |   ├── backslash.rst
+|   |   |   ├── conf.py
+|   |   |   ├── field-role.rst
+|   |   |   ├── index.rst
+|   |   |   ├── lookup-key-overload.rst
+|   |   |   ├── multi-decl-lookup.rst
+|   |   |   ├── roles-targets-ok.rst
+|   |   |   ├── roles-targets-warn.rst
+|   |   |   ├── roles.rst
+|   |   |   ├── roles2.rst
+|   |   |   ├── semicolon.rst
+|   |   |   ├── warn-template-param-qualified-name.rst
+|   |   |   └── xref_consistency.rst
+|   |   ├── test-domain-cpp-intersphinx
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-js
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── module.rst
+|   |   |   └── roles.rst
+|   |   ├── test-domain-py
+|   |   |   ├── abbr.rst
+|   |   |   ├── canonical.rst
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── module.rst
+|   |   |   ├── module_option.rst
+|   |   |   └── roles.rst
+|   |   ├── test-domain-py-python_use_unqualified_type_names
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-domain-py-xref-warning
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-double-inheriting-theme
+|   |   |   ├── base_themes_dir
+|   |   |   |   ├── base_theme1
+|   |   |   |   └── base_theme2
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-epub-anchor-id
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autodoc
+|   |   |   ├── autodoc_dummy_bar.py
+|   |   |   ├── autodoc_dummy_module.py
+|   |   |   ├── bug2437
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── autodoc_dummy_foo.py
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── target
+|   |   |       ├── TYPE_CHECKING.py
+|   |   |       ├── __init__.py
+|   |   |       ├── abstractmethods.py
+|   |   |       ├── annotated.py
+|   |   |       ├── autoclass_content.py
+|   |   |       ├── autodoc_type_aliases.py
+|   |   |       ├── bound_method.py
+|   |   |       ├── cached_property.py
+|   |   |       ├── callable.py
+|   |   |       ├── canonical
+|   |   |       ├── classes.py
+|   |   |       ├── coroutine.py
+|   |   |       ├── decorator.py
+|   |   |       ├── descriptor.py
+|   |   |       ├── docstring_signature.py
+|   |   |       ├── empty_all.py
+|   |   |       ├── enums.py
+|   |   |       ├── final.py
+|   |   |       ├── functions.py
+|   |   |       ├── generic_class.py
+|   |   |       ├── genericalias.py
+|   |   |       ├── hide_value.py
+|   |   |       ├── imported_members.py
+|   |   |       ├── inheritance.py
+|   |   |       ├── instance_variable.py
+|   |   |       ├── metadata.py
+|   |   |       ├── methods.py
+|   |   |       ├── module.py
+|   |   |       ├── name_conflict
+|   |   |       ├── name_mangling.py
+|   |   |       ├── need_mocks.py
+|   |   |       ├── overload.py
+|   |   |       ├── overload2.py
+|   |   |       ├── partialfunction.py
+|   |   |       ├── partialmethod.py
+|   |   |       ├── pep570.py
+|   |   |       ├── pep604.py
+|   |   |       ├── preserve_defaults.py
+|   |   |       ├── private.py
+|   |   |       ├── process_docstring.py
+|   |   |       ├── properties.py
+|   |   |       ├── singledispatch.py
+|   |   |       ├── singledispatchmethod.py
+|   |   |       ├── slots.py
+|   |   |       ├── sort_by_all.py
+|   |   |       ├── typed_vars.py
+|   |   |       ├── typehints.py
+|   |   |       ├── typevar.py
+|   |   |       ├── uninitialized_attributes.py
+|   |   |       └── wrappedfunction.py
+|   |   ├── test-ext-autosectionlabel
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosectionlabel-prefix-document
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary
+|   |   |   ├── autosummary_dummy_module.py
+|   |   |   ├── autosummary_importfail.py
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-filename-map
+|   |   |   ├── autosummary_dummy_module.py
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-imported_members
+|   |   |   ├── autosummary_dummy_package
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── autosummary_dummy_module.py
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-mock_imports
+|   |   |   ├── conf.py
+|   |   |   ├── foo.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-autosummary-recursive
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── package
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── module.py
+|   |   |   |   ├── module_importfail.py
+|   |   |   |   └── package
+|   |   |   └── package2
+|   |   |       ├── __init__.py
+|   |   |       └── module.py
+|   |   ├── test-ext-autosummary-skip-member
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── target.py
+|   |   ├── test-ext-autosummary-template
+|   |   |   ├── _templates
+|   |   |   |   └── empty.rst
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── target.py
+|   |   ├── test-ext-coverage
+|   |   |   ├── conf.py
+|   |   |   ├── coverage_ignored.py
+|   |   |   ├── coverage_not_ignored.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-doctest
+|   |   |   ├── conf.py
+|   |   |   └── doctest.txt
+|   |   ├── test-ext-doctest-skipif
+|   |   |   ├── conf.py
+|   |   |   └── skipif.txt
+|   |   ├── test-ext-doctest-with-autodoc
+|   |   |   ├── conf.py
+|   |   |   ├── dir
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── bar.py
+|   |   |   |   └── inner.rst
+|   |   |   ├── foo.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-githubpages
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-graphviz
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-ifconfig
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-imgconverter
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-inheritance_diagram
+|   |   |   ├── conf.py
+|   |   |   ├── example
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── sphinx.py
+|   |   |   ├── index.rst
+|   |   |   └── test.py
+|   |   ├── test-ext-intersphinx-cppdomain
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-math
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── math.rst
+|   |   |   ├── nomath.rst
+|   |   |   └── page.rst
+|   |   ├── test-ext-math-compat
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-math-simple
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-ext-todo
+|   |   |   ├── bar.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-ext-viewcode
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── objects.rst
+|   |   |   └── spam
+|   |   |       ├── __init__.py
+|   |   |       ├── mod1.py
+|   |   |       ├── mod2.py
+|   |   |       └── mod3.py
+|   |   ├── test-ext-viewcode-find
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── not_a_package
+|   |   |       ├── __init__.py
+|   |   |       └── submodule.py
+|   |   ├── test-extensions
+|   |   |   ├── conf.py
+|   |   |   ├── read_parallel.py
+|   |   |   ├── read_serial.py
+|   |   |   ├── write_parallel.py
+|   |   |   └── write_serial.py
+|   |   ├── test-footnotes
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-gettext-template
+|   |   |   ├── _templates
+|   |   |   |   ├── template1.html
+|   |   |   |   └── template2.html
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-glossary
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-highlight_options
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-html_assets
+|   |   |   ├── conf.py
+|   |   |   ├── extra
+|   |   |   |   ├── css
+|   |   |   |   ├── index.rst
+|   |   |   |   └── subdir
+|   |   |   ├── index.rst
+|   |   |   ├── static
+|   |   |   |   ├── css
+|   |   |   |   ├── index.rst
+|   |   |   |   ├── js
+|   |   |   |   └── subdir
+|   |   |   └── subdir
+|   |   |       └── _build
+|   |   ├── test-html_entity
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-html_scaled_image_link
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-html_style
+|   |   |   ├── _static
+|   |   |   |   └── default.css
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-image-in-parsed-literal
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-image-in-section
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-images
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── subdir
+|   |   |       └── index.rst
+|   |   ├── test-index_on_title
+|   |   |   ├── conf.py
+|   |   |   └── contents.rst
+|   |   ├── test-inheritance
+|   |   |   ├── basic_diagram.rst
+|   |   |   ├── conf.py
+|   |   |   ├── diagram_module_w_2_top_classes.rst
+|   |   |   ├── diagram_w_1_top_class.rst
+|   |   |   ├── diagram_w_2_top_classes.rst
+|   |   |   ├── diagram_w_nested_classes.rst
+|   |   |   ├── diagram_w_parts.rst
+|   |   |   ├── dummy
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── test.py
+|   |   |   |   └── test_nested.py
+|   |   |   └── index.rst
+|   |   ├── test-intl
+|   |   |   ├── _templates
+|   |   |   |   └── contents.html
+|   |   |   ├── admonitions.txt
+|   |   |   ├── bom.txt
+|   |   |   ├── conf.py
+|   |   |   ├── definition_terms.txt
+|   |   |   ├── docfields.txt
+|   |   |   ├── external_links.txt
+|   |   |   ├── figure.txt
+|   |   |   ├── footnote.txt
+|   |   |   ├── glossary_terms.txt
+|   |   |   ├── glossary_terms_inconsistency.txt
+|   |   |   ├── index.txt
+|   |   |   ├── index_entries.txt
+|   |   |   ├── label_target.txt
+|   |   |   ├── literalblock.txt
+|   |   |   ├── only.txt
+|   |   |   ├── raw.txt
+|   |   |   ├── refs.txt
+|   |   |   ├── refs_inconsistency.txt
+|   |   |   ├── refs_python_domain.txt
+|   |   |   ├── role_xref.txt
+|   |   |   ├── rubric.txt
+|   |   |   ├── section.txt
+|   |   |   ├── seealso.txt
+|   |   |   ├── subdir
+|   |   |   |   └── index.txt
+|   |   |   ├── table.txt
+|   |   |   ├── toctree.txt
+|   |   |   ├── topic.txt
+|   |   |   ├── versionchange.txt
+|   |   |   ├── warnings.txt
+|   |   |   └── xx
+|   |   |       └── LC_MESSAGES
+|   |   ├── test-keep_warnings
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-babel
+|   |   |   ├── bar.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-latex-equations
+|   |   |   ├── conf.py
+|   |   |   ├── equations.rst
+|   |   |   └── expects
+|   |   ├── test-latex-figure-in-admonition
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-includegraphics
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-index
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-labels
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── otherdoc.rst
+|   |   ├── test-latex-numfig
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── indexhowto.rst
+|   |   |   └── indexmanual.rst
+|   |   ├── test-latex-table
+|   |   |   ├── _mytemplates
+|   |   |   |   └── latex
+|   |   |   ├── complex.rst
+|   |   |   ├── conf.py
+|   |   |   ├── expects
+|   |   |   ├── index.rst
+|   |   |   ├── longtable.rst
+|   |   |   └── tabular.rst
+|   |   ├── test-latex-theme
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── theme
+|   |   |       └── custom
+|   |   ├── test-latex-title
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-latex-unicode
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-linkcheck
+|   |   |   ├── conf.py
+|   |   |   └── links.txt
+|   |   ├── test-linkcheck-localserver
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-linkcheck-localserver-anchor
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-linkcheck-localserver-https
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-locale
+|   |   |   ├── locale1
+|   |   |   |   └── en
+|   |   |   └── locale2
+|   |   |       └── en
+|   |   ├── test-manpage_url
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-markup-citation
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-markup-rubric
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-maxlistdepth
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-metadata
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-need-escaped
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   ├── quux.rst
+|   |   |   └── qux.rst
+|   |   ├── test-nested-enumerated-list
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-nested-tables
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-nitpicky-warnings
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-numbered-circular
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── sub.rst
+|   |   ├── test-numfig
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-productionlist
+|   |   |   ├── Bare.rst
+|   |   |   ├── Dup1.rst
+|   |   |   ├── Dup2.rst
+|   |   |   ├── LineContinuation.rst
+|   |   |   ├── P1.rst
+|   |   |   ├── P2.rst
+|   |   |   ├── conf.py
+|   |   |   ├── firstLineRule.rst
+|   |   |   └── index.rst
+|   |   ├── test-prolog
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── markdown.md
+|   |   |   ├── prolog_markdown_parser.py
+|   |   |   └── restructuredtext.rst
+|   |   ├── test-pycode
+|   |   |   └── cp_1251_coded.py
+|   |   ├── test-pycode-egg
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   └── src
+|   |   |       ├── sample.py
+|   |   |       └── setup.py
+|   |   ├── test-reST-code-block
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-refonly_bullet_list
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-roles-download
+|   |   |   ├── another
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-root
+|   |   |   ├── _templates
+|   |   |   |   ├── contentssb.html
+|   |   |   |   ├── customsb.html
+|   |   |   |   └── layout.html
+|   |   |   ├── autodoc.txt
+|   |   |   ├── autodoc_target.py
+|   |   |   ├── bom.txt
+|   |   |   ├── conf.py
+|   |   |   ├── extapi.txt
+|   |   |   ├── extensions.txt
+|   |   |   ├── footnote.txt
+|   |   |   ├── images.txt
+|   |   |   ├── includes.txt
+|   |   |   ├── index.txt
+|   |   |   ├── lists.txt
+|   |   |   ├── markup.txt
+|   |   |   ├── math.txt
+|   |   |   ├── objects.txt
+|   |   |   ├── parsermod.py
+|   |   |   ├── special
+|   |   |   |   └── code.py
+|   |   |   └── subdir
+|   |   |       ├── excluded.txt
+|   |   |       ├── images.txt
+|   |   |       └── includes.txt
+|   |   ├── test-search
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── nosearch.rst
+|   |   |   └── tocitem.rst
+|   |   ├── test-setup
+|   |   |   ├── doc
+|   |   |   |   ├── conf.py
+|   |   |   |   └── index.txt
+|   |   |   └── setup.py
+|   |   ├── test-smartquotes
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-stylesheets
+|   |   |   ├── _templates
+|   |   |   |   └── layout.html
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-templating
+|   |   |   ├── _templates
+|   |   |   |   ├── autosummary
+|   |   |   |   └── layout.html
+|   |   |   ├── autosummary_templating.txt
+|   |   |   ├── conf.py
+|   |   |   └── index.txt
+|   |   ├── test-theming
+|   |   |   ├── conf.py
+|   |   |   ├── index.rst
+|   |   |   ├── setup.py
+|   |   |   └── test_theme
+|   |   |       ├── __init__.py
+|   |   |       ├── staticfiles
+|   |   |       └── test-theme
+|   |   ├── test-tocdepth
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-toctree
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   ├── quux.rst
+|   |   |   ├── qux.rst
+|   |   |   └── tocdepth.rst
+|   |   ├── test-toctree-duplicated
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   └── index.rst
+|   |   ├── test-toctree-empty
+|   |   |   ├── _templates
+|   |   |   |   └── localtoc.html
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-toctree-glob
+|   |   |   ├── bar
+|   |   |   |   ├── bar_1.rst
+|   |   |   |   ├── bar_2.rst
+|   |   |   |   ├── bar_3.rst
+|   |   |   |   ├── bar_4
+|   |   |   |   └── index.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   ├── quux.rst
+|   |   |   └── qux
+|   |   |       ├── index.rst
+|   |   |       ├── qux_1.rst
+|   |   |       └── qux_2.rst
+|   |   ├── test-toctree-maxdepth
+|   |   |   ├── bar.rst
+|   |   |   ├── baz.rst
+|   |   |   ├── conf.py
+|   |   |   ├── foo.rst
+|   |   |   ├── index.rst
+|   |   |   └── qux.rst
+|   |   ├── test-transforms-post_transforms-missing-reference
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-trim_doctest_flags
+|   |   |   ├── conf.py
+|   |   |   └── index.rst
+|   |   ├── test-versioning
+|   |   |   ├── added.txt
+|   |   |   ├── conf.py
+|   |   |   ├── deleted.txt
+|   |   |   ├── deleted_end.txt
+|   |   |   ├── index.txt
+|   |   |   ├── insert.txt
+|   |   |   ├── insert_beginning.txt
+|   |   |   ├── insert_similar.txt
+|   |   |   ├── modified.txt
+|   |   |   └── original.txt
+|   |   └── test-warnings
+|   |       ├── autodoc_fodder.py
+|   |       ├── conf.py
+|   |       ├── index.rst
+|   |       └── undecodable.rst
+|   ├── test_api_translator.py
+|   ├── test_application.py
+|   ├── test_build.py
+|   ├── test_build_changes.py
+|   ├── test_build_dirhtml.py
+|   ├── test_build_epub.py
+|   ├── test_build_gettext.py
+|   ├── test_build_html.py
+|   ├── test_build_latex.py
+|   ├── test_build_linkcheck.py
+|   ├── test_build_manpage.py
+|   ├── test_build_texinfo.py
+|   ├── test_build_text.py
+|   ├── test_builder.py
+|   ├── test_catalogs.py
+|   ├── test_config.py
+|   ├── test_correct_year.py
+|   ├── test_directive_code.py
+|   ├── test_directive_only.py
+|   ├── test_directive_other.py
+|   ├── test_directive_patch.py
+|   ├── test_docutilsconf.py
+|   ├── test_domain_c.py
+|   ├── test_domain_cpp.py
+|   ├── test_domain_js.py
+|   ├── test_domain_py.py
+|   ├── test_domain_rst.py
+|   ├── test_domain_std.py
+|   ├── test_environment.py
+|   ├── test_environment_indexentries.py
+|   ├── test_environment_toctree.py
+|   ├── test_errors.py
+|   ├── test_events.py
+|   ├── test_ext_apidoc.py
+|   ├── test_ext_autodoc.py
+|   ├── test_ext_autodoc_autoattribute.py
+|   ├── test_ext_autodoc_autoclass.py
+|   ├── test_ext_autodoc_autodata.py
+|   ├── test_ext_autodoc_autofunction.py
+|   ├── test_ext_autodoc_automodule.py
+|   ├── test_ext_autodoc_autoproperty.py
+|   ├── test_ext_autodoc_configs.py
+|   ├── test_ext_autodoc_events.py
+|   ├── test_ext_autodoc_mock.py
+|   ├── test_ext_autodoc_preserve_defaults.py
+|   ├── test_ext_autodoc_private_members.py
+|   ├── test_ext_autosectionlabel.py
+|   ├── test_ext_autosummary.py
+|   ├── test_ext_coverage.py
+|   ├── test_ext_doctest.py
+|   ├── test_ext_duration.py
+|   ├── test_ext_githubpages.py
+|   ├── test_ext_graphviz.py
+|   ├── test_ext_ifconfig.py
+|   ├── test_ext_imgconverter.py
+|   ├── test_ext_inheritance_diagram.py
+|   ├── test_ext_intersphinx.py
+|   ├── test_ext_math.py
+|   ├── test_ext_napoleon.py
+|   ├── test_ext_napoleon_docstring.py
+|   ├── test_ext_napoleon_iterators.py
+|   ├── test_ext_todo.py
+|   ├── test_ext_viewcode.py
+|   ├── test_highlighting.py
+|   ├── test_intl.py
+|   ├── test_locale.py
+|   ├── test_markup.py
+|   ├── test_metadata.py
+|   ├── test_parser.py
+|   ├── test_project.py
+|   ├── test_pycode.py
+|   ├── test_pycode_ast.py
+|   ├── test_pycode_parser.py
+|   ├── test_quickstart.py
+|   ├── test_roles.py
+|   ├── test_search.py
+|   ├── test_setup_command.py
+|   ├── test_smartquotes.py
+|   ├── test_templating.py
+|   ├── test_theming.py
+|   ├── test_toctree.py
+|   ├── test_transforms_post_transforms.py
+|   ├── test_transforms_post_transforms_code.py
+|   ├── test_util.py
+|   ├── test_util_docstrings.py
+|   ├── test_util_docutils.py
+|   ├── test_util_fileutil.py
+|   ├── test_util_i18n.py
+|   ├── test_util_images.py
+|   ├── test_util_inspect.py
+|   ├── test_util_inventory.py
+|   ├── test_util_jsdump.py
+|   ├── test_util_logging.py
+|   ├── test_util_matching.py
+|   ├── test_util_nodes.py
+|   ├── test_util_rst.py
+|   ├── test_util_template.py
+|   ├── test_util_typing.py
+|   ├── test_versioning.py
+|   ├── test_writer_latex.py
+|   ├── typing_test_data.py
+|   └── utils.py
+└── utils
+    ├── __init__.py
+    ├── bump_docker.sh
+    ├── bump_version.py
+    ├── checks.py
+    ├── doclinter.py
+    └── jssplitter_generator.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: 1-element tuple rendered incorrectly
+
+Description: **Describe the bug**
+This is a followup to #7964 which has been addressed in #8265.
+
+However the special case of a 1-element tuple is still not handled correctly.
+
+`(1,)` is rendered as `(1)`, but should keep the trailing comma.
+
+**To Reproduce**
+Add a testcase
+```
+    ("(1,)", "(1,)"),                           # Tuple (single element)
+```
+at https://github.com/sphinx-doc/sphinx/blob/e0b1e1002b500acc63dfd0806f8095dd6b27037b/tests/test_pycode_ast.py#L57
+
+
+
+Patch information:
+diff --git a/sphinx/pycode/ast.py b/sphinx/pycode/ast.py
+index f541ec0a9..2b4f0d434 100644
+--- a/sphinx/pycode/ast.py
++++ b/sphinx/pycode/ast.py
+@@ -213,10 +213,12 @@ class _UnparseVisitor(ast.NodeVisitor):
+         return "%s %s" % (self.visit(node.op), self.visit(node.operand))
+ 
+     def visit_Tuple(self, node: ast.Tuple) -> str:
+-        if node.elts:
+-            return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+-        else:
++        if not node.elts:
+             return "()"
++        elif len(node.elts) == 1:
++            return "(" + self.visit(node.elts[0]) + ",)"
++        else:
++            return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+ 
+     if sys.version_info < (3, 8):
+         # these ast nodes were deprecated in python 3.8
+diff --git a/tests/test_pycode_ast.py b/tests/test_pycode_ast.py
+index e80062351..70fa7f686 100644
+--- a/tests/test_pycode_ast.py
++++ b/tests/test_pycode_ast.py
+@@ -54,6 +54,7 @@ from sphinx.pycode import ast
+     ("- 1", "- 1"),                             # UnaryOp
+     ("- a", "- a"),                             # USub
+     ("(1, 2, 3)", "(1, 2, 3)"),                   # Tuple
++    ("(1,)", "(1,)"),                             # Tuple (single element)
+     ("()", "()"),                               # Tuple (empty)
+ ])
+ def test_unparse(source, expected):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of sphinx/pycode/ast.py.
+Extra Requirements: 
+Purpose: I need to examine the `_UnparseVisitor` class and its usage to understand how to correctly apply the fix for rendering 1-element tuples.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: sphinx/pycode/ast.py
+Line number range: 1 - 239
+Content:
+1. """
+2.     sphinx.pycode.ast
+3.     ~~~~~~~~~~~~~~~~~
+4. 
+5.     Helpers for AST (Abstract Syntax Tree).
+6. 
+7.     :copyright: Copyright 2007-2021 by the Sphinx team, see AUTHORS.
+8.     :license: BSD, see LICENSE for details.
+9. """
+10. 
+11. import sys
+12. from typing import Dict, List, Optional, Type, overload
+13. 
+14. if sys.version_info > (3, 8):
+15.     import ast
+16. else:
+17.     try:
+18.         # use typed_ast module if installed
+19.         from typed_ast import ast3 as ast
+20.     except ImportError:
+21.         import ast  # type: ignore
+22. 
+23. 
+24. OPERATORS: Dict[Type[ast.AST], str] = {
+25.     ast.Add: "+",
+26.     ast.And: "and",
+27.     ast.BitAnd: "&",
+28.     ast.BitOr: "|",
+29.     ast.BitXor: "^",
+30.     ast.Div: "/",
+31.     ast.FloorDiv: "//",
+32.     ast.Invert: "~",
+33.     ast.LShift: "<<",
+34.     ast.MatMult: "@",
+35.     ast.Mult: "*",
+36.     ast.Mod: "%",
+37.     ast.Not: "not",
+38.     ast.Pow: "**",
+39.     ast.Or: "or",
+40.     ast.RShift: ">>",
+41.     ast.Sub: "-",
+42.     ast.UAdd: "+",
+43.     ast.USub: "-",
+44. }
+45. 
+46. 
+47. def parse(code: str, mode: str = 'exec') -> "ast.AST":
+48.     """Parse the *code* using built-in ast or typed_ast.
+49. 
+50.     This enables "type_comments" feature if possible.
+51.     """
+52.     try:
+53.         # type_comments parameter is available on py38+
+54.         return ast.parse(code, mode=mode, type_comments=True)  # type: ignore
+55.     except SyntaxError:
+56.         # Some syntax error found. To ignore invalid type comments, retry parsing without
+57.         # type_comments parameter (refs: https://github.com/sphinx-doc/sphinx/issues/8652).
+58.         return ast.parse(code, mode=mode)
+59.     except TypeError:
+60.         # fallback to ast module.
+61.         # typed_ast is used to parse type_comments if installed.
+62.         return ast.parse(code, mode=mode)
+63. 
+64. 
+65. @overload
+66. def unparse(node: None, code: str = '') -> None:
+67.     ...
+68. 
+69. 
+70. @overload
+71. def unparse(node: ast.AST, code: str = '') -> str:
+72.     ...
+73. 
+74. 
+75. def unparse(node: Optional[ast.AST], code: str = '') -> Optional[str]:
+76.     """Unparse an AST to string."""
+77.     if node is None:
+78.         return None
+79.     elif isinstance(node, str):
+80.         return node
+81.     return _UnparseVisitor(code).visit(node)
+82. 
+83. 
+84. # a greatly cut-down version of `ast._Unparser`
+85. class _UnparseVisitor(ast.NodeVisitor):
+86.     def __init__(self, code: str = '') -> None:
+87.         self.code = code
+88. 
+89.     def _visit_op(self, node: ast.AST) -> str:
+90.         return OPERATORS[node.__class__]
+91.     for _op in OPERATORS:
+92.         locals()['visit_{}'.format(_op.__name__)] = _visit_op
+93. 
+94.     def visit_arg(self, node: ast.arg) -> str:
+95.         if node.annotation:
+96.             return "%s: %s" % (node.arg, self.visit(node.annotation))
+97.         else:
+98.             return node.arg
+99. 
+100.     def _visit_arg_with_default(self, arg: ast.arg, default: Optional[ast.AST]) -> str:
+101.         """Unparse a single argument to a string."""
+102.         name = self.visit(arg)
+103.         if default:
+104.             if arg.annotation:
+105.                 name += " = %s" % self.visit(default)
+106.             else:
+107.                 name += "=%s" % self.visit(default)
+108.         return name
+109. 
+110.     def visit_arguments(self, node: ast.arguments) -> str:
+111.         defaults: List[Optional[ast.expr]] = list(node.defaults)
+112.         positionals = len(node.args)
+113.         posonlyargs = 0
+114.         if hasattr(node, "posonlyargs"):  # for py38+
+115.             posonlyargs += len(node.posonlyargs)  # type:ignore
+116.             positionals += posonlyargs
+117.         for _ in range(len(defaults), positionals):
+118.             defaults.insert(0, None)
+119. 
+120.         kw_defaults: List[Optional[ast.expr]] = list(node.kw_defaults)
+121.         for _ in range(len(kw_defaults), len(node.kwonlyargs)):
+122.             kw_defaults.insert(0, None)
+123. 
+124.         args: List[str] = []
+125.         if hasattr(node, "posonlyargs"):  # for py38+
+126.             for i, arg in enumerate(node.posonlyargs):  # type: ignore
+127.                 args.append(self._visit_arg_with_default(arg, defaults[i]))
+128. 
+129.             if node.posonlyargs:  # type: ignore
+130.                 args.append('/')
+131. 
+132.         for i, arg in enumerate(node.args):
+133.             args.append(self._visit_arg_with_default(arg, defaults[i + posonlyargs]))
+134. 
+135.         if node.vararg:
+136.             args.append("*" + self.visit(node.vararg))
+137. 
+138.         if node.kwonlyargs and not node.vararg:
+139.             args.append('*')
+140.         for i, arg in enumerate(node.kwonlyargs):
+141.             args.append(self._visit_arg_with_default(arg, kw_defaults[i]))
+142. 
+143.         if node.kwarg:
+144.             args.append("**" + self.visit(node.kwarg))
+145. 
+146.         return ", ".join(args)
+147. 
+148.     def visit_Attribute(self, node: ast.Attribute) -> str:
+149.         return "%s.%s" % (self.visit(node.value), node.attr)
+150. 
+151.     def visit_BinOp(self, node: ast.BinOp) -> str:
+152.         return " ".join(self.visit(e) for e in [node.left, node.op, node.right])
+153. 
+154.     def visit_BoolOp(self, node: ast.BoolOp) -> str:
+155.         op = " %s " % self.visit(node.op)
+156.         return op.join(self.visit(e) for e in node.values)
+157. 
+158.     def visit_Call(self, node: ast.Call) -> str:
+159.         args = ([self.visit(e) for e in node.args] +
+160.                 ["%s=%s" % (k.arg, self.visit(k.value)) for k in node.keywords])
+161.         return "%s(%s)" % (self.visit(node.func), ", ".join(args))
+162. 
+163.     def visit_Constant(self, node: ast.Constant) -> str:  # type: ignore
+164.         if node.value is Ellipsis:
+165.             return "..."
+166.         elif isinstance(node.value, (int, float, complex)):
+167.             if self.code and sys.version_info > (3, 8):
+168.                 return ast.get_source_segment(self.code, node)  # type: ignore
+169.             else:
+170.                 return repr(node.value)
+171.         else:
+172.             return repr(node.value)
+173. 
+174.     def visit_Dict(self, node: ast.Dict) -> str:
+175.         keys = (self.visit(k) for k in node.keys)
+176.         values = (self.visit(v) for v in node.values)
+177.         items = (k + ": " + v for k, v in zip(keys, values))
+178.         return "{" + ", ".join(items) + "}"
+179. 
+180.     def visit_Index(self, node: ast.Index) -> str:
+181.         return self.visit(node.value)
+182. 
+183.     def visit_Lambda(self, node: ast.Lambda) -> str:
+184.         return "lambda %s: ..." % self.visit(node.args)
+185. 
+186.     def visit_List(self, node: ast.List) -> str:
+187.         return "[" + ", ".join(self.visit(e) for e in node.elts) + "]"
+188. 
+189.     def visit_Name(self, node: ast.Name) -> str:
+190.         return node.id
+191. 
+192.     def visit_Set(self, node: ast.Set) -> str:
+193.         return "{" + ", ".join(self.visit(e) for e in node.elts) + "}"
+194. 
+195.     def visit_Subscript(self, node: ast.Subscript) -> str:
+196.         def is_simple_tuple(value: ast.AST) -> bool:
+197.             return (
+198.                 isinstance(value, ast.Tuple) and
+199.                 bool(value.elts) and
+200.                 not any(isinstance(elt, ast.Starred) for elt in value.elts)
+201.             )
+202. 
+203.         if is_simple_tuple(node.slice):
+204.             elts = ", ".join(self.visit(e) for e in node.slice.elts)  # type: ignore
+205.             return "%s[%s]" % (self.visit(node.value), elts)
+206.         elif isinstance(node.slice, ast.Index) and is_simple_tuple(node.slice.value):
+207.             elts = ", ".join(self.visit(e) for e in node.slice.value.elts)  # type: ignore
+208.             return "%s[%s]" % (self.visit(node.value), elts)
+209.         else:
+210.             return "%s[%s]" % (self.visit(node.value), self.visit(node.slice))
+211. 
+212.     def visit_UnaryOp(self, node: ast.UnaryOp) -> str:
+213.         return "%s %s" % (self.visit(node.op), self.visit(node.operand))
+214. 
+215.     def visit_Tuple(self, node: ast.Tuple) -> str:
+216.         if node.elts:
+217.             return "(" + ", ".join(self.visit(e) for e in node.elts) + ")"
+218.         else:
+219.             return "()"
+220. 
+221.     if sys.version_info < (3, 8):
+222.         # these ast nodes were deprecated in python 3.8
+223.         def visit_Bytes(self, node: ast.Bytes) -> str:
+224.             return repr(node.s)
+225. 
+226.         def visit_Ellipsis(self, node: ast.Ellipsis) -> str:
+227.             return "..."
+228. 
+229.         def visit_NameConstant(self, node: ast.NameConstant) -> str:
+230.             return repr(node.value)
+231. 
+232.         def visit_Num(self, node: ast.Num) -> str:
+233.             return repr(node.n)
+234. 
+235.         def visit_Str(self, node: ast.Str) -> str:
+236.             return repr(node.s)
+237. 
+238.     def generic_visit(self, node):
+239.         raise NotImplementedError('Unable to parse %s object' % type(node).__name__)
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 04:44:46,073 - thread-125513664300736.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The provided context contains the full source of `sphinx/pycode/ast.py`, which includes the `_UnparseVisitor` class and its `visit_Tuple` method. This is the exact location of the code that needs to be modified to fix the bug. The dependencies are standard Python libraries, and the logic is self-contained within this file. Therefore, the current context is sufficient to understand and implement the required change.' query='' extra_requirements='' purpose=''
+2025-12-21 04:44:46,074 - thread-125513664300736.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

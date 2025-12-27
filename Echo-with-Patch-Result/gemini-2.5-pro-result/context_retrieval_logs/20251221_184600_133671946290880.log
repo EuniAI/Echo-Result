@@ -1,0 +1,3427 @@
+2025-12-21 18:46:00,304 - thread-133671946290880.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Request with binary payload fails due to calling to_native_string
+
+Description: Introduced with https://github.com/kennethreitz/requests/issues/2844
+
+```
+import requests
+requests.put("http://httpbin.org/put", data=u"ööö".encode("utf-8"))
+```
+
+This works with 2.8.1, but not with 2.9.
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index f0d2ffd9..d78aed81 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -315,6 +315,8 @@ file-like object for your body::
+     with open('massive-body', 'rb') as f:
+         requests.post('http://some.url/streamed', data=f)
+ 
++Additionally, if you provide a ``bytes`` object to the ``data`` parameter, Requests will send those bytes verbatim without attempting to decode them. When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an appropriate ``Content-Type`` header yourself if needed.
++
+ .. warning:: It is strongly recommended that you open files in `binary mode`_.
+              This is because Requests may attempt to provide the
+              ``Content-Length`` header for you, and if it does this value will
+diff --git a/docs/user/quickstart.rst b/docs/user/quickstart.rst
+index 1ff66593..ae3483d5 100644
+--- a/docs/user/quickstart.rst
++++ b/docs/user/quickstart.rst
+@@ -227,6 +227,11 @@ dictionary of data will automatically be form-encoded when the request is made::
+ There are many times that you want to send data that is not form-encoded. If
+ you pass in a ``string`` instead of a ``dict``, that data will be posted directly.
+ 
++If you pass a ``bytes`` object as ``data``, Requests will send those bytes verbatim
++without attempting to decode them. This is useful for arbitrary binary payloads.
++When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an
++appropriate ``Content-Type`` header yourself if needed.
++
+ For example, the GitHub API v3 accepts JSON-Encoded POST/PATCH data::
+ 
+     >>> import json
+diff --git a/requests/models.py b/requests/models.py
+index 9c624d3c..8bce13cd 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -80,8 +80,10 @@ class RequestEncodingMixin(object):
+         if parameters are supplied as a dict.
+         """
+ 
+-        if isinstance(data, (str, bytes)):
++        if isinstance(data, str):
+             return to_native_string(data)
++        elif isinstance(data, bytes):
++            return data
+         elif hasattr(data, 'read'):
+             return data
+         elif hasattr(data, '__iter__'):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-21 18:46:00,366 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── AUTHORS.rst
+├── CONTRIBUTING.md
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── recommended.rst
+|   |   ├── release-process.rst
+|   |   ├── support.rst
+|   |   ├── updates.rst
+|   |   └── vulnerabilities.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── contributing.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   ├── requirements.txt
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── chardet
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardetect.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── cp949prober.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connection.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   ├── appengine.py
+|   |       |   ├── ntlmpool.py
+|   |       |   └── pyopenssl.py
+|   |       ├── exceptions.py
+|   |       ├── fields.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util
+|   |           ├── __init__.py
+|   |           ├── connection.py
+|   |           ├── request.py
+|   |           ├── response.py
+|   |           ├── retry.py
+|   |           ├── ssl_.py
+|   |           ├── timeout.py
+|   |           └── url.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Request with binary payload fails due to calling to_native_string
+
+Description: Introduced with https://github.com/kennethreitz/requests/issues/2844
+
+```
+import requests
+requests.put("http://httpbin.org/put", data=u"ööö".encode("utf-8"))
+```
+
+This works with 2.8.1, but not with 2.9.
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index f0d2ffd9..d78aed81 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -315,6 +315,8 @@ file-like object for your body::
+     with open('massive-body', 'rb') as f:
+         requests.post('http://some.url/streamed', data=f)
+ 
++Additionally, if you provide a ``bytes`` object to the ``data`` parameter, Requests will send those bytes verbatim without attempting to decode them. When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an appropriate ``Content-Type`` header yourself if needed.
++
+ .. warning:: It is strongly recommended that you open files in `binary mode`_.
+              This is because Requests may attempt to provide the
+              ``Content-Length`` header for you, and if it does this value will
+diff --git a/docs/user/quickstart.rst b/docs/user/quickstart.rst
+index 1ff66593..ae3483d5 100644
+--- a/docs/user/quickstart.rst
++++ b/docs/user/quickstart.rst
+@@ -227,6 +227,11 @@ dictionary of data will automatically be form-encoded when the request is made::
+ There are many times that you want to send data that is not form-encoded. If
+ you pass in a ``string`` instead of a ``dict``, that data will be posted directly.
+ 
++If you pass a ``bytes`` object as ``data``, Requests will send those bytes verbatim
++without attempting to decode them. This is useful for arbitrary binary payloads.
++When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an
++appropriate ``Content-Type`` header yourself if needed.
++
+ For example, the GitHub API v3 accepts JSON-Encoded POST/PATCH data::
+ 
+     >>> import json
+diff --git a/requests/models.py b/requests/models.py
+index 9c624d3c..8bce13cd 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -80,8 +80,10 @@ class RequestEncodingMixin(object):
+         if parameters are supplied as a dict.
+         """
+ 
+-        if isinstance(data, (str, bytes)):
++        if isinstance(data, str):
+             return to_native_string(data)
++        elif isinstance(data, bytes):
++            return data
+         elif hasattr(data, 'read'):
+             return data
+         elif hasattr(data, '__iter__'):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 18:46:15,641 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to understand a bug related to binary data handling in requests. The provided patch points to a change in `requests/models.py` within the `RequestEncodingMixin` class. To understand the full impact of this change, I need to see the complete implementation of `RequestEncodingMixin` and how it interacts with other classes in the same file, particularly the `Request` and `PreparedRequest` classes which are responsible for handling request data. This file is the most critical piece of context to start with.' query='Please provide the full content of the file `requests/models.py`.' extra_requirements='' purpose='This will help me understand the structure of request objects and how request data is processed before being sent.'
+2025-12-21 18:46:15,643 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file `requests/models.py`.
+2025-12-21 18:46:15,643 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 18:46:15,643 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 18:46:15,644 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 18:46:15,644 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file `requests/models.py`.
+Purpose: This will help me understand the structure of request objects and how request data is processed before being sent.
+2025-12-21 18:46:17,838 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the file `requests/models.py`. This will allow you to examine the structure of request objects and understand how request data is handled within the library.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "requests/models.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2043, 'candidates_token_count': 57, 'total_token_count': 2211, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2043}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 57}], 'thoughts_token_count': 111, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.13844468300802665, 'model_name': 'gemini-2.5-pro'} id='run--5dad60f2-a141-4728-aa7f-0ba7100e6e1b-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'requests/models.py'}, 'id': 'b039ed22-fd3d-4b60-8a62-9062284c58a8', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2043, 'output_tokens': 57, 'total_tokens': 2211, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 111}}
+2025-12-21 18:46:20,807 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the file `requests/models.py`. This file is essential for understanding how the `requests` library constructs and prepares HTTP requests. By examining its contents, you can see the definitions of the `Request` and `PreparedRequest` classes, which are fundamental to how request data is processed before being sent to a server.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 8913, 'candidates_token_count': 72, 'total_token_count': 9147, 'cached_content_token_count': 1829, 'prompt_tokens_details': [{'modality': 1, 'token_count': 8913}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1829}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 72}], 'thoughts_token_count': 162}, 'finish_reason': 'STOP', 'avg_logprobs': -0.31513245900472003, 'model_name': 'gemini-2.5-pro'} id='run--28145789-7fb1-4b6b-b2c8-385f82b5d08f-0' usage_metadata={'input_tokens': 8913, 'output_tokens': 72, 'total_tokens': 9147, 'input_token_details': {'cache_read': 1829}, 'output_token_details': {'reasoning': 162}}
+2025-12-21 18:46:20,809 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file `requests/models.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+This will help me understand the structure of request objects and how request data is processed before being sent.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: requests/models.py
+Line number range: 1 - 500
+Content:
+1. # -*- coding: utf-8 -*-
+2. 
+3. """
+4. requests.models
+5. ~~~~~~~~~~~~~~~
+6. 
+7. This module contains the primary objects that power Requests.
+8. """
+9. 
+10. import collections
+11. import datetime
+12. 
+13. from io import BytesIO, UnsupportedOperation
+14. from .hooks import default_hooks
+15. from .structures import CaseInsensitiveDict
+16. 
+17. from .auth import HTTPBasicAuth
+18. from .cookies import cookiejar_from_dict, get_cookie_header, _copy_cookie_jar
+19. from .packages.urllib3.fields import RequestField
+20. from .packages.urllib3.filepost import encode_multipart_formdata
+21. from .packages.urllib3.util import parse_url
+22. from .packages.urllib3.exceptions import (
+23.     DecodeError, ReadTimeoutError, ProtocolError, LocationParseError)
+24. from .exceptions import (
+25.     HTTPError, MissingSchema, InvalidURL, ChunkedEncodingError,
+26.     ContentDecodingError, ConnectionError, StreamConsumedError)
+27. from .utils import (
+28.     guess_filename, get_auth_from_url, requote_uri,
+29.     stream_decode_response_unicode, to_key_val_list, parse_header_links,
+30.     iter_slices, guess_json_utf, super_len, to_native_string)
+31. from .compat import (
+32.     cookielib, urlunparse, urlsplit, urlencode, str, bytes, StringIO,
+33.     is_py2, chardet, builtin_str, basestring)
+34. from .compat import json as complexjson
+35. from .status_codes import codes
+36. 
+37. #: The set of HTTP status codes that indicate an automatically
+38. #: processable redirect.
+39. REDIRECT_STATI = (
+40.     codes.moved,              # 301
+41.     codes.found,              # 302
+42.     codes.other,              # 303
+43.     codes.temporary_redirect, # 307
+44.     codes.permanent_redirect, # 308
+45. )
+46. 
+47. DEFAULT_REDIRECT_LIMIT = 30
+48. CONTENT_CHUNK_SIZE = 10 * 1024
+49. ITER_CHUNK_SIZE = 512
+50. 
+51. 
+52. class RequestEncodingMixin(object):
+53.     @property
+54.     def path_url(self):
+55.         """Build the path URL to use."""
+56. 
+57.         url = []
+58. 
+59.         p = urlsplit(self.url)
+60. 
+61.         path = p.path
+62.         if not path:
+63.             path = '/'
+64. 
+65.         url.append(path)
+66. 
+67.         query = p.query
+68.         if query:
+69.             url.append('?')
+70.             url.append(query)
+71. 
+72.         return ''.join(url)
+73. 
+74.     @staticmethod
+75.     def _encode_params(data):
+76.         """Encode parameters in a piece of data.
+77. 
+78.         Will successfully encode parameters when passed as a dict or a list of
+79.         2-tuples. Order is retained if data is a list of 2-tuples but arbitrary
+80.         if parameters are supplied as a dict.
+81.         """
+82. 
+83.         if isinstance(data, (str, bytes)):
+84.             return to_native_string(data)
+85.         elif hasattr(data, 'read'):
+86.             return data
+87.         elif hasattr(data, '__iter__'):
+88.             result = []
+89.             for k, vs in to_key_val_list(data):
+90.                 if isinstance(vs, basestring) or not hasattr(vs, '__iter__'):
+91.                     vs = [vs]
+92.                 for v in vs:
+93.                     if v is not None:
+94.                         result.append(
+95.                             (k.encode('utf-8') if isinstance(k, str) else k,
+96.                              v.encode('utf-8') if isinstance(v, str) else v))
+97.             return urlencode(result, doseq=True)
+98.         else:
+99.             return data
+100. 
+101.     @staticmethod
+102.     def _encode_files(files, data):
+103.         """Build the body for a multipart/form-data request.
+104. 
+105.         Will successfully encode files when passed as a dict or a list of
+106.         2-tuples. Order is retained if data is a list of 2-tuples but arbitrary
+107.         if parameters are supplied as a dict.
+108. 
+109.         """
+110.         if (not files):
+111.             raise ValueError("Files must be provided.")
+112.         elif isinstance(data, basestring):
+113.             raise ValueError("Data must not be a string.")
+114. 
+115.         new_fields = []
+116.         fields = to_key_val_list(data or {})
+117.         files = to_key_val_list(files or {})
+118. 
+119.         for field, val in fields:
+120.             if isinstance(val, basestring) or not hasattr(val, '__iter__'):
+121.                 val = [val]
+122.             for v in val:
+123.                 if v is not None:
+124.                     # Don't call str() on bytestrings: in Py3 it all goes wrong.
+125.                     if not isinstance(v, bytes):
+126.                         v = str(v)
+127. 
+128.                     new_fields.append(
+129.                         (field.decode('utf-8') if isinstance(field, bytes) else field,
+130.                          v.encode('utf-8') if isinstance(v, str) else v))
+131. 
+132.         for (k, v) in files:
+133.             # support for explicit filename
+134.             ft = None
+135.             fh = None
+136.             if isinstance(v, (tuple, list)):
+137.                 if len(v) == 2:
+138.                     fn, fp = v
+139.                 elif len(v) == 3:
+140.                     fn, fp, ft = v
+141.                 else:
+142.                     fn, fp, ft, fh = v
+143.             else:
+144.                 fn = guess_filename(v) or k
+145.                 fp = v
+146. 
+147.             if isinstance(fp, (str, bytes, bytearray)):
+148.                 fdata = fp
+149.             else:
+150.                 fdata = fp.read()
+151. 
+152.             rf = RequestField(name=k, data=fdata, filename=fn, headers=fh)
+153.             rf.make_multipart(content_type=ft)
+154.             new_fields.append(rf)
+155. 
+156.         body, content_type = encode_multipart_formdata(new_fields)
+157. 
+158.         return body, content_type
+159. 
+160. 
+161. class RequestHooksMixin(object):
+162.     def register_hook(self, event, hook):
+163.         """Properly register a hook."""
+164. 
+165.         if event not in self.hooks:
+166.             raise ValueError('Unsupported event specified, with event name "%s"' % (event))
+167. 
+168.         if isinstance(hook, collections.Callable):
+169.             self.hooks[event].append(hook)
+170.         elif hasattr(hook, '__iter__'):
+171.             self.hooks[event].extend(h for h in hook if isinstance(h, collections.Callable))
+172. 
+173.     def deregister_hook(self, event, hook):
+174.         """Deregister a previously registered hook.
+175.         Returns True if the hook existed, False if not.
+176.         """
+177. 
+178.         try:
+179.             self.hooks[event].remove(hook)
+180.             return True
+181.         except ValueError:
+182.             return False
+183. 
+184. 
+185. class Request(RequestHooksMixin):
+186.     """A user-created :class:`Request <Request>` object.
+187. 
+188.     Used to prepare a :class:`PreparedRequest <PreparedRequest>`, which is sent to the server.
+189. 
+190.     :param method: HTTP method to use.
+191.     :param url: URL to send.
+192.     :param headers: dictionary of headers to send.
+193.     :param files: dictionary of {filename: fileobject} files to multipart upload.
+194.     :param data: the body to attach to the request. If a dictionary is provided, form-encoding will take place.
+195.     :param json: json for the body to attach to the request (if files or data is not specified).
+196.     :param params: dictionary of URL parameters to append to the URL.
+197.     :param auth: Auth handler or (user, pass) tuple.
+198.     :param cookies: dictionary or CookieJar of cookies to attach to this request.
+199.     :param hooks: dictionary of callback hooks, for internal usage.
+200. 
+201.     Usage::
+202. 
+203.       >>> import requests
+204.       >>> req = requests.Request('GET', 'http://httpbin.org/get')
+205.       >>> req.prepare()
+206.       <PreparedRequest [GET]>
+207. 
+208.     """
+209.     def __init__(self, method=None, url=None, headers=None, files=None,
+210.         data=None, params=None, auth=None, cookies=None, hooks=None, json=None):
+211. 
+212.         # Default empty dicts for dict params.
+213.         data = [] if data is None else data
+214.         files = [] if files is None else files
+215.         headers = {} if headers is None else headers
+216.         params = {} if params is None else params
+217.         hooks = {} if hooks is None else hooks
+218. 
+219.         self.hooks = default_hooks()
+220.         for (k, v) in list(hooks.items()):
+221.             self.register_hook(event=k, hook=v)
+222. 
+223.         self.method = method
+224.         self.url = url
+225.         self.headers = headers
+226.         self.files = files
+227.         self.data = data
+228.         self.json = json
+229.         self.params = params
+230.         self.auth = auth
+231.         self.cookies = cookies
+232. 
+233.     def __repr__(self):
+234.         return '<Request [%s]>' % (self.method)
+235. 
+236.     def prepare(self):
+237.         """Constructs a :class:`PreparedRequest <PreparedRequest>` for transmission and returns it."""
+238.         p = PreparedRequest()
+239.         p.prepare(
+240.             method=self.method,
+241.             url=self.url,
+242.             headers=self.headers,
+243.             files=self.files,
+244.             data=self.data,
+245.             json=self.json,
+246.             params=self.params,
+247.             auth=self.auth,
+248.             cookies=self.cookies,
+249.             hooks=self.hooks,
+250.         )
+251.         return p
+252. 
+253. 
+254. class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+255.     """The fully mutable :class:`PreparedRequest <PreparedRequest>` object,
+256.     containing the exact bytes that will be sent to the server.
+257. 
+258.     Generated from either a :class:`Request <Request>` object or manually.
+259. 
+260.     Usage::
+261. 
+262.       >>> import requests
+263.       >>> req = requests.Request('GET', 'http://httpbin.org/get')
+264.       >>> r = req.prepare()
+265.       <PreparedRequest [GET]>
+266. 
+267.       >>> s = requests.Session()
+268.       >>> s.send(r)
+269.       <Response [200]>
+270. 
+271.     """
+272. 
+273.     def __init__(self):
+274.         #: HTTP verb to send to the server.
+275.         self.method = None
+276.         #: HTTP URL to send the request to.
+277.         self.url = None
+278.         #: dictionary of HTTP headers.
+279.         self.headers = None
+280.         # The `CookieJar` used to create the Cookie header will be stored here
+281.         # after prepare_cookies is called
+282.         self._cookies = None
+283.         #: request body to send to the server.
+284.         self.body = None
+285.         #: dictionary of callback hooks, for internal usage.
+286.         self.hooks = default_hooks()
+287. 
+288.     def prepare(self, method=None, url=None, headers=None, files=None,
+289.         data=None, params=None, auth=None, cookies=None, hooks=None, json=None):
+290.         """Prepares the entire request with the given parameters."""
+291. 
+292.         self.prepare_method(method)
+293.         self.prepare_url(url, params)
+294.         self.prepare_headers(headers)
+295.         self.prepare_cookies(cookies)
+296.         self.prepare_body(data, files, json)
+297.         self.prepare_auth(auth, url)
+298. 
+299.         # Note that prepare_auth must be last to enable authentication schemes
+300.         # such as OAuth to work on a fully prepared request.
+301. 
+302.         # This MUST go after prepare_auth. Authenticators could add a hook
+303.         self.prepare_hooks(hooks)
+304. 
+305.     def __repr__(self):
+306.         return '<PreparedRequest [%s]>' % (self.method)
+307. 
+308.     def copy(self):
+309.         p = PreparedRequest()
+310.         p.method = self.method
+311.         p.url = self.url
+312.         p.headers = self.headers.copy() if self.headers is not None else None
+313.         p._cookies = _copy_cookie_jar(self._cookies)
+314.         p.body = self.body
+315.         p.hooks = self.hooks
+316.         return p
+317. 
+318.     def prepare_method(self, method):
+319.         """Prepares the given HTTP method."""
+320.         self.method = method
+321.         if self.method is not None:
+322.             self.method = to_native_string(self.method.upper())
+323. 
+324.     def prepare_url(self, url, params):
+325.         """Prepares the given HTTP URL."""
+326.         #: Accept objects that have string representations.
+327.         #: We're unable to blindly call unicode/str functions
+328.         #: as this will include the bytestring indicator (b'')
+329.         #: on python 3.x.
+330.         #: https://github.com/kennethreitz/requests/pull/2238
+331.         if isinstance(url, bytes):
+332.             url = url.decode('utf8')
+333.         else:
+334.             url = unicode(url) if is_py2 else str(url)
+335. 
+336.         # Don't do any URL preparation for non-HTTP schemes like `mailto`,
+337.         # `data` etc to work around exceptions from `url_parse`, which
+338.         # handles RFC 3986 only.
+339.         if ':' in url and not url.lower().startswith('http'):
+340.             self.url = url
+341.             return
+342. 
+343.         # Support for unicode domain names and paths.
+344.         try:
+345.             scheme, auth, host, port, path, query, fragment = parse_url(url)
+346.         except LocationParseError as e:
+347.             raise InvalidURL(*e.args)
+348. 
+349.         if not scheme:
+350.             error = ("Invalid URL {0!r}: No schema supplied. Perhaps you meant http://{0}?")
+351.             error = error.format(to_native_string(url, 'utf8'))
+352. 
+353.             raise MissingSchema(error)
+354. 
+355.         if not host:
+356.             raise InvalidURL("Invalid URL %r: No host supplied" % url)
+357. 
+358.         # Only want to apply IDNA to the hostname
+359.         try:
+360.             host = host.encode('idna').decode('utf-8')
+361.         except UnicodeError:
+362.             raise InvalidURL('URL has an invalid label.')
+363. 
+364.         # Carefully reconstruct the network location
+365.         netloc = auth or ''
+366.         if netloc:
+367.             netloc += '@'
+368.         netloc += host
+369.         if port:
+370.             netloc += ':' + str(port)
+371. 
+372.         # Bare domains aren't valid URLs.
+373.         if not path:
+374.             path = '/'
+375. 
+376.         if is_py2:
+377.             if isinstance(scheme, str):
+378.                 scheme = scheme.encode('utf-8')
+379.             if isinstance(netloc, str):
+380.                 netloc = netloc.encode('utf-8')
+381.             if isinstance(path, str):
+382.                 path = path.encode('utf-8')
+383.             if isinstance(query, str):
+384.                 query = query.encode('utf-8')
+385.             if isinstance(fragment, str):
+386.                 fragment = fragment.encode('utf-8')
+387. 
+388.         enc_params = self._encode_params(params)
+389.         if enc_params:
+390.             if query:
+391.                 query = '%s&%s' % (query, enc_params)
+392.             else:
+393.                 query = enc_params
+394. 
+395.         url = requote_uri(urlunparse([scheme, netloc, path, None, query, fragment]))
+396.         self.url = url
+397. 
+398.     def prepare_headers(self, headers):
+399.         """Prepares the given HTTP headers."""
+400. 
+401.         if headers:
+402.             self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
+403.         else:
+404.             self.headers = CaseInsensitiveDict()
+405. 
+406.     def prepare_body(self, data, files, json=None):
+407.         """Prepares the given HTTP body data."""
+408. 
+409.         # Check if file, fo, generator, iterator.
+410.         # If not, run through normal process.
+411. 
+412.         # Nottin' on you.
+413.         body = None
+414.         content_type = None
+415.         length = None
+416. 
+417.         if not data and json is not None:
+418.             content_type = 'application/json'
+419.             body = complexjson.dumps(json)
+420. 
+421.         is_stream = all([
+422.             hasattr(data, '__iter__'),
+423.             not isinstance(data, (basestring, list, tuple, dict))
+424.         ])
+425. 
+426.         try:
+427.             length = super_len(data)
+428.         except (TypeError, AttributeError, UnsupportedOperation):
+429.             length = None
+430. 
+431.         if is_stream:
+432.             body = data
+433. 
+434.             if files:
+435.                 raise NotImplementedError('Streamed bodies and files are mutually exclusive.')
+436. 
+437.             if length:
+438.                 self.headers['Content-Length'] = builtin_str(length)
+439.             else:
+440.                 self.headers['Transfer-Encoding'] = 'chunked'
+441.         else:
+442.             # Multi-part file uploads.
+443.             if files:
+444.                 (body, content_type) = self._encode_files(files, data)
+445.             else:
+446.                 if data:
+447.                     body = self._encode_params(data)
+448.                     if isinstance(data, basestring) or hasattr(data, 'read'):
+449.                         content_type = None
+450.                     else:
+451.                         content_type = 'application/x-www-form-urlencoded'
+452. 
+453.             self.prepare_content_length(body)
+454. 
+455.             # Add content-type if it wasn't explicitly provided.
+456.             if content_type and ('content-type' not in self.headers):
+457.                 self.headers['Content-Type'] = content_type
+458. 
+459.         self.body = body
+460. 
+461.     def prepare_content_length(self, body):
+462.         if hasattr(body, 'seek') and hasattr(body, 'tell'):
+463.             body.seek(0, 2)
+464.             self.headers['Content-Length'] = builtin_str(body.tell())
+465.             body.seek(0, 0)
+466.         elif body is not None:
+467.             l = super_len(body)
+468.             if l:
+469.                 self.headers['Content-Length'] = builtin_str(l)
+470.         elif (self.method not in ('GET', 'HEAD')) and (self.headers.get('Content-Length') is None):
+471.             self.headers['Content-Length'] = '0'
+472. 
+473.     def prepare_auth(self, auth, url=''):
+474.         """Prepares the given HTTP auth data."""
+475. 
+476.         # If no Auth is explicitly provided, extract it from the URL first.
+477.         if auth is None:
+478.             url_auth = get_auth_from_url(self.url)
+479.             auth = url_auth if any(url_auth) else None
+480. 
+481.         if auth:
+482.             if isinstance(auth, tuple) and len(auth) == 2:
+483.                 # special-case basic HTTP auth
+484.                 auth = HTTPBasicAuth(*auth)
+485. 
+486.             # Allow auth to make its changes.
+487.             r = auth(self)
+488. 
+489.             # Update self to reflect the auth changes.
+490.             self.__dict__.update(r.__dict__)
+491. 
+492.             # Recompute Content-Length
+493.             self.prepare_content_length(self.body)
+494. 
+495.     def prepare_cookies(self, cookies):
+496.         """Prepares the given HTTP cookie data.
+497. 
+498.         This function eventually generates a ``Cookie`` header from the
+499.         given cookies using cookielib. Due to cookielib's design, the header
+500.         will not be regenerated if it already exists, meaning this function
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 18:46:29,966 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asks for the full content of the file `requests/models.py`.\n2. Extended relevance:\n   - This context represents the entire available content of the requested file. Providing the whole file content directly satisfies the user's request to understand the structure of request objects and how request data is processed before being sent.", relative_path='requests/models.py', start_line=1, end_line=500)]
+2025-12-21 18:46:29,967 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the file `requests/models.py`.
+2025-12-21 18:46:29,967 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 18:46:29,967 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 18:46:29,968 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 18:46:29,968 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 18:46:29,969 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── AUTHORS.rst
+├── CONTRIBUTING.md
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── recommended.rst
+|   |   ├── release-process.rst
+|   |   ├── support.rst
+|   |   ├── updates.rst
+|   |   └── vulnerabilities.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── contributing.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   ├── requirements.txt
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── chardet
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardetect.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── cp949prober.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connection.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   ├── appengine.py
+|   |       |   ├── ntlmpool.py
+|   |       |   └── pyopenssl.py
+|   |       ├── exceptions.py
+|   |       ├── fields.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util
+|   |           ├── __init__.py
+|   |           ├── connection.py
+|   |           ├── request.py
+|   |           ├── response.py
+|   |           ├── retry.py
+|   |           ├── ssl_.py
+|   |           ├── timeout.py
+|   |           └── url.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Request with binary payload fails due to calling to_native_string
+
+Description: Introduced with https://github.com/kennethreitz/requests/issues/2844
+
+```
+import requests
+requests.put("http://httpbin.org/put", data=u"ööö".encode("utf-8"))
+```
+
+This works with 2.8.1, but not with 2.9.
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index f0d2ffd9..d78aed81 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -315,6 +315,8 @@ file-like object for your body::
+     with open('massive-body', 'rb') as f:
+         requests.post('http://some.url/streamed', data=f)
+ 
++Additionally, if you provide a ``bytes`` object to the ``data`` parameter, Requests will send those bytes verbatim without attempting to decode them. When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an appropriate ``Content-Type`` header yourself if needed.
++
+ .. warning:: It is strongly recommended that you open files in `binary mode`_.
+              This is because Requests may attempt to provide the
+              ``Content-Length`` header for you, and if it does this value will
+diff --git a/docs/user/quickstart.rst b/docs/user/quickstart.rst
+index 1ff66593..ae3483d5 100644
+--- a/docs/user/quickstart.rst
++++ b/docs/user/quickstart.rst
+@@ -227,6 +227,11 @@ dictionary of data will automatically be form-encoded when the request is made::
+ There are many times that you want to send data that is not form-encoded. If
+ you pass in a ``string`` instead of a ``dict``, that data will be posted directly.
+ 
++If you pass a ``bytes`` object as ``data``, Requests will send those bytes verbatim
++without attempting to decode them. This is useful for arbitrary binary payloads.
++When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an
++appropriate ``Content-Type`` header yourself if needed.
++
+ For example, the GitHub API v3 accepts JSON-Encoded POST/PATCH data::
+ 
+     >>> import json
+diff --git a/requests/models.py b/requests/models.py
+index 9c624d3c..8bce13cd 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -80,8 +80,10 @@ class RequestEncodingMixin(object):
+         if parameters are supplied as a dict.
+         """
+ 
+-        if isinstance(data, (str, bytes)):
++        if isinstance(data, str):
+             return to_native_string(data)
++        elif isinstance(data, bytes):
++            return data
+         elif hasattr(data, 'read'):
+             return data
+         elif hasattr(data, '__iter__'):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file `requests/models.py`.
+Extra Requirements: 
+Purpose: This will help me understand the structure of request objects and how request data is processed before being sent.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: requests/models.py
+Line number range: 1 - 500
+Content:
+1. # -*- coding: utf-8 -*-
+2. 
+3. """
+4. requests.models
+5. ~~~~~~~~~~~~~~~
+6. 
+7. This module contains the primary objects that power Requests.
+8. """
+9. 
+10. import collections
+11. import datetime
+12. 
+13. from io import BytesIO, UnsupportedOperation
+14. from .hooks import default_hooks
+15. from .structures import CaseInsensitiveDict
+16. 
+17. from .auth import HTTPBasicAuth
+18. from .cookies import cookiejar_from_dict, get_cookie_header, _copy_cookie_jar
+19. from .packages.urllib3.fields import RequestField
+20. from .packages.urllib3.filepost import encode_multipart_formdata
+21. from .packages.urllib3.util import parse_url
+22. from .packages.urllib3.exceptions import (
+23.     DecodeError, ReadTimeoutError, ProtocolError, LocationParseError)
+24. from .exceptions import (
+25.     HTTPError, MissingSchema, InvalidURL, ChunkedEncodingError,
+26.     ContentDecodingError, ConnectionError, StreamConsumedError)
+27. from .utils import (
+28.     guess_filename, get_auth_from_url, requote_uri,
+29.     stream_decode_response_unicode, to_key_val_list, parse_header_links,
+30.     iter_slices, guess_json_utf, super_len, to_native_string)
+31. from .compat import (
+32.     cookielib, urlunparse, urlsplit, urlencode, str, bytes, StringIO,
+33.     is_py2, chardet, builtin_str, basestring)
+34. from .compat import json as complexjson
+35. from .status_codes import codes
+36. 
+37. #: The set of HTTP status codes that indicate an automatically
+38. #: processable redirect.
+39. REDIRECT_STATI = (
+40.     codes.moved,              # 301
+41.     codes.found,              # 302
+42.     codes.other,              # 303
+43.     codes.temporary_redirect, # 307
+44.     codes.permanent_redirect, # 308
+45. )
+46. 
+47. DEFAULT_REDIRECT_LIMIT = 30
+48. CONTENT_CHUNK_SIZE = 10 * 1024
+49. ITER_CHUNK_SIZE = 512
+50. 
+51. 
+52. class RequestEncodingMixin(object):
+53.     @property
+54.     def path_url(self):
+55.         """Build the path URL to use."""
+56. 
+57.         url = []
+58. 
+59.         p = urlsplit(self.url)
+60. 
+61.         path = p.path
+62.         if not path:
+63.             path = '/'
+64. 
+65.         url.append(path)
+66. 
+67.         query = p.query
+68.         if query:
+69.             url.append('?')
+70.             url.append(query)
+71. 
+72.         return ''.join(url)
+73. 
+74.     @staticmethod
+75.     def _encode_params(data):
+76.         """Encode parameters in a piece of data.
+77. 
+78.         Will successfully encode parameters when passed as a dict or a list of
+79.         2-tuples. Order is retained if data is a list of 2-tuples but arbitrary
+80.         if parameters are supplied as a dict.
+81.         """
+82. 
+83.         if isinstance(data, (str, bytes)):
+84.             return to_native_string(data)
+85.         elif hasattr(data, 'read'):
+86.             return data
+87.         elif hasattr(data, '__iter__'):
+88.             result = []
+89.             for k, vs in to_key_val_list(data):
+90.                 if isinstance(vs, basestring) or not hasattr(vs, '__iter__'):
+91.                     vs = [vs]
+92.                 for v in vs:
+93.                     if v is not None:
+94.                         result.append(
+95.                             (k.encode('utf-8') if isinstance(k, str) else k,
+96.                              v.encode('utf-8') if isinstance(v, str) else v))
+97.             return urlencode(result, doseq=True)
+98.         else:
+99.             return data
+100. 
+101.     @staticmethod
+102.     def _encode_files(files, data):
+103.         """Build the body for a multipart/form-data request.
+104. 
+105.         Will successfully encode files when passed as a dict or a list of
+106.         2-tuples. Order is retained if data is a list of 2-tuples but arbitrary
+107.         if parameters are supplied as a dict.
+108. 
+109.         """
+110.         if (not files):
+111.             raise ValueError("Files must be provided.")
+112.         elif isinstance(data, basestring):
+113.             raise ValueError("Data must not be a string.")
+114. 
+115.         new_fields = []
+116.         fields = to_key_val_list(data or {})
+117.         files = to_key_val_list(files or {})
+118. 
+119.         for field, val in fields:
+120.             if isinstance(val, basestring) or not hasattr(val, '__iter__'):
+121.                 val = [val]
+122.             for v in val:
+123.                 if v is not None:
+124.                     # Don't call str() on bytestrings: in Py3 it all goes wrong.
+125.                     if not isinstance(v, bytes):
+126.                         v = str(v)
+127. 
+128.                     new_fields.append(
+129.                         (field.decode('utf-8') if isinstance(field, bytes) else field,
+130.                          v.encode('utf-8') if isinstance(v, str) else v))
+131. 
+132.         for (k, v) in files:
+133.             # support for explicit filename
+134.             ft = None
+135.             fh = None
+136.             if isinstance(v, (tuple, list)):
+137.                 if len(v) == 2:
+138.                     fn, fp = v
+139.                 elif len(v) == 3:
+140.                     fn, fp, ft = v
+141.                 else:
+142.                     fn, fp, ft, fh = v
+143.             else:
+144.                 fn = guess_filename(v) or k
+145.                 fp = v
+146. 
+147.             if isinstance(fp, (str, bytes, bytearray)):
+148.                 fdata = fp
+149.             else:
+150.                 fdata = fp.read()
+151. 
+152.             rf = RequestField(name=k, data=fdata, filename=fn, headers=fh)
+153.             rf.make_multipart(content_type=ft)
+154.             new_fields.append(rf)
+155. 
+156.         body, content_type = encode_multipart_formdata(new_fields)
+157. 
+158.         return body, content_type
+159. 
+160. 
+161. class RequestHooksMixin(object):
+162.     def register_hook(self, event, hook):
+163.         """Properly register a hook."""
+164. 
+165.         if event not in self.hooks:
+166.             raise ValueError('Unsupported event specified, with event name "%s"' % (event))
+167. 
+168.         if isinstance(hook, collections.Callable):
+169.             self.hooks[event].append(hook)
+170.         elif hasattr(hook, '__iter__'):
+171.             self.hooks[event].extend(h for h in hook if isinstance(h, collections.Callable))
+172. 
+173.     def deregister_hook(self, event, hook):
+174.         """Deregister a previously registered hook.
+175.         Returns True if the hook existed, False if not.
+176.         """
+177. 
+178.         try:
+179.             self.hooks[event].remove(hook)
+180.             return True
+181.         except ValueError:
+182.             return False
+183. 
+184. 
+185. class Request(RequestHooksMixin):
+186.     """A user-created :class:`Request <Request>` object.
+187. 
+188.     Used to prepare a :class:`PreparedRequest <PreparedRequest>`, which is sent to the server.
+189. 
+190.     :param method: HTTP method to use.
+191.     :param url: URL to send.
+192.     :param headers: dictionary of headers to send.
+193.     :param files: dictionary of {filename: fileobject} files to multipart upload.
+194.     :param data: the body to attach to the request. If a dictionary is provided, form-encoding will take place.
+195.     :param json: json for the body to attach to the request (if files or data is not specified).
+196.     :param params: dictionary of URL parameters to append to the URL.
+197.     :param auth: Auth handler or (user, pass) tuple.
+198.     :param cookies: dictionary or CookieJar of cookies to attach to this request.
+199.     :param hooks: dictionary of callback hooks, for internal usage.
+200. 
+201.     Usage::
+202. 
+203.       >>> import requests
+204.       >>> req = requests.Request('GET', 'http://httpbin.org/get')
+205.       >>> req.prepare()
+206.       <PreparedRequest [GET]>
+207. 
+208.     """
+209.     def __init__(self, method=None, url=None, headers=None, files=None,
+210.         data=None, params=None, auth=None, cookies=None, hooks=None, json=None):
+211. 
+212.         # Default empty dicts for dict params.
+213.         data = [] if data is None else data
+214.         files = [] if files is None else files
+215.         headers = {} if headers is None else headers
+216.         params = {} if params is None else params
+217.         hooks = {} if hooks is None else hooks
+218. 
+219.         self.hooks = default_hooks()
+220.         for (k, v) in list(hooks.items()):
+221.             self.register_hook(event=k, hook=v)
+222. 
+223.         self.method = method
+224.         self.url = url
+225.         self.headers = headers
+226.         self.files = files
+227.         self.data = data
+228.         self.json = json
+229.         self.params = params
+230.         self.auth = auth
+231.         self.cookies = cookies
+232. 
+233.     def __repr__(self):
+234.         return '<Request [%s]>' % (self.method)
+235. 
+236.     def prepare(self):
+237.         """Constructs a :class:`PreparedRequest <PreparedRequest>` for transmission and returns it."""
+238.         p = PreparedRequest()
+239.         p.prepare(
+240.             method=self.method,
+241.             url=self.url,
+242.             headers=self.headers,
+243.             files=self.files,
+244.             data=self.data,
+245.             json=self.json,
+246.             params=self.params,
+247.             auth=self.auth,
+248.             cookies=self.cookies,
+249.             hooks=self.hooks,
+250.         )
+251.         return p
+252. 
+253. 
+254. class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+255.     """The fully mutable :class:`PreparedRequest <PreparedRequest>` object,
+256.     containing the exact bytes that will be sent to the server.
+257. 
+258.     Generated from either a :class:`Request <Request>` object or manually.
+259. 
+260.     Usage::
+261. 
+262.       >>> import requests
+263.       >>> req = requests.Request('GET', 'http://httpbin.org/get')
+264.       >>> r = req.prepare()
+265.       <PreparedRequest [GET]>
+266. 
+267.       >>> s = requests.Session()
+268.       >>> s.send(r)
+269.       <Response [200]>
+270. 
+271.     """
+272. 
+273.     def __init__(self):
+274.         #: HTTP verb to send to the server.
+275.         self.method = None
+276.         #: HTTP URL to send the request to.
+277.         self.url = None
+278.         #: dictionary of HTTP headers.
+279.         self.headers = None
+280.         # The `CookieJar` used to create the Cookie header will be stored here
+281.         # after prepare_cookies is called
+282.         self._cookies = None
+283.         #: request body to send to the server.
+284.         self.body = None
+285.         #: dictionary of callback hooks, for internal usage.
+286.         self.hooks = default_hooks()
+287. 
+288.     def prepare(self, method=None, url=None, headers=None, files=None,
+289.         data=None, params=None, auth=None, cookies=None, hooks=None, json=None):
+290.         """Prepares the entire request with the given parameters."""
+291. 
+292.         self.prepare_method(method)
+293.         self.prepare_url(url, params)
+294.         self.prepare_headers(headers)
+295.         self.prepare_cookies(cookies)
+296.         self.prepare_body(data, files, json)
+297.         self.prepare_auth(auth, url)
+298. 
+299.         # Note that prepare_auth must be last to enable authentication schemes
+300.         # such as OAuth to work on a fully prepared request.
+301. 
+302.         # This MUST go after prepare_auth. Authenticators could add a hook
+303.         self.prepare_hooks(hooks)
+304. 
+305.     def __repr__(self):
+306.         return '<PreparedRequest [%s]>' % (self.method)
+307. 
+308.     def copy(self):
+309.         p = PreparedRequest()
+310.         p.method = self.method
+311.         p.url = self.url
+312.         p.headers = self.headers.copy() if self.headers is not None else None
+313.         p._cookies = _copy_cookie_jar(self._cookies)
+314.         p.body = self.body
+315.         p.hooks = self.hooks
+316.         return p
+317. 
+318.     def prepare_method(self, method):
+319.         """Prepares the given HTTP method."""
+320.         self.method = method
+321.         if self.method is not None:
+322.             self.method = to_native_string(self.method.upper())
+323. 
+324.     def prepare_url(self, url, params):
+325.         """Prepares the given HTTP URL."""
+326.         #: Accept objects that have string representations.
+327.         #: We're unable to blindly call unicode/str functions
+328.         #: as this will include the bytestring indicator (b'')
+329.         #: on python 3.x.
+330.         #: https://github.com/kennethreitz/requests/pull/2238
+331.         if isinstance(url, bytes):
+332.             url = url.decode('utf8')
+333.         else:
+334.             url = unicode(url) if is_py2 else str(url)
+335. 
+336.         # Don't do any URL preparation for non-HTTP schemes like `mailto`,
+337.         # `data` etc to work around exceptions from `url_parse`, which
+338.         # handles RFC 3986 only.
+339.         if ':' in url and not url.lower().startswith('http'):
+340.             self.url = url
+341.             return
+342. 
+343.         # Support for unicode domain names and paths.
+344.         try:
+345.             scheme, auth, host, port, path, query, fragment = parse_url(url)
+346.         except LocationParseError as e:
+347.             raise InvalidURL(*e.args)
+348. 
+349.         if not scheme:
+350.             error = ("Invalid URL {0!r}: No schema supplied. Perhaps you meant http://{0}?")
+351.             error = error.format(to_native_string(url, 'utf8'))
+352. 
+353.             raise MissingSchema(error)
+354. 
+355.         if not host:
+356.             raise InvalidURL("Invalid URL %r: No host supplied" % url)
+357. 
+358.         # Only want to apply IDNA to the hostname
+359.         try:
+360.             host = host.encode('idna').decode('utf-8')
+361.         except UnicodeError:
+362.             raise InvalidURL('URL has an invalid label.')
+363. 
+364.         # Carefully reconstruct the network location
+365.         netloc = auth or ''
+366.         if netloc:
+367.             netloc += '@'
+368.         netloc += host
+369.         if port:
+370.             netloc += ':' + str(port)
+371. 
+372.         # Bare domains aren't valid URLs.
+373.         if not path:
+374.             path = '/'
+375. 
+376.         if is_py2:
+377.             if isinstance(scheme, str):
+378.                 scheme = scheme.encode('utf-8')
+379.             if isinstance(netloc, str):
+380.                 netloc = netloc.encode('utf-8')
+381.             if isinstance(path, str):
+382.                 path = path.encode('utf-8')
+383.             if isinstance(query, str):
+384.                 query = query.encode('utf-8')
+385.             if isinstance(fragment, str):
+386.                 fragment = fragment.encode('utf-8')
+387. 
+388.         enc_params = self._encode_params(params)
+389.         if enc_params:
+390.             if query:
+391.                 query = '%s&%s' % (query, enc_params)
+392.             else:
+393.                 query = enc_params
+394. 
+395.         url = requote_uri(urlunparse([scheme, netloc, path, None, query, fragment]))
+396.         self.url = url
+397. 
+398.     def prepare_headers(self, headers):
+399.         """Prepares the given HTTP headers."""
+400. 
+401.         if headers:
+402.             self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
+403.         else:
+404.             self.headers = CaseInsensitiveDict()
+405. 
+406.     def prepare_body(self, data, files, json=None):
+407.         """Prepares the given HTTP body data."""
+408. 
+409.         # Check if file, fo, generator, iterator.
+410.         # If not, run through normal process.
+411. 
+412.         # Nottin' on you.
+413.         body = None
+414.         content_type = None
+415.         length = None
+416. 
+417.         if not data and json is not None:
+418.             content_type = 'application/json'
+419.             body = complexjson.dumps(json)
+420. 
+421.         is_stream = all([
+422.             hasattr(data, '__iter__'),
+423.             not isinstance(data, (basestring, list, tuple, dict))
+424.         ])
+425. 
+426.         try:
+427.             length = super_len(data)
+428.         except (TypeError, AttributeError, UnsupportedOperation):
+429.             length = None
+430. 
+431.         if is_stream:
+432.             body = data
+433. 
+434.             if files:
+435.                 raise NotImplementedError('Streamed bodies and files are mutually exclusive.')
+436. 
+437.             if length:
+438.                 self.headers['Content-Length'] = builtin_str(length)
+439.             else:
+440.                 self.headers['Transfer-Encoding'] = 'chunked'
+441.         else:
+442.             # Multi-part file uploads.
+443.             if files:
+444.                 (body, content_type) = self._encode_files(files, data)
+445.             else:
+446.                 if data:
+447.                     body = self._encode_params(data)
+448.                     if isinstance(data, basestring) or hasattr(data, 'read'):
+449.                         content_type = None
+450.                     else:
+451.                         content_type = 'application/x-www-form-urlencoded'
+452. 
+453.             self.prepare_content_length(body)
+454. 
+455.             # Add content-type if it wasn't explicitly provided.
+456.             if content_type and ('content-type' not in self.headers):
+457.                 self.headers['Content-Type'] = content_type
+458. 
+459.         self.body = body
+460. 
+461.     def prepare_content_length(self, body):
+462.         if hasattr(body, 'seek') and hasattr(body, 'tell'):
+463.             body.seek(0, 2)
+464.             self.headers['Content-Length'] = builtin_str(body.tell())
+465.             body.seek(0, 0)
+466.         elif body is not None:
+467.             l = super_len(body)
+468.             if l:
+469.                 self.headers['Content-Length'] = builtin_str(l)
+470.         elif (self.method not in ('GET', 'HEAD')) and (self.headers.get('Content-Length') is None):
+471.             self.headers['Content-Length'] = '0'
+472. 
+473.     def prepare_auth(self, auth, url=''):
+474.         """Prepares the given HTTP auth data."""
+475. 
+476.         # If no Auth is explicitly provided, extract it from the URL first.
+477.         if auth is None:
+478.             url_auth = get_auth_from_url(self.url)
+479.             auth = url_auth if any(url_auth) else None
+480. 
+481.         if auth:
+482.             if isinstance(auth, tuple) and len(auth) == 2:
+483.                 # special-case basic HTTP auth
+484.                 auth = HTTPBasicAuth(*auth)
+485. 
+486.             # Allow auth to make its changes.
+487.             r = auth(self)
+488. 
+489.             # Update self to reflect the auth changes.
+490.             self.__dict__.update(r.__dict__)
+491. 
+492.             # Recompute Content-Length
+493.             self.prepare_content_length(self.body)
+494. 
+495.     def prepare_cookies(self, cookies):
+496.         """Prepares the given HTTP cookie data.
+497. 
+498.         This function eventually generates a ``Cookie`` header from the
+499.         given cookies using cookielib. Due to cookielib's design, the header
+500.         will not be regenerated if it already exists, meaning this function
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 18:46:58,925 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user has reported an issue where passing a `bytes` object to `requests.put` fails. The provided patch indicates the problem is in `requests/models.py` within the `_encode_params` method, which incorrectly calls `to_native_string` on `bytes` data. I have the content of `requests/models.py`, but to fully understand why calling `to_native_string` on a `bytes` object is problematic, I need to see its implementation. The imports in `requests/models.py` show that `to_native_string` is imported from `requests/utils.py`. Therefore, I need the content of `requests/utils.py`.' query='Please provide the full content of the file `requests/utils.py`.' extra_requirements='' purpose='I need the definition of `to_native_string` and other utility functions to understand how request data is processed and why the original code fails with binary data.'
+2025-12-21 18:46:58,926 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file `requests/utils.py`.
+2025-12-21 18:46:58,926 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 18:46:58,927 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 18:46:58,927 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 18:46:58,927 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file `requests/utils.py`.
+Purpose: I need the definition of `to_native_string` and other utility functions to understand how request data is processed and why the original code fails with binary data.
+2025-12-21 18:47:01,024 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the file `requests/utils.py` so you can examine the `to_native_string` function and other utilities. This will help you understand how the request data is processed.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "requests/utils.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2056, 'candidates_token_count': 64, 'total_token_count': 2200, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2056}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 64}], 'thoughts_token_count': 80, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.10525208711624146, 'model_name': 'gemini-2.5-pro'} id='run--5405f5f6-e1d9-4b5e-8f52-e8f09a190f0c-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'requests/utils.py'}, 'id': '77037801-c705-4c16-bc83-ef56ce331bb4', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2056, 'output_tokens': 64, 'total_tokens': 2200, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 80}}
+2025-12-21 18:47:05,683 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have provided the full content of `requests/utils.py` as requested. I will now search for the `to_native_string` function within the file to locate its definition for you.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"relative_path": "requests/utils.py", "text": "to_native_string"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 8917, 'candidates_token_count': 74, 'total_token_count': 9355, 'cached_content_token_count': 1814, 'prompt_tokens_details': [{'modality': 1, 'token_count': 8917}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1814}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 74}], 'thoughts_token_count': 364}, 'finish_reason': 'STOP', 'avg_logprobs': -0.2562341174563846, 'model_name': 'gemini-2.5-pro'} id='run--ed74d058-27ed-4ae0-a912-90550580159b-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'relative_path': 'requests/utils.py', 'text': 'to_native_string'}, 'id': 'ab39b6ac-f09e-4102-a37a-81be3d1108c4', 'type': 'tool_call'}] usage_metadata={'input_tokens': 8917, 'output_tokens': 74, 'total_tokens': 9355, 'input_token_details': {'cache_read': 1814}, 'output_token_details': {'reasoning': 364}}
+2025-12-21 18:47:10,882 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have located the `to_native_string` function in `requests/utils.py` and provided its definition. The file content also contains other utility functions that you might find useful for understanding how request data is handled.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 9236, 'candidates_token_count': 46, 'total_token_count': 9697, 'prompt_tokens_details': [{'modality': 1, 'token_count': 9236}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 46}], 'thoughts_token_count': 415, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.986359803572945, 'model_name': 'gemini-2.5-pro'} id='run--71617c64-bdba-45b8-8e1d-9776727c0bdf-0' usage_metadata={'input_tokens': 9236, 'output_tokens': 46, 'total_tokens': 9697, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 415}}
+2025-12-21 18:47:10,884 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file `requests/utils.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the definition of `to_native_string` and other utility functions to understand how request data is processed and why the original code fails with binary data.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: requests/utils.py
+Line number range: 1 - 500
+Content:
+1. # -*- coding: utf-8 -*-
+2. 
+3. """
+4. requests.utils
+5. ~~~~~~~~~~~~~~
+6. 
+7. This module provides utility functions that are used within Requests
+8. that are also useful for external consumption.
+9. 
+10. """
+11. 
+12. import cgi
+13. import codecs
+14. import collections
+15. import io
+16. import os
+17. import platform
+18. import re
+19. import sys
+20. import socket
+21. import struct
+22. import warnings
+23. 
+24. from . import __version__
+25. from . import certs
+26. from .compat import parse_http_list as _parse_list_header
+27. from .compat import (quote, urlparse, bytes, str, OrderedDict, unquote, is_py2,
+28.                      builtin_str, getproxies, proxy_bypass, urlunparse,
+29.                      basestring)
+30. from .cookies import RequestsCookieJar, cookiejar_from_dict
+31. from .structures import CaseInsensitiveDict
+32. from .exceptions import InvalidURL, FileModeWarning
+33. 
+34. _hush_pyflakes = (RequestsCookieJar,)
+35. 
+36. NETRC_FILES = ('.netrc', '_netrc')
+37. 
+38. DEFAULT_CA_BUNDLE_PATH = certs.where()
+39. 
+40. 
+41. def dict_to_sequence(d):
+42.     """Returns an internal sequence dictionary update."""
+43. 
+44.     if hasattr(d, 'items'):
+45.         d = d.items()
+46. 
+47.     return d
+48. 
+49. 
+50. def super_len(o):
+51.     total_length = 0
+52.     current_position = 0
+53. 
+54.     if hasattr(o, '__len__'):
+55.         total_length = len(o)
+56. 
+57.     elif hasattr(o, 'len'):
+58.         total_length = o.len
+59. 
+60.     elif hasattr(o, 'getvalue'):
+61.         # e.g. BytesIO, cStringIO.StringIO
+62.         total_length = len(o.getvalue())
+63. 
+64.     elif hasattr(o, 'fileno'):
+65.         try:
+66.             fileno = o.fileno()
+67.         except io.UnsupportedOperation:
+68.             pass
+69.         else:
+70.             total_length = os.fstat(fileno).st_size
+71. 
+72.             # Having used fstat to determine the file length, we need to
+73.             # confirm that this file was opened up in binary mode.
+74.             if 'b' not in o.mode:
+75.                 warnings.warn((
+76.                     "Requests has determined the content-length for this "
+77.                     "request using the binary size of the file: however, the "
+78.                     "file has been opened in text mode (i.e. without the 'b' "
+79.                     "flag in the mode). This may lead to an incorrect "
+80.                     "content-length. In Requests 3.0, support will be removed "
+81.                     "for files in text mode."),
+82.                     FileModeWarning
+83.                 )
+84. 
+85.     if hasattr(o, 'tell'):
+86.         current_position = o.tell()
+87. 
+88.     return max(0, total_length - current_position)
+89. 
+90. 
+91. def get_netrc_auth(url, raise_errors=False):
+92.     """Returns the Requests tuple auth for a given url from netrc."""
+93. 
+94.     try:
+95.         from netrc import netrc, NetrcParseError
+96. 
+97.         netrc_path = None
+98. 
+99.         for f in NETRC_FILES:
+100.             try:
+101.                 loc = os.path.expanduser('~/{0}'.format(f))
+102.             except KeyError:
+103.                 # os.path.expanduser can fail when $HOME is undefined and
+104.                 # getpwuid fails. See http://bugs.python.org/issue20164 &
+105.                 # https://github.com/kennethreitz/requests/issues/1846
+106.                 return
+107. 
+108.             if os.path.exists(loc):
+109.                 netrc_path = loc
+110.                 break
+111. 
+112.         # Abort early if there isn't one.
+113.         if netrc_path is None:
+114.             return
+115. 
+116.         ri = urlparse(url)
+117. 
+118.         # Strip port numbers from netloc
+119.         host = ri.netloc.split(':')[0]
+120. 
+121.         try:
+122.             _netrc = netrc(netrc_path).authenticators(host)
+123.             if _netrc:
+124.                 # Return with login / password
+125.                 login_i = (0 if _netrc[0] else 1)
+126.                 return (_netrc[login_i], _netrc[2])
+127.         except (NetrcParseError, IOError):
+128.             # If there was a parsing error or a permissions issue reading the file,
+129.             # we'll just skip netrc auth unless explicitly asked to raise errors.
+130.             if raise_errors:
+131.                 raise
+132. 
+133.     # AppEngine hackiness.
+134.     except (ImportError, AttributeError):
+135.         pass
+136. 
+137. 
+138. def guess_filename(obj):
+139.     """Tries to guess the filename of the given object."""
+140.     name = getattr(obj, 'name', None)
+141.     if (name and isinstance(name, basestring) and name[0] != '<' and
+142.             name[-1] != '>'):
+143.         return os.path.basename(name)
+144. 
+145. 
+146. def from_key_val_list(value):
+147.     """Take an object and test to see if it can be represented as a
+148.     dictionary. Unless it can not be represented as such, return an
+149.     OrderedDict, e.g.,
+150. 
+151.     ::
+152. 
+153.         >>> from_key_val_list([('key', 'val')])
+154.         OrderedDict([('key', 'val')])
+155.         >>> from_key_val_list('string')
+156.         ValueError: need more than 1 value to unpack
+157.         >>> from_key_val_list({'key': 'val'})
+158.         OrderedDict([('key', 'val')])
+159.     """
+160.     if value is None:
+161.         return None
+162. 
+163.     if isinstance(value, (str, bytes, bool, int)):
+164.         raise ValueError('cannot encode objects that are not 2-tuples')
+165. 
+166.     return OrderedDict(value)
+167. 
+168. 
+169. def to_key_val_list(value):
+170.     """Take an object and test to see if it can be represented as a
+171.     dictionary. If it can be, return a list of tuples, e.g.,
+172. 
+173.     ::
+174. 
+175.         >>> to_key_val_list([('key', 'val')])
+176.         [('key', 'val')]
+177.         >>> to_key_val_list({'key': 'val'})
+178.         [('key', 'val')]
+179.         >>> to_key_val_list('string')
+180.         ValueError: cannot encode objects that are not 2-tuples.
+181.     """
+182.     if value is None:
+183.         return None
+184. 
+185.     if isinstance(value, (str, bytes, bool, int)):
+186.         raise ValueError('cannot encode objects that are not 2-tuples')
+187. 
+188.     if isinstance(value, collections.Mapping):
+189.         value = value.items()
+190. 
+191.     return list(value)
+192. 
+193. 
+194. # From mitsuhiko/werkzeug (used with permission).
+195. def parse_list_header(value):
+196.     """Parse lists as described by RFC 2068 Section 2.
+197. 
+198.     In particular, parse comma-separated lists where the elements of
+199.     the list may include quoted-strings.  A quoted-string could
+200.     contain a comma.  A non-quoted string could have quotes in the
+201.     middle.  Quotes are removed automatically after parsing.
+202. 
+203.     It basically works like :func:`parse_set_header` just that items
+204.     may appear multiple times and case sensitivity is preserved.
+205. 
+206.     The return value is a standard :class:`list`:
+207. 
+208.     >>> parse_list_header('token, "quoted value"')
+209.     ['token', 'quoted value']
+210. 
+211.     To create a header from the :class:`list` again, use the
+212.     :func:`dump_header` function.
+213. 
+214.     :param value: a string with a list header.
+215.     :return: :class:`list`
+216.     """
+217.     result = []
+218.     for item in _parse_list_header(value):
+219.         if item[:1] == item[-1:] == '"':
+220.             item = unquote_header_value(item[1:-1])
+221.         result.append(item)
+222.     return result
+223. 
+224. 
+225. # From mitsuhiko/werkzeug (used with permission).
+226. def parse_dict_header(value):
+227.     """Parse lists of key, value pairs as described by RFC 2068 Section 2 and
+228.     convert them into a python dict:
+229. 
+230.     >>> d = parse_dict_header('foo="is a fish", bar="as well"')
+231.     >>> type(d) is dict
+232.     True
+233.     >>> sorted(d.items())
+234.     [('bar', 'as well'), ('foo', 'is a fish')]
+235. 
+236.     If there is no value for a key it will be `None`:
+237. 
+238.     >>> parse_dict_header('key_without_value')
+239.     {'key_without_value': None}
+240. 
+241.     To create a header from the :class:`dict` again, use the
+242.     :func:`dump_header` function.
+243. 
+244.     :param value: a string with a dict header.
+245.     :return: :class:`dict`
+246.     """
+247.     result = {}
+248.     for item in _parse_list_header(value):
+249.         if '=' not in item:
+250.             result[item] = None
+251.             continue
+252.         name, value = item.split('=', 1)
+253.         if value[:1] == value[-1:] == '"':
+254.             value = unquote_header_value(value[1:-1])
+255.         result[name] = value
+256.     return result
+257. 
+258. 
+259. # From mitsuhiko/werkzeug (used with permission).
+260. def unquote_header_value(value, is_filename=False):
+261.     r"""Unquotes a header value.  (Reversal of :func:`quote_header_value`).
+262.     This does not use the real unquoting but what browsers are actually
+263.     using for quoting.
+264. 
+265.     :param value: the header value to unquote.
+266.     """
+267.     if value and value[0] == value[-1] == '"':
+268.         # this is not the real unquoting, but fixing this so that the
+269.         # RFC is met will result in bugs with internet explorer and
+270.         # probably some other browsers as well.  IE for example is
+271.         # uploading files with "C:\foo\bar.txt" as filename
+272.         value = value[1:-1]
+273. 
+274.         # if this is a filename and the starting characters look like
+275.         # a UNC path, then just return the value without quotes.  Using the
+276.         # replace sequence below on a UNC path has the effect of turning
+277.         # the leading double slash into a single slash and then
+278.         # _fix_ie_filename() doesn't work correctly.  See #458.
+279.         if not is_filename or value[:2] != '\\\\':
+280.             return value.replace('\\\\', '\\').replace('\\"', '"')
+281.     return value
+282. 
+283. 
+284. def dict_from_cookiejar(cj):
+285.     """Returns a key/value dictionary from a CookieJar.
+286. 
+287.     :param cj: CookieJar object to extract cookies from.
+288.     """
+289. 
+290.     cookie_dict = {}
+291. 
+292.     for cookie in cj:
+293.         cookie_dict[cookie.name] = cookie.value
+294. 
+295.     return cookie_dict
+296. 
+297. 
+298. def add_dict_to_cookiejar(cj, cookie_dict):
+299.     """Returns a CookieJar from a key/value dictionary.
+300. 
+301.     :param cj: CookieJar to insert cookies into.
+302.     :param cookie_dict: Dict of key/values to insert into CookieJar.
+303.     """
+304. 
+305.     cj2 = cookiejar_from_dict(cookie_dict)
+306.     cj.update(cj2)
+307.     return cj
+308. 
+309. 
+310. def get_encodings_from_content(content):
+311.     """Returns encodings from given content string.
+312. 
+313.     :param content: bytestring to extract encodings from.
+314.     """
+315.     warnings.warn((
+316.         'In requests 3.0, get_encodings_from_content will be removed. For '
+317.         'more information, please see the discussion on issue #2266. (This'
+318.         ' warning should only appear once.)'),
+319.         DeprecationWarning)
+320. 
+321.     charset_re = re.compile(r'<meta.*?charset=["\']*(.+?)["\'>]', flags=re.I)
+322.     pragma_re = re.compile(r'<meta.*?content=["\']*;?charset=(.+?)["\'>]', flags=re.I)
+323.     xml_re = re.compile(r'^<\?xml.*?encoding=["\']*(.+?)["\'>]')
+324. 
+325.     return (charset_re.findall(content) +
+326.             pragma_re.findall(content) +
+327.             xml_re.findall(content))
+328. 
+329. 
+330. def get_encoding_from_headers(headers):
+331.     """Returns encodings from given HTTP Header Dict.
+332. 
+333.     :param headers: dictionary to extract encoding from.
+334.     """
+335. 
+336.     content_type = headers.get('content-type')
+337. 
+338.     if not content_type:
+339.         return None
+340. 
+341.     content_type, params = cgi.parse_header(content_type)
+342. 
+343.     if 'charset' in params:
+344.         return params['charset'].strip("'\"")
+345. 
+346.     if 'text' in content_type:
+347.         return 'ISO-8859-1'
+348. 
+349. 
+350. def stream_decode_response_unicode(iterator, r):
+351.     """Stream decodes a iterator."""
+352. 
+353.     if r.encoding is None:
+354.         for item in iterator:
+355.             yield item
+356.         return
+357. 
+358.     decoder = codecs.getincrementaldecoder(r.encoding)(errors='replace')
+359.     for chunk in iterator:
+360.         rv = decoder.decode(chunk)
+361.         if rv:
+362.             yield rv
+363.     rv = decoder.decode(b'', final=True)
+364.     if rv:
+365.         yield rv
+366. 
+367. 
+368. def iter_slices(string, slice_length):
+369.     """Iterate over slices of a string."""
+370.     pos = 0
+371.     while pos < len(string):
+372.         yield string[pos:pos + slice_length]
+373.         pos += slice_length
+374. 
+375. 
+376. def get_unicode_from_response(r):
+377.     """Returns the requested content back in unicode.
+378. 
+379.     :param r: Response object to get unicode content from.
+380. 
+381.     Tried:
+382. 
+383.     1. charset from content-type
+384.     2. fall back and replace all unicode characters
+385. 
+386.     """
+387.     warnings.warn((
+388.         'In requests 3.0, get_unicode_from_response will be removed. For '
+389.         'more information, please see the discussion on issue #2266. (This'
+390.         ' warning should only appear once.)'),
+391.         DeprecationWarning)
+392. 
+393.     tried_encodings = []
+394. 
+395.     # Try charset from content-type
+396.     encoding = get_encoding_from_headers(r.headers)
+397. 
+398.     if encoding:
+399.         try:
+400.             return str(r.content, encoding)
+401.         except UnicodeError:
+402.             tried_encodings.append(encoding)
+403. 
+404.     # Fall back:
+405.     try:
+406.         return str(r.content, encoding, errors='replace')
+407.     except TypeError:
+408.         return r.content
+409. 
+410. 
+411. # The unreserved URI characters (RFC 3986)
+412. UNRESERVED_SET = frozenset(
+413.     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+414.     + "0123456789-._~")
+415. 
+416. 
+417. def unquote_unreserved(uri):
+418.     """Un-escape any percent-escape sequences in a URI that are unreserved
+419.     characters. This leaves all reserved, illegal and non-ASCII bytes encoded.
+420.     """
+421.     parts = uri.split('%')
+422.     for i in range(1, len(parts)):
+423.         h = parts[i][0:2]
+424.         if len(h) == 2 and h.isalnum():
+425.             try:
+426.                 c = chr(int(h, 16))
+427.             except ValueError:
+428.                 raise InvalidURL("Invalid percent-escape sequence: '%s'" % h)
+429. 
+430.             if c in UNRESERVED_SET:
+431.                 parts[i] = c + parts[i][2:]
+432.             else:
+433.                 parts[i] = '%' + parts[i]
+434.         else:
+435.             parts[i] = '%' + parts[i]
+436.     return ''.join(parts)
+437. 
+438. 
+439. def requote_uri(uri):
+440.     """Re-quote the given URI.
+441. 
+442.     This function passes the given URI through an unquote/quote cycle to
+443.     ensure that it is fully and consistently quoted.
+444.     """
+445.     safe_with_percent = "!#$%&'()*+,/:;=?@[]~"
+446.     safe_without_percent = "!#$&'()*+,/:;=?@[]~"
+447.     try:
+448.         # Unquote only the unreserved characters
+449.         # Then quote only illegal characters (do not quote reserved,
+450.         # unreserved, or '%')
+451.         return quote(unquote_unreserved(uri), safe=safe_with_percent)
+452.     except InvalidURL:
+453.         # We couldn't unquote the given URI, so let's try quoting it, but
+454.         # there may be unquoted '%'s in the URI. We need to make sure they're
+455.         # properly quoted so they do not cause issues elsewhere.
+456.         return quote(uri, safe=safe_without_percent)
+457. 
+458. 
+459. def address_in_network(ip, net):
+460.     """
+461.     This function allows you to check if on IP belongs to a network subnet
+462.     Example: returns True if ip = 192.168.1.1 and net = 192.168.1.0/24
+463.              returns False if ip = 192.168.1.1 and net = 192.168.100.0/24
+464.     """
+465.     ipaddr = struct.unpack('=L', socket.inet_aton(ip))[0]
+466.     netaddr, bits = net.split('/')
+467.     netmask = struct.unpack('=L', socket.inet_aton(dotted_netmask(int(bits))))[0]
+468.     network = struct.unpack('=L', socket.inet_aton(netaddr))[0] & netmask
+469.     return (ipaddr & netmask) == (network & netmask)
+470. 
+471. 
+472. def dotted_netmask(mask):
+473.     """
+474.     Converts mask from /xx format to xxx.xxx.xxx.xxx
+475.     Example: if mask is 24 function returns 255.255.255.0
+476.     """
+477.     bits = 0xffffffff ^ (1 << 32 - mask) - 1
+478.     return socket.inet_ntoa(struct.pack('>I', bits))
+479. 
+480. 
+481. def is_ipv4_address(string_ip):
+482.     try:
+483.         socket.inet_aton(string_ip)
+484.     except socket.error:
+485.         return False
+486.     return True
+487. 
+488. 
+489. def is_valid_cidr(string_network):
+490.     """Very simple check of the cidr format in no_proxy variable"""
+491.     if string_network.count('/') == 1:
+492.         try:
+493.             mask = int(string_network.split('/')[1])
+494.         except ValueError:
+495.             return False
+496. 
+497.         if mask < 1 or mask > 32:
+498.             return False
+499. 
+500.         try:
+
+
+File: requests/utils.py
+Line number range: 686 - 702
+Content:
+def to_native_string(string, encoding='ascii'):
+    """
+    Given a string object, regardless of type, returns a representation of that
+    string in the native string type, encoding and decoding where necessary.
+    This assumes ASCII unless told otherwise.
+    """
+    out = None
+
+    if isinstance(string, builtin_str):
+        out = string
+    else:
+        if is_py2:
+            out = string.encode(encoding)
+        else:
+            out = string.decode(encoding)
+
+    return out
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 18:47:18,715 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asks for the full content of the file `requests/utils.py`.\n   - This context is a large part of that file (lines 1-500).\n\n2. Extended relevance:\n   - This context contains the majority of the utility functions in `requests/utils.py`, which is essential for understanding the file's overall purpose as requested by the user.", relative_path='requests/utils.py', start_line=1, end_line=500), ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asks for the full content of the file `requests/utils.py`.\n   - The user's purpose specifically mentions the `to_native_string` function.\n   - This context contains the definition of the `to_native_string` function.\n\n2. Extended relevance:\n   - This function is a key part of the file's utility functions and is directly mentioned in the user's purpose, making it critical for answering the query.", relative_path='requests/utils.py', start_line=686, end_line=702)]
+2025-12-21 18:47:18,717 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 2 contexts to memory for query: Please provide the full content of the file `requests/utils.py`.
+2025-12-21 18:47:18,717 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 18:47:18,717 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 18:47:18,717 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 2 new contexts to 1 existing contexts
+2025-12-21 18:47:18,718 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 3 total contexts (removed 0 duplicates)
+2025-12-21 18:47:18,718 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── AUTHORS.rst
+├── CONTRIBUTING.md
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── recommended.rst
+|   |   ├── release-process.rst
+|   |   ├── support.rst
+|   |   ├── updates.rst
+|   |   └── vulnerabilities.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── contributing.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   ├── requirements.txt
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── chardet
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardetect.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── cp949prober.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connection.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   ├── appengine.py
+|   |       |   ├── ntlmpool.py
+|   |       |   └── pyopenssl.py
+|   |       ├── exceptions.py
+|   |       ├── fields.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util
+|   |           ├── __init__.py
+|   |           ├── connection.py
+|   |           ├── request.py
+|   |           ├── response.py
+|   |           ├── retry.py
+|   |           ├── ssl_.py
+|   |           ├── timeout.py
+|   |           └── url.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Request with binary payload fails due to calling to_native_string
+
+Description: Introduced with https://github.com/kennethreitz/requests/issues/2844
+
+```
+import requests
+requests.put("http://httpbin.org/put", data=u"ööö".encode("utf-8"))
+```
+
+This works with 2.8.1, but not with 2.9.
+
+
+Patch information:
+diff --git a/docs/user/advanced.rst b/docs/user/advanced.rst
+index f0d2ffd9..d78aed81 100644
+--- a/docs/user/advanced.rst
++++ b/docs/user/advanced.rst
+@@ -315,6 +315,8 @@ file-like object for your body::
+     with open('massive-body', 'rb') as f:
+         requests.post('http://some.url/streamed', data=f)
+ 
++Additionally, if you provide a ``bytes`` object to the ``data`` parameter, Requests will send those bytes verbatim without attempting to decode them. When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an appropriate ``Content-Type`` header yourself if needed.
++
+ .. warning:: It is strongly recommended that you open files in `binary mode`_.
+              This is because Requests may attempt to provide the
+              ``Content-Length`` header for you, and if it does this value will
+diff --git a/docs/user/quickstart.rst b/docs/user/quickstart.rst
+index 1ff66593..ae3483d5 100644
+--- a/docs/user/quickstart.rst
++++ b/docs/user/quickstart.rst
+@@ -227,6 +227,11 @@ dictionary of data will automatically be form-encoded when the request is made::
+ There are many times that you want to send data that is not form-encoded. If
+ you pass in a ``string`` instead of a ``dict``, that data will be posted directly.
+ 
++If you pass a ``bytes`` object as ``data``, Requests will send those bytes verbatim
++without attempting to decode them. This is useful for arbitrary binary payloads.
++When sending raw bytes, Requests does not infer a ``Content-Type`` for you: set an
++appropriate ``Content-Type`` header yourself if needed.
++
+ For example, the GitHub API v3 accepts JSON-Encoded POST/PATCH data::
+ 
+     >>> import json
+diff --git a/requests/models.py b/requests/models.py
+index 9c624d3c..8bce13cd 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -80,8 +80,10 @@ class RequestEncodingMixin(object):
+         if parameters are supplied as a dict.
+         """
+ 
+-        if isinstance(data, (str, bytes)):
++        if isinstance(data, str):
+             return to_native_string(data)
++        elif isinstance(data, bytes):
++            return data
+         elif hasattr(data, 'read'):
+             return data
+         elif hasattr(data, '__iter__'):
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file `requests/models.py`.
+Extra Requirements: 
+Purpose: This will help me understand the structure of request objects and how request data is processed before being sent.
+
+Previous refined query 2:
+Essential Query: Please provide the full content of the file `requests/utils.py`.
+Extra Requirements: 
+Purpose: I need the definition of `to_native_string` and other utility functions to understand how request data is processed and why the original code fails with binary data.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: requests/models.py
+Line number range: 1 - 500
+Content:
+1. # -*- coding: utf-8 -*-
+2. 
+3. """
+4. requests.models
+5. ~~~~~~~~~~~~~~~
+6. 
+7. This module contains the primary objects that power Requests.
+8. """
+9. 
+10. import collections
+11. import datetime
+12. 
+13. from io import BytesIO, UnsupportedOperation
+14. from .hooks import default_hooks
+15. from .structures import CaseInsensitiveDict
+16. 
+17. from .auth import HTTPBasicAuth
+18. from .cookies import cookiejar_from_dict, get_cookie_header, _copy_cookie_jar
+19. from .packages.urllib3.fields import RequestField
+20. from .packages.urllib3.filepost import encode_multipart_formdata
+21. from .packages.urllib3.util import parse_url
+22. from .packages.urllib3.exceptions import (
+23.     DecodeError, ReadTimeoutError, ProtocolError, LocationParseError)
+24. from .exceptions import (
+25.     HTTPError, MissingSchema, InvalidURL, ChunkedEncodingError,
+26.     ContentDecodingError, ConnectionError, StreamConsumedError)
+27. from .utils import (
+28.     guess_filename, get_auth_from_url, requote_uri,
+29.     stream_decode_response_unicode, to_key_val_list, parse_header_links,
+30.     iter_slices, guess_json_utf, super_len, to_native_string)
+31. from .compat import (
+32.     cookielib, urlunparse, urlsplit, urlencode, str, bytes, StringIO,
+33.     is_py2, chardet, builtin_str, basestring)
+34. from .compat import json as complexjson
+35. from .status_codes import codes
+36. 
+37. #: The set of HTTP status codes that indicate an automatically
+38. #: processable redirect.
+39. REDIRECT_STATI = (
+40.     codes.moved,              # 301
+41.     codes.found,              # 302
+42.     codes.other,              # 303
+43.     codes.temporary_redirect, # 307
+44.     codes.permanent_redirect, # 308
+45. )
+46. 
+47. DEFAULT_REDIRECT_LIMIT = 30
+48. CONTENT_CHUNK_SIZE = 10 * 1024
+49. ITER_CHUNK_SIZE = 512
+50. 
+51. 
+52. class RequestEncodingMixin(object):
+53.     @property
+54.     def path_url(self):
+55.         """Build the path URL to use."""
+56. 
+57.         url = []
+58. 
+59.         p = urlsplit(self.url)
+60. 
+61.         path = p.path
+62.         if not path:
+63.             path = '/'
+64. 
+65.         url.append(path)
+66. 
+67.         query = p.query
+68.         if query:
+69.             url.append('?')
+70.             url.append(query)
+71. 
+72.         return ''.join(url)
+73. 
+74.     @staticmethod
+75.     def _encode_params(data):
+76.         """Encode parameters in a piece of data.
+77. 
+78.         Will successfully encode parameters when passed as a dict or a list of
+79.         2-tuples. Order is retained if data is a list of 2-tuples but arbitrary
+80.         if parameters are supplied as a dict.
+81.         """
+82. 
+83.         if isinstance(data, (str, bytes)):
+84.             return to_native_string(data)
+85.         elif hasattr(data, 'read'):
+86.             return data
+87.         elif hasattr(data, '__iter__'):
+88.             result = []
+89.             for k, vs in to_key_val_list(data):
+90.                 if isinstance(vs, basestring) or not hasattr(vs, '__iter__'):
+91.                     vs = [vs]
+92.                 for v in vs:
+93.                     if v is not None:
+94.                         result.append(
+95.                             (k.encode('utf-8') if isinstance(k, str) else k,
+96.                              v.encode('utf-8') if isinstance(v, str) else v))
+97.             return urlencode(result, doseq=True)
+98.         else:
+99.             return data
+100. 
+101.     @staticmethod
+102.     def _encode_files(files, data):
+103.         """Build the body for a multipart/form-data request.
+104. 
+105.         Will successfully encode files when passed as a dict or a list of
+106.         2-tuples. Order is retained if data is a list of 2-tuples but arbitrary
+107.         if parameters are supplied as a dict.
+108. 
+109.         """
+110.         if (not files):
+111.             raise ValueError("Files must be provided.")
+112.         elif isinstance(data, basestring):
+113.             raise ValueError("Data must not be a string.")
+114. 
+115.         new_fields = []
+116.         fields = to_key_val_list(data or {})
+117.         files = to_key_val_list(files or {})
+118. 
+119.         for field, val in fields:
+120.             if isinstance(val, basestring) or not hasattr(val, '__iter__'):
+121.                 val = [val]
+122.             for v in val:
+123.                 if v is not None:
+124.                     # Don't call str() on bytestrings: in Py3 it all goes wrong.
+125.                     if not isinstance(v, bytes):
+126.                         v = str(v)
+127. 
+128.                     new_fields.append(
+129.                         (field.decode('utf-8') if isinstance(field, bytes) else field,
+130.                          v.encode('utf-8') if isinstance(v, str) else v))
+131. 
+132.         for (k, v) in files:
+133.             # support for explicit filename
+134.             ft = None
+135.             fh = None
+136.             if isinstance(v, (tuple, list)):
+137.                 if len(v) == 2:
+138.                     fn, fp = v
+139.                 elif len(v) == 3:
+140.                     fn, fp, ft = v
+141.                 else:
+142.                     fn, fp, ft, fh = v
+143.             else:
+144.                 fn = guess_filename(v) or k
+145.                 fp = v
+146. 
+147.             if isinstance(fp, (str, bytes, bytearray)):
+148.                 fdata = fp
+149.             else:
+150.                 fdata = fp.read()
+151. 
+152.             rf = RequestField(name=k, data=fdata, filename=fn, headers=fh)
+153.             rf.make_multipart(content_type=ft)
+154.             new_fields.append(rf)
+155. 
+156.         body, content_type = encode_multipart_formdata(new_fields)
+157. 
+158.         return body, content_type
+159. 
+160. 
+161. class RequestHooksMixin(object):
+162.     def register_hook(self, event, hook):
+163.         """Properly register a hook."""
+164. 
+165.         if event not in self.hooks:
+166.             raise ValueError('Unsupported event specified, with event name "%s"' % (event))
+167. 
+168.         if isinstance(hook, collections.Callable):
+169.             self.hooks[event].append(hook)
+170.         elif hasattr(hook, '__iter__'):
+171.             self.hooks[event].extend(h for h in hook if isinstance(h, collections.Callable))
+172. 
+173.     def deregister_hook(self, event, hook):
+174.         """Deregister a previously registered hook.
+175.         Returns True if the hook existed, False if not.
+176.         """
+177. 
+178.         try:
+179.             self.hooks[event].remove(hook)
+180.             return True
+181.         except ValueError:
+182.             return False
+183. 
+184. 
+185. class Request(RequestHooksMixin):
+186.     """A user-created :class:`Request <Request>` object.
+187. 
+188.     Used to prepare a :class:`PreparedRequest <PreparedRequest>`, which is sent to the server.
+189. 
+190.     :param method: HTTP method to use.
+191.     :param url: URL to send.
+192.     :param headers: dictionary of headers to send.
+193.     :param files: dictionary of {filename: fileobject} files to multipart upload.
+194.     :param data: the body to attach to the request. If a dictionary is provided, form-encoding will take place.
+195.     :param json: json for the body to attach to the request (if files or data is not specified).
+196.     :param params: dictionary of URL parameters to append to the URL.
+197.     :param auth: Auth handler or (user, pass) tuple.
+198.     :param cookies: dictionary or CookieJar of cookies to attach to this request.
+199.     :param hooks: dictionary of callback hooks, for internal usage.
+200. 
+201.     Usage::
+202. 
+203.       >>> import requests
+204.       >>> req = requests.Request('GET', 'http://httpbin.org/get')
+205.       >>> req.prepare()
+206.       <PreparedRequest [GET]>
+207. 
+208.     """
+209.     def __init__(self, method=None, url=None, headers=None, files=None,
+210.         data=None, params=None, auth=None, cookies=None, hooks=None, json=None):
+211. 
+212.         # Default empty dicts for dict params.
+213.         data = [] if data is None else data
+214.         files = [] if files is None else files
+215.         headers = {} if headers is None else headers
+216.         params = {} if params is None else params
+217.         hooks = {} if hooks is None else hooks
+218. 
+219.         self.hooks = default_hooks()
+220.         for (k, v) in list(hooks.items()):
+221.             self.register_hook(event=k, hook=v)
+222. 
+223.         self.method = method
+224.         self.url = url
+225.         self.headers = headers
+226.         self.files = files
+227.         self.data = data
+228.         self.json = json
+229.         self.params = params
+230.         self.auth = auth
+231.         self.cookies = cookies
+232. 
+233.     def __repr__(self):
+234.         return '<Request [%s]>' % (self.method)
+235. 
+236.     def prepare(self):
+237.         """Constructs a :class:`PreparedRequest <PreparedRequest>` for transmission and returns it."""
+238.         p = PreparedRequest()
+239.         p.prepare(
+240.             method=self.method,
+241.             url=self.url,
+242.             headers=self.headers,
+243.             files=self.files,
+244.             data=self.data,
+245.             json=self.json,
+246.             params=self.params,
+247.             auth=self.auth,
+248.             cookies=self.cookies,
+249.             hooks=self.hooks,
+250.         )
+251.         return p
+252. 
+253. 
+254. class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+255.     """The fully mutable :class:`PreparedRequest <PreparedRequest>` object,
+256.     containing the exact bytes that will be sent to the server.
+257. 
+258.     Generated from either a :class:`Request <Request>` object or manually.
+259. 
+260.     Usage::
+261. 
+262.       >>> import requests
+263.       >>> req = requests.Request('GET', 'http://httpbin.org/get')
+264.       >>> r = req.prepare()
+265.       <PreparedRequest [GET]>
+266. 
+267.       >>> s = requests.Session()
+268.       >>> s.send(r)
+269.       <Response [200]>
+270. 
+271.     """
+272. 
+273.     def __init__(self):
+274.         #: HTTP verb to send to the server.
+275.         self.method = None
+276.         #: HTTP URL to send the request to.
+277.         self.url = None
+278.         #: dictionary of HTTP headers.
+279.         self.headers = None
+280.         # The `CookieJar` used to create the Cookie header will be stored here
+281.         # after prepare_cookies is called
+282.         self._cookies = None
+283.         #: request body to send to the server.
+284.         self.body = None
+285.         #: dictionary of callback hooks, for internal usage.
+286.         self.hooks = default_hooks()
+287. 
+288.     def prepare(self, method=None, url=None, headers=None, files=None,
+289.         data=None, params=None, auth=None, cookies=None, hooks=None, json=None):
+290.         """Prepares the entire request with the given parameters."""
+291. 
+292.         self.prepare_method(method)
+293.         self.prepare_url(url, params)
+294.         self.prepare_headers(headers)
+295.         self.prepare_cookies(cookies)
+296.         self.prepare_body(data, files, json)
+297.         self.prepare_auth(auth, url)
+298. 
+299.         # Note that prepare_auth must be last to enable authentication schemes
+300.         # such as OAuth to work on a fully prepared request.
+301. 
+302.         # This MUST go after prepare_auth. Authenticators could add a hook
+303.         self.prepare_hooks(hooks)
+304. 
+305.     def __repr__(self):
+306.         return '<PreparedRequest [%s]>' % (self.method)
+307. 
+308.     def copy(self):
+309.         p = PreparedRequest()
+310.         p.method = self.method
+311.         p.url = self.url
+312.         p.headers = self.headers.copy() if self.headers is not None else None
+313.         p._cookies = _copy_cookie_jar(self._cookies)
+314.         p.body = self.body
+315.         p.hooks = self.hooks
+316.         return p
+317. 
+318.     def prepare_method(self, method):
+319.         """Prepares the given HTTP method."""
+320.         self.method = method
+321.         if self.method is not None:
+322.             self.method = to_native_string(self.method.upper())
+323. 
+324.     def prepare_url(self, url, params):
+325.         """Prepares the given HTTP URL."""
+326.         #: Accept objects that have string representations.
+327.         #: We're unable to blindly call unicode/str functions
+328.         #: as this will include the bytestring indicator (b'')
+329.         #: on python 3.x.
+330.         #: https://github.com/kennethreitz/requests/pull/2238
+331.         if isinstance(url, bytes):
+332.             url = url.decode('utf8')
+333.         else:
+334.             url = unicode(url) if is_py2 else str(url)
+335. 
+336.         # Don't do any URL preparation for non-HTTP schemes like `mailto`,
+337.         # `data` etc to work around exceptions from `url_parse`, which
+338.         # handles RFC 3986 only.
+339.         if ':' in url and not url.lower().startswith('http'):
+340.             self.url = url
+341.             return
+342. 
+343.         # Support for unicode domain names and paths.
+344.         try:
+345.             scheme, auth, host, port, path, query, fragment = parse_url(url)
+346.         except LocationParseError as e:
+347.             raise InvalidURL(*e.args)
+348. 
+349.         if not scheme:
+350.             error = ("Invalid URL {0!r}: No schema supplied. Perhaps you meant http://{0}?")
+351.             error = error.format(to_native_string(url, 'utf8'))
+352. 
+353.             raise MissingSchema(error)
+354. 
+355.         if not host:
+356.             raise InvalidURL("Invalid URL %r: No host supplied" % url)
+357. 
+358.         # Only want to apply IDNA to the hostname
+359.         try:
+360.             host = host.encode('idna').decode('utf-8')
+361.         except UnicodeError:
+362.             raise InvalidURL('URL has an invalid label.')
+363. 
+364.         # Carefully reconstruct the network location
+365.         netloc = auth or ''
+366.         if netloc:
+367.             netloc += '@'
+368.         netloc += host
+369.         if port:
+370.             netloc += ':' + str(port)
+371. 
+372.         # Bare domains aren't valid URLs.
+373.         if not path:
+374.             path = '/'
+375. 
+376.         if is_py2:
+377.             if isinstance(scheme, str):
+378.                 scheme = scheme.encode('utf-8')
+379.             if isinstance(netloc, str):
+380.                 netloc = netloc.encode('utf-8')
+381.             if isinstance(path, str):
+382.                 path = path.encode('utf-8')
+383.             if isinstance(query, str):
+384.                 query = query.encode('utf-8')
+385.             if isinstance(fragment, str):
+386.                 fragment = fragment.encode('utf-8')
+387. 
+388.         enc_params = self._encode_params(params)
+389.         if enc_params:
+390.             if query:
+391.                 query = '%s&%s' % (query, enc_params)
+392.             else:
+393.                 query = enc_params
+394. 
+395.         url = requote_uri(urlunparse([scheme, netloc, path, None, query, fragment]))
+396.         self.url = url
+397. 
+398.     def prepare_headers(self, headers):
+399.         """Prepares the given HTTP headers."""
+400. 
+401.         if headers:
+402.             self.headers = CaseInsensitiveDict((to_native_string(name), value) for name, value in headers.items())
+403.         else:
+404.             self.headers = CaseInsensitiveDict()
+405. 
+406.     def prepare_body(self, data, files, json=None):
+407.         """Prepares the given HTTP body data."""
+408. 
+409.         # Check if file, fo, generator, iterator.
+410.         # If not, run through normal process.
+411. 
+412.         # Nottin' on you.
+413.         body = None
+414.         content_type = None
+415.         length = None
+416. 
+417.         if not data and json is not None:
+418.             content_type = 'application/json'
+419.             body = complexjson.dumps(json)
+420. 
+421.         is_stream = all([
+422.             hasattr(data, '__iter__'),
+423.             not isinstance(data, (basestring, list, tuple, dict))
+424.         ])
+425. 
+426.         try:
+427.             length = super_len(data)
+428.         except (TypeError, AttributeError, UnsupportedOperation):
+429.             length = None
+430. 
+431.         if is_stream:
+432.             body = data
+433. 
+434.             if files:
+435.                 raise NotImplementedError('Streamed bodies and files are mutually exclusive.')
+436. 
+437.             if length:
+438.                 self.headers['Content-Length'] = builtin_str(length)
+439.             else:
+440.                 self.headers['Transfer-Encoding'] = 'chunked'
+441.         else:
+442.             # Multi-part file uploads.
+443.             if files:
+444.                 (body, content_type) = self._encode_files(files, data)
+445.             else:
+446.                 if data:
+447.                     body = self._encode_params(data)
+448.                     if isinstance(data, basestring) or hasattr(data, 'read'):
+449.                         content_type = None
+450.                     else:
+451.                         content_type = 'application/x-www-form-urlencoded'
+452. 
+453.             self.prepare_content_length(body)
+454. 
+455.             # Add content-type if it wasn't explicitly provided.
+456.             if content_type and ('content-type' not in self.headers):
+457.                 self.headers['Content-Type'] = content_type
+458. 
+459.         self.body = body
+460. 
+461.     def prepare_content_length(self, body):
+462.         if hasattr(body, 'seek') and hasattr(body, 'tell'):
+463.             body.seek(0, 2)
+464.             self.headers['Content-Length'] = builtin_str(body.tell())
+465.             body.seek(0, 0)
+466.         elif body is not None:
+467.             l = super_len(body)
+468.             if l:
+469.                 self.headers['Content-Length'] = builtin_str(l)
+470.         elif (self.method not in ('GET', 'HEAD')) and (self.headers.get('Content-Length') is None):
+471.             self.headers['Content-Length'] = '0'
+472. 
+473.     def prepare_auth(self, auth, url=''):
+474.         """Prepares the given HTTP auth data."""
+475. 
+476.         # If no Auth is explicitly provided, extract it from the URL first.
+477.         if auth is None:
+478.             url_auth = get_auth_from_url(self.url)
+479.             auth = url_auth if any(url_auth) else None
+480. 
+481.         if auth:
+482.             if isinstance(auth, tuple) and len(auth) == 2:
+483.                 # special-case basic HTTP auth
+484.                 auth = HTTPBasicAuth(*auth)
+485. 
+486.             # Allow auth to make its changes.
+487.             r = auth(self)
+488. 
+489.             # Update self to reflect the auth changes.
+490.             self.__dict__.update(r.__dict__)
+491. 
+492.             # Recompute Content-Length
+493.             self.prepare_content_length(self.body)
+494. 
+495.     def prepare_cookies(self, cookies):
+496.         """Prepares the given HTTP cookie data.
+497. 
+498.         This function eventually generates a ``Cookie`` header from the
+499.         given cookies using cookielib. Due to cookielib's design, the header
+500.         will not be regenerated if it already exists, meaning this function
+
+
+File: requests/utils.py
+Line number range: 1 - 500
+Content:
+1. # -*- coding: utf-8 -*-
+2. 
+3. """
+4. requests.utils
+5. ~~~~~~~~~~~~~~
+6. 
+7. This module provides utility functions that are used within Requests
+8. that are also useful for external consumption.
+9. 
+10. """
+11. 
+12. import cgi
+13. import codecs
+14. import collections
+15. import io
+16. import os
+17. import platform
+18. import re
+19. import sys
+20. import socket
+21. import struct
+22. import warnings
+23. 
+24. from . import __version__
+25. from . import certs
+26. from .compat import parse_http_list as _parse_list_header
+27. from .compat import (quote, urlparse, bytes, str, OrderedDict, unquote, is_py2,
+28.                      builtin_str, getproxies, proxy_bypass, urlunparse,
+29.                      basestring)
+30. from .cookies import RequestsCookieJar, cookiejar_from_dict
+31. from .structures import CaseInsensitiveDict
+32. from .exceptions import InvalidURL, FileModeWarning
+33. 
+34. _hush_pyflakes = (RequestsCookieJar,)
+35. 
+36. NETRC_FILES = ('.netrc', '_netrc')
+37. 
+38. DEFAULT_CA_BUNDLE_PATH = certs.where()
+39. 
+40. 
+41. def dict_to_sequence(d):
+42.     """Returns an internal sequence dictionary update."""
+43. 
+44.     if hasattr(d, 'items'):
+45.         d = d.items()
+46. 
+47.     return d
+48. 
+49. 
+50. def super_len(o):
+51.     total_length = 0
+52.     current_position = 0
+53. 
+54.     if hasattr(o, '__len__'):
+55.         total_length = len(o)
+56. 
+57.     elif hasattr(o, 'len'):
+58.         total_length = o.len
+59. 
+60.     elif hasattr(o, 'getvalue'):
+61.         # e.g. BytesIO, cStringIO.StringIO
+62.         total_length = len(o.getvalue())
+63. 
+64.     elif hasattr(o, 'fileno'):
+65.         try:
+66.             fileno = o.fileno()
+67.         except io.UnsupportedOperation:
+68.             pass
+69.         else:
+70.             total_length = os.fstat(fileno).st_size
+71. 
+72.             # Having used fstat to determine the file length, we need to
+73.             # confirm that this file was opened up in binary mode.
+74.             if 'b' not in o.mode:
+75.                 warnings.warn((
+76.                     "Requests has determined the content-length for this "
+77.                     "request using the binary size of the file: however, the "
+78.                     "file has been opened in text mode (i.e. without the 'b' "
+79.                     "flag in the mode). This may lead to an incorrect "
+80.                     "content-length. In Requests 3.0, support will be removed "
+81.                     "for files in text mode."),
+82.                     FileModeWarning
+83.                 )
+84. 
+85.     if hasattr(o, 'tell'):
+86.         current_position = o.tell()
+87. 
+88.     return max(0, total_length - current_position)
+89. 
+90. 
+91. def get_netrc_auth(url, raise_errors=False):
+92.     """Returns the Requests tuple auth for a given url from netrc."""
+93. 
+94.     try:
+95.         from netrc import netrc, NetrcParseError
+96. 
+97.         netrc_path = None
+98. 
+99.         for f in NETRC_FILES:
+100.             try:
+101.                 loc = os.path.expanduser('~/{0}'.format(f))
+102.             except KeyError:
+103.                 # os.path.expanduser can fail when $HOME is undefined and
+104.                 # getpwuid fails. See http://bugs.python.org/issue20164 &
+105.                 # https://github.com/kennethreitz/requests/issues/1846
+106.                 return
+107. 
+108.             if os.path.exists(loc):
+109.                 netrc_path = loc
+110.                 break
+111. 
+112.         # Abort early if there isn't one.
+113.         if netrc_path is None:
+114.             return
+115. 
+116.         ri = urlparse(url)
+117. 
+118.         # Strip port numbers from netloc
+119.         host = ri.netloc.split(':')[0]
+120. 
+121.         try:
+122.             _netrc = netrc(netrc_path).authenticators(host)
+123.             if _netrc:
+124.                 # Return with login / password
+125.                 login_i = (0 if _netrc[0] else 1)
+126.                 return (_netrc[login_i], _netrc[2])
+127.         except (NetrcParseError, IOError):
+128.             # If there was a parsing error or a permissions issue reading the file,
+129.             # we'll just skip netrc auth unless explicitly asked to raise errors.
+130.             if raise_errors:
+131.                 raise
+132. 
+133.     # AppEngine hackiness.
+134.     except (ImportError, AttributeError):
+135.         pass
+136. 
+137. 
+138. def guess_filename(obj):
+139.     """Tries to guess the filename of the given object."""
+140.     name = getattr(obj, 'name', None)
+141.     if (name and isinstance(name, basestring) and name[0] != '<' and
+142.             name[-1] != '>'):
+143.         return os.path.basename(name)
+144. 
+145. 
+146. def from_key_val_list(value):
+147.     """Take an object and test to see if it can be represented as a
+148.     dictionary. Unless it can not be represented as such, return an
+149.     OrderedDict, e.g.,
+150. 
+151.     ::
+152. 
+153.         >>> from_key_val_list([('key', 'val')])
+154.         OrderedDict([('key', 'val')])
+155.         >>> from_key_val_list('string')
+156.         ValueError: need more than 1 value to unpack
+157.         >>> from_key_val_list({'key': 'val'})
+158.         OrderedDict([('key', 'val')])
+159.     """
+160.     if value is None:
+161.         return None
+162. 
+163.     if isinstance(value, (str, bytes, bool, int)):
+164.         raise ValueError('cannot encode objects that are not 2-tuples')
+165. 
+166.     return OrderedDict(value)
+167. 
+168. 
+169. def to_key_val_list(value):
+170.     """Take an object and test to see if it can be represented as a
+171.     dictionary. If it can be, return a list of tuples, e.g.,
+172. 
+173.     ::
+174. 
+175.         >>> to_key_val_list([('key', 'val')])
+176.         [('key', 'val')]
+177.         >>> to_key_val_list({'key': 'val'})
+178.         [('key', 'val')]
+179.         >>> to_key_val_list('string')
+180.         ValueError: cannot encode objects that are not 2-tuples.
+181.     """
+182.     if value is None:
+183.         return None
+184. 
+185.     if isinstance(value, (str, bytes, bool, int)):
+186.         raise ValueError('cannot encode objects that are not 2-tuples')
+187. 
+188.     if isinstance(value, collections.Mapping):
+189.         value = value.items()
+190. 
+191.     return list(value)
+192. 
+193. 
+194. # From mitsuhiko/werkzeug (used with permission).
+195. def parse_list_header(value):
+196.     """Parse lists as described by RFC 2068 Section 2.
+197. 
+198.     In particular, parse comma-separated lists where the elements of
+199.     the list may include quoted-strings.  A quoted-string could
+200.     contain a comma.  A non-quoted string could have quotes in the
+201.     middle.  Quotes are removed automatically after parsing.
+202. 
+203.     It basically works like :func:`parse_set_header` just that items
+204.     may appear multiple times and case sensitivity is preserved.
+205. 
+206.     The return value is a standard :class:`list`:
+207. 
+208.     >>> parse_list_header('token, "quoted value"')
+209.     ['token', 'quoted value']
+210. 
+211.     To create a header from the :class:`list` again, use the
+212.     :func:`dump_header` function.
+213. 
+214.     :param value: a string with a list header.
+215.     :return: :class:`list`
+216.     """
+217.     result = []
+218.     for item in _parse_list_header(value):
+219.         if item[:1] == item[-1:] == '"':
+220.             item = unquote_header_value(item[1:-1])
+221.         result.append(item)
+222.     return result
+223. 
+224. 
+225. # From mitsuhiko/werkzeug (used with permission).
+226. def parse_dict_header(value):
+227.     """Parse lists of key, value pairs as described by RFC 2068 Section 2 and
+228.     convert them into a python dict:
+229. 
+230.     >>> d = parse_dict_header('foo="is a fish", bar="as well"')
+231.     >>> type(d) is dict
+232.     True
+233.     >>> sorted(d.items())
+234.     [('bar', 'as well'), ('foo', 'is a fish')]
+235. 
+236.     If there is no value for a key it will be `None`:
+237. 
+238.     >>> parse_dict_header('key_without_value')
+239.     {'key_without_value': None}
+240. 
+241.     To create a header from the :class:`dict` again, use the
+242.     :func:`dump_header` function.
+243. 
+244.     :param value: a string with a dict header.
+245.     :return: :class:`dict`
+246.     """
+247.     result = {}
+248.     for item in _parse_list_header(value):
+249.         if '=' not in item:
+250.             result[item] = None
+251.             continue
+252.         name, value = item.split('=', 1)
+253.         if value[:1] == value[-1:] == '"':
+254.             value = unquote_header_value(value[1:-1])
+255.         result[name] = value
+256.     return result
+257. 
+258. 
+259. # From mitsuhiko/werkzeug (used with permission).
+260. def unquote_header_value(value, is_filename=False):
+261.     r"""Unquotes a header value.  (Reversal of :func:`quote_header_value`).
+262.     This does not use the real unquoting but what browsers are actually
+263.     using for quoting.
+264. 
+265.     :param value: the header value to unquote.
+266.     """
+267.     if value and value[0] == value[-1] == '"':
+268.         # this is not the real unquoting, but fixing this so that the
+269.         # RFC is met will result in bugs with internet explorer and
+270.         # probably some other browsers as well.  IE for example is
+271.         # uploading files with "C:\foo\bar.txt" as filename
+272.         value = value[1:-1]
+273. 
+274.         # if this is a filename and the starting characters look like
+275.         # a UNC path, then just return the value without quotes.  Using the
+276.         # replace sequence below on a UNC path has the effect of turning
+277.         # the leading double slash into a single slash and then
+278.         # _fix_ie_filename() doesn't work correctly.  See #458.
+279.         if not is_filename or value[:2] != '\\\\':
+280.             return value.replace('\\\\', '\\').replace('\\"', '"')
+281.     return value
+282. 
+283. 
+284. def dict_from_cookiejar(cj):
+285.     """Returns a key/value dictionary from a CookieJar.
+286. 
+287.     :param cj: CookieJar object to extract cookies from.
+288.     """
+289. 
+290.     cookie_dict = {}
+291. 
+292.     for cookie in cj:
+293.         cookie_dict[cookie.name] = cookie.value
+294. 
+295.     return cookie_dict
+296. 
+297. 
+298. def add_dict_to_cookiejar(cj, cookie_dict):
+299.     """Returns a CookieJar from a key/value dictionary.
+300. 
+301.     :param cj: CookieJar to insert cookies into.
+302.     :param cookie_dict: Dict of key/values to insert into CookieJar.
+303.     """
+304. 
+305.     cj2 = cookiejar_from_dict(cookie_dict)
+306.     cj.update(cj2)
+307.     return cj
+308. 
+309. 
+310. def get_encodings_from_content(content):
+311.     """Returns encodings from given content string.
+312. 
+313.     :param content: bytestring to extract encodings from.
+314.     """
+315.     warnings.warn((
+316.         'In requests 3.0, get_encodings_from_content will be removed. For '
+317.         'more information, please see the discussion on issue #2266. (This'
+318.         ' warning should only appear once.)'),
+319.         DeprecationWarning)
+320. 
+321.     charset_re = re.compile(r'<meta.*?charset=["\']*(.+?)["\'>]', flags=re.I)
+322.     pragma_re = re.compile(r'<meta.*?content=["\']*;?charset=(.+?)["\'>]', flags=re.I)
+323.     xml_re = re.compile(r'^<\?xml.*?encoding=["\']*(.+?)["\'>]')
+324. 
+325.     return (charset_re.findall(content) +
+326.             pragma_re.findall(content) +
+327.             xml_re.findall(content))
+328. 
+329. 
+330. def get_encoding_from_headers(headers):
+331.     """Returns encodings from given HTTP Header Dict.
+332. 
+333.     :param headers: dictionary to extract encoding from.
+334.     """
+335. 
+336.     content_type = headers.get('content-type')
+337. 
+338.     if not content_type:
+339.         return None
+340. 
+341.     content_type, params = cgi.parse_header(content_type)
+342. 
+343.     if 'charset' in params:
+344.         return params['charset'].strip("'\"")
+345. 
+346.     if 'text' in content_type:
+347.         return 'ISO-8859-1'
+348. 
+349. 
+350. def stream_decode_response_unicode(iterator, r):
+351.     """Stream decodes a iterator."""
+352. 
+353.     if r.encoding is None:
+354.         for item in iterator:
+355.             yield item
+356.         return
+357. 
+358.     decoder = codecs.getincrementaldecoder(r.encoding)(errors='replace')
+359.     for chunk in iterator:
+360.         rv = decoder.decode(chunk)
+361.         if rv:
+362.             yield rv
+363.     rv = decoder.decode(b'', final=True)
+364.     if rv:
+365.         yield rv
+366. 
+367. 
+368. def iter_slices(string, slice_length):
+369.     """Iterate over slices of a string."""
+370.     pos = 0
+371.     while pos < len(string):
+372.         yield string[pos:pos + slice_length]
+373.         pos += slice_length
+374. 
+375. 
+376. def get_unicode_from_response(r):
+377.     """Returns the requested content back in unicode.
+378. 
+379.     :param r: Response object to get unicode content from.
+380. 
+381.     Tried:
+382. 
+383.     1. charset from content-type
+384.     2. fall back and replace all unicode characters
+385. 
+386.     """
+387.     warnings.warn((
+388.         'In requests 3.0, get_unicode_from_response will be removed. For '
+389.         'more information, please see the discussion on issue #2266. (This'
+390.         ' warning should only appear once.)'),
+391.         DeprecationWarning)
+392. 
+393.     tried_encodings = []
+394. 
+395.     # Try charset from content-type
+396.     encoding = get_encoding_from_headers(r.headers)
+397. 
+398.     if encoding:
+399.         try:
+400.             return str(r.content, encoding)
+401.         except UnicodeError:
+402.             tried_encodings.append(encoding)
+403. 
+404.     # Fall back:
+405.     try:
+406.         return str(r.content, encoding, errors='replace')
+407.     except TypeError:
+408.         return r.content
+409. 
+410. 
+411. # The unreserved URI characters (RFC 3986)
+412. UNRESERVED_SET = frozenset(
+413.     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+414.     + "0123456789-._~")
+415. 
+416. 
+417. def unquote_unreserved(uri):
+418.     """Un-escape any percent-escape sequences in a URI that are unreserved
+419.     characters. This leaves all reserved, illegal and non-ASCII bytes encoded.
+420.     """
+421.     parts = uri.split('%')
+422.     for i in range(1, len(parts)):
+423.         h = parts[i][0:2]
+424.         if len(h) == 2 and h.isalnum():
+425.             try:
+426.                 c = chr(int(h, 16))
+427.             except ValueError:
+428.                 raise InvalidURL("Invalid percent-escape sequence: '%s'" % h)
+429. 
+430.             if c in UNRESERVED_SET:
+431.                 parts[i] = c + parts[i][2:]
+432.             else:
+433.                 parts[i] = '%' + parts[i]
+434.         else:
+435.             parts[i] = '%' + parts[i]
+436.     return ''.join(parts)
+437. 
+438. 
+439. def requote_uri(uri):
+440.     """Re-quote the given URI.
+441. 
+442.     This function passes the given URI through an unquote/quote cycle to
+443.     ensure that it is fully and consistently quoted.
+444.     """
+445.     safe_with_percent = "!#$%&'()*+,/:;=?@[]~"
+446.     safe_without_percent = "!#$&'()*+,/:;=?@[]~"
+447.     try:
+448.         # Unquote only the unreserved characters
+449.         # Then quote only illegal characters (do not quote reserved,
+450.         # unreserved, or '%')
+451.         return quote(unquote_unreserved(uri), safe=safe_with_percent)
+452.     except InvalidURL:
+453.         # We couldn't unquote the given URI, so let's try quoting it, but
+454.         # there may be unquoted '%'s in the URI. We need to make sure they're
+455.         # properly quoted so they do not cause issues elsewhere.
+456.         return quote(uri, safe=safe_without_percent)
+457. 
+458. 
+459. def address_in_network(ip, net):
+460.     """
+461.     This function allows you to check if on IP belongs to a network subnet
+462.     Example: returns True if ip = 192.168.1.1 and net = 192.168.1.0/24
+463.              returns False if ip = 192.168.1.1 and net = 192.168.100.0/24
+464.     """
+465.     ipaddr = struct.unpack('=L', socket.inet_aton(ip))[0]
+466.     netaddr, bits = net.split('/')
+467.     netmask = struct.unpack('=L', socket.inet_aton(dotted_netmask(int(bits))))[0]
+468.     network = struct.unpack('=L', socket.inet_aton(netaddr))[0] & netmask
+469.     return (ipaddr & netmask) == (network & netmask)
+470. 
+471. 
+472. def dotted_netmask(mask):
+473.     """
+474.     Converts mask from /xx format to xxx.xxx.xxx.xxx
+475.     Example: if mask is 24 function returns 255.255.255.0
+476.     """
+477.     bits = 0xffffffff ^ (1 << 32 - mask) - 1
+478.     return socket.inet_ntoa(struct.pack('>I', bits))
+479. 
+480. 
+481. def is_ipv4_address(string_ip):
+482.     try:
+483.         socket.inet_aton(string_ip)
+484.     except socket.error:
+485.         return False
+486.     return True
+487. 
+488. 
+489. def is_valid_cidr(string_network):
+490.     """Very simple check of the cidr format in no_proxy variable"""
+491.     if string_network.count('/') == 1:
+492.         try:
+493.             mask = int(string_network.split('/')[1])
+494.         except ValueError:
+495.             return False
+496. 
+497.         if mask < 1 or mask > 32:
+498.             return False
+499. 
+500.         try:
+
+
+File: requests/utils.py
+Line number range: 686 - 702
+Content:
+686. def to_native_string(string, encoding='ascii'):
+687.     """
+688.     Given a string object, regardless of type, returns a representation of that
+689.     string in the native string type, encoding and decoding where necessary.
+690.     This assumes ASCII unless told otherwise.
+691.     """
+692.     out = None
+693. 
+694.     if isinstance(string, builtin_str):
+695.         out = string
+696.     else:
+697.         if is_py2:
+698.             out = string.encode(encoding)
+699.         else:
+700.             out = string.decode(encoding)
+701. 
+702.     return out
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 18:47:44,335 - thread-133671946290880.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The provided context, including the contents of `requests/models.py` and `requests/utils.py`, is sufficient to understand the issue. `requests/models.py` contains the `_encode_params` method with the incorrect handling of byte strings. `requests/utils.py` contains the `to_native_string` function, which is the root cause of the `UnicodeDecodeError` when it tries to decode a UTF-8 encoded byte string as ASCII. The provided patch correctly addresses this by adding a specific check for `bytes` and avoiding the call to `to_native_string`. Further context about the higher-level API calls in `requests/api.py` or `requests/sessions.py` is not essential to comprehend and resolve this specific encoding bug.' query='' extra_requirements='' purpose=''
+2025-12-21 18:47:44,336 - thread-133671946290880.prometheus_context_collector - INFO - Successfully retrieved 3 context snippets

@@ -1,0 +1,5503 @@
+2025-12-21 17:07:48,921 - thread-131918823687872.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: `io.fits.FITSDiff` may sometimes report differences between identical files
+
+Description: ### Description
+
+In some scenarios, `io.fits.FITSDiff` may report differences between identical files, even when comparing the same file to itself. This may be caused by improper handling of VLAs (variable-length arrays).
+
+### Expected behavior
+
+`io.fits.FITSDiff` only reports differences in files if they exist. Comparing a file to itself should never yield a difference.
+
+### How to Reproduce
+
+```python
+from astropy.io import fits
+col = fits.Column('a', format='QD', array=[[0], [0, 0]])
+hdu = fits.BinTableHDU.from_columns([col])
+hdu.writeto('diffbug.fits', overwrite=True)
+
+print(fits.FITSDiff('diffbug.fits', 'diffbug.fits').identical)
+fits.printdiff('diffbug.fits', 'diffbug.fits')
+
+```
+Prints out:
+```
+False
+ fitsdiff: 5.2.1
+ a: diffbug.fits
+ b: diffbug.fits
+ Maximum number of different data values to be reported: 10
+ Relative tolerance: 0.0, Absolute tolerance: 0.0
+Extension HDU 1:
+   Data contains differences:
+     Column a data differs in row 0:
+     1 different table data element(s) found (50.00% different).
+```
+
+I suspect the handling of VLAs is the culprit here as I couldn't reproduce the bug without using at least one VLA column.
+
+### Versions
+
+Windows-10-10.0.19044-SP0
+Python 3.10.10 (tags/v3.10.10:aad5f6a, Feb  7 2023, 17:20:36) [MSC v.1929 64 bit (AMD64)]
+astropy 5.2.1
+Numpy 1.24.2
+pyerfa 2.0.0.1
+Scipy 1.10.0
+Matplotlib 3.6.3
+
+Patch information:
+diff --git a/astropy/io/fits/diff.py b/astropy/io/fits/diff.py
+index 100cdf1b8c..d3608ef01d 100644
+--- a/astropy/io/fits/diff.py
++++ b/astropy/io/fits/diff.py
+@@ -1449,7 +1449,7 @@ class TableDataDiff(_BaseDiff):
+                 arrb.dtype, np.floating
+             ):
+                 diffs = where_not_allclose(arra, arrb, rtol=self.rtol, atol=self.atol)
+-            elif "P" in col.format:
++            elif "P" in col.format or "Q" in col.format:
+                 diffs = (
+                     [
+                         idx
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-21 17:07:48,999 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+astropy
+├── .circleci
+|   └── config.yml
+├── .devcontainer
+|   └── welcome-message.txt
+├── .github
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bug_report.yaml
+|   |   ├── config.yml
+|   |   └── feature_request.yaml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── labeler.yml
+|   └── workflows
+|       ├── check_changelog.yml
+|       ├── ci_cron_daily.yml
+|       ├── ci_cron_weekly.yml
+|       ├── ci_workflows.yml
+|       ├── codeql-analysis.yml
+|       ├── open_actions.yml
+|       ├── publish.yml
+|       ├── stalebot.yml
+|       └── update_iers.yml
+├── .pre-commit-config.yaml
+├── .pyinstaller
+|   ├── hooks
+|   |   └── hook-skyfield.py
+|   └── run_astropy_tests.py
+├── .readthedocs.yaml
+├── CHANGES.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── GOVERNANCE.md
+├── LICENSE.rst
+├── README.rst
+├── astropy
+|   ├── __init__.py
+|   ├── _dev
+|   |   ├── __init__.py
+|   |   └── scm_version.py
+|   ├── config
+|   |   ├── __init__.py
+|   |   ├── configuration.py
+|   |   ├── paths.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── data
+|   |       └── test_configs.py
+|   ├── conftest.py
+|   ├── constants
+|   |   ├── __init__.py
+|   |   ├── astropyconst13.py
+|   |   ├── astropyconst20.py
+|   |   ├── astropyconst40.py
+|   |   ├── cgs.py
+|   |   ├── codata2010.py
+|   |   ├── codata2014.py
+|   |   ├── codata2018.py
+|   |   ├── config.py
+|   |   ├── constant.py
+|   |   ├── iau2012.py
+|   |   ├── iau2015.py
+|   |   ├── si.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_constant.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_prior_version.py
+|   |   |   └── test_sciencestate.py
+|   |   └── utils.py
+|   ├── convolution
+|   |   ├── __init__.py
+|   |   ├── convolve.py
+|   |   ├── core.py
+|   |   ├── kernels.py
+|   |   ├── setup_package.py
+|   |   ├── src
+|   |   |   └── convolve.c
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_convolve.py
+|   |   |   ├── test_convolve_fft.py
+|   |   |   ├── test_convolve_kernels.py
+|   |   |   ├── test_convolve_models.py
+|   |   |   ├── test_convolve_nddata.py
+|   |   |   ├── test_convolve_speeds.py
+|   |   |   ├── test_discretize.py
+|   |   |   ├── test_kernel_class.py
+|   |   |   └── test_pickle.py
+|   |   └── utils.py
+|   ├── coordinates
+|   |   ├── __init__.py
+|   |   ├── angle_formats.py
+|   |   ├── angle_lextab.py
+|   |   ├── angle_parsetab.py
+|   |   ├── angle_utilities.py
+|   |   ├── angles.py
+|   |   ├── attributes.py
+|   |   ├── baseframe.py
+|   |   ├── builtin_frames
+|   |   |   ├── __init__.py
+|   |   |   ├── altaz.py
+|   |   |   ├── baseradec.py
+|   |   |   ├── cirs.py
+|   |   |   ├── cirs_observed_transforms.py
+|   |   |   ├── ecliptic.py
+|   |   |   ├── ecliptic_transforms.py
+|   |   |   ├── equatorial.py
+|   |   |   ├── fk4.py
+|   |   |   ├── fk4_fk5_transforms.py
+|   |   |   ├── fk5.py
+|   |   |   ├── galactic.py
+|   |   |   ├── galactic_transforms.py
+|   |   |   ├── galactocentric.py
+|   |   |   ├── gcrs.py
+|   |   |   ├── hadec.py
+|   |   |   ├── hcrs.py
+|   |   |   ├── icrs.py
+|   |   |   ├── icrs_cirs_transforms.py
+|   |   |   ├── icrs_fk5_transforms.py
+|   |   |   ├── icrs_observed_transforms.py
+|   |   |   ├── intermediate_rotation_transforms.py
+|   |   |   ├── itrs.py
+|   |   |   ├── itrs_observed_transforms.py
+|   |   |   ├── lsr.py
+|   |   |   ├── skyoffset.py
+|   |   |   ├── supergalactic.py
+|   |   |   ├── supergalactic_transforms.py
+|   |   |   └── utils.py
+|   |   ├── calculation.py
+|   |   ├── data
+|   |   ├── distances.py
+|   |   ├── earth.py
+|   |   ├── earth_orientation.py
+|   |   ├── erfa_astrom.py
+|   |   ├── errors.py
+|   |   ├── funcs.py
+|   |   ├── jparser.py
+|   |   ├── matching.py
+|   |   ├── matrix_utilities.py
+|   |   ├── name_resolve.py
+|   |   ├── orbital_elements.py
+|   |   ├── representation.py
+|   |   ├── sites.py
+|   |   ├── sky_coordinate.py
+|   |   ├── sky_coordinate_parsers.py
+|   |   ├── solar_system.py
+|   |   ├── spectral_coordinate.py
+|   |   ├── spectral_quantity.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── accuracy
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── data
+|   |   |   |   ├── generate_ref_ast.py
+|   |   |   |   ├── generate_spectralcoord_ref.py
+|   |   |   |   ├── test_altaz_icrs.py
+|   |   |   |   ├── test_ecliptic.py
+|   |   |   |   ├── test_fk4_no_e_fk4.py
+|   |   |   |   ├── test_fk4_no_e_fk5.py
+|   |   |   |   ├── test_galactic_fk4.py
+|   |   |   |   └── test_icrs_fk5.py
+|   |   |   ├── helper.py
+|   |   |   ├── test_angle_generators.py
+|   |   |   ├── test_angles.py
+|   |   |   ├── test_angular_separation.py
+|   |   |   ├── test_api_ape5.py
+|   |   |   ├── test_arrays.py
+|   |   |   ├── test_atc_replacements.py
+|   |   |   ├── test_celestial_transformations.py
+|   |   |   ├── test_distance.py
+|   |   |   ├── test_earth.py
+|   |   |   ├── test_earth_orientation.py
+|   |   |   ├── test_erfa_astrom.py
+|   |   |   ├── test_finite_difference_velocities.py
+|   |   |   ├── test_formatting.py
+|   |   |   ├── test_frames.py
+|   |   |   ├── test_frames_with_velocity.py
+|   |   |   ├── test_funcs.py
+|   |   |   ├── test_geodetic_representations.py
+|   |   |   ├── test_iau_fullstack.py
+|   |   |   ├── test_icrs_observed_transformations.py
+|   |   |   ├── test_intermediate_transformations.py
+|   |   |   ├── test_matching.py
+|   |   |   ├── test_matrix_utilities.py
+|   |   |   ├── test_name_resolve.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_regression.py
+|   |   |   ├── test_representation.py
+|   |   |   ├── test_representation_arithmetic.py
+|   |   |   ├── test_representation_methods.py
+|   |   |   ├── test_shape_manipulation.py
+|   |   |   ├── test_sites.py
+|   |   |   ├── test_sky_coord.py
+|   |   |   ├── test_sky_coord_velocities.py
+|   |   |   ├── test_skyoffset_transformations.py
+|   |   |   ├── test_solar_system.py
+|   |   |   ├── test_spectral_coordinate.py
+|   |   |   ├── test_spectral_quantity.py
+|   |   |   ├── test_transformations.py
+|   |   |   ├── test_unit_representation.py
+|   |   |   ├── test_utils.py
+|   |   |   └── test_velocity_corrs.py
+|   |   └── transformations.py
+|   ├── cosmology
+|   |   ├── __init__.py
+|   |   ├── connect.py
+|   |   ├── core.py
+|   |   ├── data
+|   |   ├── flrw
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── lambdacdm.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── conftest.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_base.py
+|   |   |   |   ├── test_init.py
+|   |   |   |   ├── test_lambdacdm.py
+|   |   |   |   ├── test_w.py
+|   |   |   |   ├── test_w0cdm.py
+|   |   |   |   ├── test_w0wacdm.py
+|   |   |   |   ├── test_w0wzcdm.py
+|   |   |   |   └── test_wpwazpcdm.py
+|   |   |   ├── w0cdm.py
+|   |   |   ├── w0wacdm.py
+|   |   |   ├── w0wzcdm.py
+|   |   |   └── wpwazpcdm.py
+|   |   ├── funcs
+|   |   |   ├── __init__.py
+|   |   |   ├── comparison.py
+|   |   |   ├── optimize.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_comparison.py
+|   |   |       └── test_funcs.py
+|   |   ├── io
+|   |   |   ├── __init__.py
+|   |   |   ├── cosmology.py
+|   |   |   ├── ecsv.py
+|   |   |   ├── html.py
+|   |   |   ├── mapping.py
+|   |   |   ├── model.py
+|   |   |   ├── row.py
+|   |   |   ├── table.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── base.py
+|   |   |   |   ├── test_.py
+|   |   |   |   ├── test_cosmology.py
+|   |   |   |   ├── test_ecsv.py
+|   |   |   |   ├── test_html.py
+|   |   |   |   ├── test_json.py
+|   |   |   |   ├── test_mapping.py
+|   |   |   |   ├── test_model.py
+|   |   |   |   ├── test_row.py
+|   |   |   |   ├── test_table.py
+|   |   |   |   └── test_yaml.py
+|   |   |   ├── utils.py
+|   |   |   └── yaml.py
+|   |   ├── parameter.py
+|   |   ├── parameters.py
+|   |   ├── realizations.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── conftest.py
+|   |   |   ├── helper.py
+|   |   |   ├── test_connect.py
+|   |   |   ├── test_core.py
+|   |   |   ├── test_parameter.py
+|   |   |   ├── test_parameters.py
+|   |   |   ├── test_realizations.py
+|   |   |   ├── test_units.py
+|   |   |   └── test_utils.py
+|   |   ├── units.py
+|   |   └── utils.py
+|   ├── extern
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── _strptime.py
+|   |   ├── configobj
+|   |   |   ├── __init__.py
+|   |   |   ├── configobj.py
+|   |   |   └── validate.py
+|   |   ├── jquery
+|   |   |   ├── __init__.py
+|   |   |   └── data
+|   |   |       ├── css
+|   |   |       ├── images
+|   |   |       └── js
+|   |   └── ply
+|   |       ├── __init__.py
+|   |       ├── cpp.py
+|   |       ├── ctokens.py
+|   |       ├── lex.py
+|   |       ├── yacc.py
+|   |       └── ygen.py
+|   ├── io
+|   |   ├── __init__.py
+|   |   ├── ascii
+|   |   |   ├── __init__.py
+|   |   |   ├── basic.py
+|   |   |   ├── cds.py
+|   |   |   ├── connect.py
+|   |   |   ├── core.py
+|   |   |   ├── daophot.py
+|   |   |   ├── docs.py
+|   |   |   ├── ecsv.py
+|   |   |   ├── fastbasic.py
+|   |   |   ├── fixedwidth.py
+|   |   |   ├── html.py
+|   |   |   ├── ipac.py
+|   |   |   ├── latex.py
+|   |   |   ├── misc.py
+|   |   |   ├── mrt.py
+|   |   |   ├── qdp.py
+|   |   |   ├── rst.py
+|   |   |   ├── setup_package.py
+|   |   |   ├── sextractor.py
+|   |   |   ├── src
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── common.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_c_reader.py
+|   |   |   |   ├── test_cds.py
+|   |   |   |   ├── test_cds_header_from_readme.py
+|   |   |   |   ├── test_compressed.py
+|   |   |   |   ├── test_connect.py
+|   |   |   |   ├── test_ecsv.py
+|   |   |   |   ├── test_fixedwidth.py
+|   |   |   |   ├── test_html.py
+|   |   |   |   ├── test_ipac_definitions.py
+|   |   |   |   ├── test_qdp.py
+|   |   |   |   ├── test_read.py
+|   |   |   |   ├── test_rst.py
+|   |   |   |   ├── test_types.py
+|   |   |   |   └── test_write.py
+|   |   |   └── ui.py
+|   |   ├── fits
+|   |   |   ├── __init__.py
+|   |   |   ├── _tiled_compression
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── codecs.py
+|   |   |   |   ├── quantization.py
+|   |   |   |   ├── setup_package.py
+|   |   |   |   ├── src
+|   |   |   |   ├── tests
+|   |   |   |   ├── tiled_compression.py
+|   |   |   |   └── utils.py
+|   |   |   ├── card.py
+|   |   |   ├── column.py
+|   |   |   ├── connect.py
+|   |   |   ├── convenience.py
+|   |   |   ├── diff.py
+|   |   |   ├── file.py
+|   |   |   ├── fitsrec.py
+|   |   |   ├── fitstime.py
+|   |   |   ├── hdu
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── base.py
+|   |   |   |   ├── compressed.py
+|   |   |   |   ├── groups.py
+|   |   |   |   ├── hdulist.py
+|   |   |   |   ├── image.py
+|   |   |   |   ├── nonstandard.py
+|   |   |   |   ├── streaming.py
+|   |   |   |   └── table.py
+|   |   |   ├── header.py
+|   |   |   ├── scripts
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── fitscheck.py
+|   |   |   |   ├── fitsdiff.py
+|   |   |   |   ├── fitsheader.py
+|   |   |   |   └── fitsinfo.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── conftest.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_checksum.py
+|   |   |   |   ├── test_compression_failures.py
+|   |   |   |   ├── test_connect.py
+|   |   |   |   ├── test_convenience.py
+|   |   |   |   ├── test_core.py
+|   |   |   |   ├── test_diff.py
+|   |   |   |   ├── test_division.py
+|   |   |   |   ├── test_fitscheck.py
+|   |   |   |   ├── test_fitsdiff.py
+|   |   |   |   ├── test_fitsheader.py
+|   |   |   |   ├── test_fitsinfo.py
+|   |   |   |   ├── test_fitstime.py
+|   |   |   |   ├── test_fsspec.py
+|   |   |   |   ├── test_groups.py
+|   |   |   |   ├── test_hdulist.py
+|   |   |   |   ├── test_header.py
+|   |   |   |   ├── test_image.py
+|   |   |   |   ├── test_image_dask.py
+|   |   |   |   ├── test_nonstandard.py
+|   |   |   |   ├── test_structured.py
+|   |   |   |   ├── test_table.py
+|   |   |   |   ├── test_tilde_path.py
+|   |   |   |   ├── test_uint.py
+|   |   |   |   └── test_util.py
+|   |   |   ├── util.py
+|   |   |   └── verify.py
+|   |   ├── misc
+|   |   |   ├── __init__.py
+|   |   |   ├── asdf
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── conftest.py
+|   |   |   |   ├── connect.py
+|   |   |   |   ├── data
+|   |   |   |   ├── deprecation.py
+|   |   |   |   ├── extension.py
+|   |   |   |   ├── tags
+|   |   |   |   ├── tests
+|   |   |   |   └── types.py
+|   |   |   ├── connect.py
+|   |   |   ├── hdf5.py
+|   |   |   ├── pandas
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── connect.py
+|   |   |   ├── parquet.py
+|   |   |   ├── pickle_helpers.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_hdf5.py
+|   |   |   |   ├── test_pandas.py
+|   |   |   |   ├── test_parquet.py
+|   |   |   |   ├── test_pickle_helpers.py
+|   |   |   |   └── test_yaml.py
+|   |   |   └── yaml.py
+|   |   ├── registry
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── compat.py
+|   |   |   ├── core.py
+|   |   |   ├── interface.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_registries.py
+|   |   |       └── test_registry_help.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── mixin_columns.py
+|   |   |   └── safeio.py
+|   |   └── votable
+|   |       ├── __init__.py
+|   |       ├── connect.py
+|   |       ├── converters.py
+|   |       ├── data
+|   |       |   └── ucd1p-words.txt
+|   |       ├── exceptions.py
+|   |       ├── setup_package.py
+|   |       ├── src
+|   |       |   └── tablewriter.c
+|   |       ├── table.py
+|   |       ├── tests
+|   |       |   ├── __init__.py
+|   |       |   ├── converter_test.py
+|   |       |   ├── data
+|   |       |   ├── exception_test.py
+|   |       |   ├── resource_test.py
+|   |       |   ├── table_test.py
+|   |       |   ├── tree_test.py
+|   |       |   ├── ucd_test.py
+|   |       |   ├── util_test.py
+|   |       |   └── vo_test.py
+|   |       ├── tree.py
+|   |       ├── ucd.py
+|   |       ├── util.py
+|   |       ├── validator
+|   |       |   ├── __init__.py
+|   |       |   ├── data
+|   |       |   ├── html.py
+|   |       |   ├── main.py
+|   |       |   └── result.py
+|   |       ├── volint.py
+|   |       └── xmlutil.py
+|   ├── logger.py
+|   ├── modeling
+|   |   ├── __init__.py
+|   |   ├── bounding_box.py
+|   |   ├── convolution.py
+|   |   ├── core.py
+|   |   ├── fitting.py
+|   |   ├── functional_models.py
+|   |   ├── mappings.py
+|   |   ├── math_functions.py
+|   |   ├── models.py
+|   |   ├── optimizers.py
+|   |   ├── parameters.py
+|   |   ├── physical_models.py
+|   |   ├── polynomial.py
+|   |   ├── powerlaws.py
+|   |   ├── projections.py
+|   |   ├── rotations.py
+|   |   ├── separable.py
+|   |   ├── spline.py
+|   |   ├── statistic.py
+|   |   ├── tabular.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── spec.txt
+|   |   |   ├── example_models.py
+|   |   |   ├── irafutil.py
+|   |   |   ├── test_bounding_box.py
+|   |   |   ├── test_compound.py
+|   |   |   ├── test_constraints.py
+|   |   |   ├── test_convolution.py
+|   |   |   ├── test_core.py
+|   |   |   ├── test_fitters.py
+|   |   |   ├── test_functional_models.py
+|   |   |   ├── test_input.py
+|   |   |   ├── test_mappings.py
+|   |   |   ├── test_math_func.py
+|   |   |   ├── test_model_sets.py
+|   |   |   ├── test_models.py
+|   |   |   ├── test_models_quantities.py
+|   |   |   ├── test_parameters.py
+|   |   |   ├── test_physical_models.py
+|   |   |   ├── test_polynomial.py
+|   |   |   ├── test_projections.py
+|   |   |   ├── test_quantities_evaluation.py
+|   |   |   ├── test_quantities_fitting.py
+|   |   |   ├── test_quantities_model.py
+|   |   |   ├── test_quantities_parameters.py
+|   |   |   ├── test_quantities_rotations.py
+|   |   |   ├── test_rotations.py
+|   |   |   ├── test_separable.py
+|   |   |   ├── test_spline.py
+|   |   |   ├── test_statistics.py
+|   |   |   ├── test_units_mapping.py
+|   |   |   └── test_utils.py
+|   |   └── utils.py
+|   ├── nddata
+|   |   ├── __init__.py
+|   |   ├── _testing.py
+|   |   ├── bitmask.py
+|   |   ├── blocks.py
+|   |   ├── ccddata.py
+|   |   ├── compat.py
+|   |   ├── decorators.py
+|   |   ├── flag_collection.py
+|   |   ├── mixins
+|   |   |   ├── __init__.py
+|   |   |   ├── ndarithmetic.py
+|   |   |   ├── ndio.py
+|   |   |   ├── ndslicing.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_ndarithmetic.py
+|   |   |       ├── test_ndio.py
+|   |   |       └── test_ndslicing.py
+|   |   ├── nddata.py
+|   |   ├── nddata_base.py
+|   |   ├── nddata_withmixins.py
+|   |   ├── nduncertainty.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   ├── test_bitmask.py
+|   |   |   ├── test_blocks.py
+|   |   |   ├── test_ccddata.py
+|   |   |   ├── test_compat.py
+|   |   |   ├── test_decorators.py
+|   |   |   ├── test_flag_collection.py
+|   |   |   ├── test_nddata.py
+|   |   |   ├── test_nddata_base.py
+|   |   |   ├── test_nduncertainty.py
+|   |   |   └── test_utils.py
+|   |   └── utils.py
+|   ├── samp
+|   |   ├── __init__.py
+|   |   ├── client.py
+|   |   ├── constants.py
+|   |   ├── data
+|   |   |   ├── clientaccesspolicy.xml
+|   |   |   └── crossdomain.xml
+|   |   ├── errors.py
+|   |   ├── hub.py
+|   |   ├── hub_proxy.py
+|   |   ├── hub_script.py
+|   |   ├── integrated_client.py
+|   |   ├── lockfile_helpers.py
+|   |   ├── setup_package.py
+|   |   ├── standard_profile.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_client.py
+|   |   |   ├── test_errors.py
+|   |   |   ├── test_helpers.py
+|   |   |   ├── test_hub.py
+|   |   |   ├── test_hub_proxy.py
+|   |   |   ├── test_hub_script.py
+|   |   |   ├── test_standard_profile.py
+|   |   |   ├── test_web_profile.py
+|   |   |   └── web_profile_test_helpers.py
+|   |   ├── utils.py
+|   |   └── web_profile.py
+|   ├── stats
+|   |   ├── __init__.py
+|   |   ├── bayesian_blocks.py
+|   |   ├── biweight.py
+|   |   ├── bls
+|   |   |   └── __init__.py
+|   |   ├── circstats.py
+|   |   ├── funcs.py
+|   |   ├── histogram.py
+|   |   ├── info_theory.py
+|   |   ├── jackknife.py
+|   |   ├── lombscargle
+|   |   |   └── __init__.py
+|   |   ├── setup_package.py
+|   |   ├── sigma_clipping.py
+|   |   ├── spatial.py
+|   |   ├── src
+|   |   |   ├── compute_bounds.c
+|   |   |   ├── fast_sigma_clip.c
+|   |   |   └── wirth_select.c
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── test_bayesian_blocks.py
+|   |       ├── test_biweight.py
+|   |       ├── test_circstats.py
+|   |       ├── test_funcs.py
+|   |       ├── test_histogram.py
+|   |       ├── test_info_theory.py
+|   |       ├── test_jackknife.py
+|   |       ├── test_sigma_clipping.py
+|   |       └── test_spatial.py
+|   ├── table
+|   |   ├── __init__.py
+|   |   ├── bst.py
+|   |   ├── column.py
+|   |   ├── connect.py
+|   |   ├── groups.py
+|   |   ├── index.py
+|   |   ├── info.py
+|   |   ├── jsviewer.py
+|   |   ├── meta.py
+|   |   ├── mixins
+|   |   |   ├── __init__.py
+|   |   |   ├── dask.py
+|   |   |   ├── registry.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_dask.py
+|   |   |       └── test_registry.py
+|   |   ├── ndarray_mixin.py
+|   |   ├── np_utils.py
+|   |   ├── operations.py
+|   |   ├── pandas.py
+|   |   ├── pprint.py
+|   |   ├── row.py
+|   |   ├── scripts
+|   |   |   ├── __init__.py
+|   |   |   └── showtable.py
+|   |   ├── serialize.py
+|   |   ├── setup_package.py
+|   |   ├── soco.py
+|   |   ├── sorted_array.py
+|   |   ├── table.py
+|   |   ├── table_helpers.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── conftest.py
+|   |       ├── test_array.py
+|   |       ├── test_bst.py
+|   |       ├── test_column.py
+|   |       ├── test_groups.py
+|   |       ├── test_index.py
+|   |       ├── test_info.py
+|   |       ├── test_init_table.py
+|   |       ├── test_item_access.py
+|   |       ├── test_jsviewer.py
+|   |       ├── test_masked.py
+|   |       ├── test_mixin.py
+|   |       ├── test_np_utils.py
+|   |       ├── test_operations.py
+|   |       ├── test_pickle.py
+|   |       ├── test_pprint.py
+|   |       ├── test_row.py
+|   |       ├── test_showtable.py
+|   |       ├── test_subclass.py
+|   |       └── test_table.py
+|   ├── tests
+|   |   ├── __init__.py
+|   |   ├── command.py
+|   |   ├── figures
+|   |   |   ├── __init__.py
+|   |   |   └── helpers.py
+|   |   ├── helper.py
+|   |   ├── runner.py
+|   |   ├── test_logger.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── test_imports.py
+|   |       ├── test_quantity_helpers.py
+|   |       ├── test_run_tests.py
+|   |       └── test_runner.py
+|   ├── time
+|   |   ├── __init__.py
+|   |   ├── core.py
+|   |   ├── formats.py
+|   |   ├── setup_package.py
+|   |   ├── src
+|   |   |   └── parse_times.c
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_basic.py
+|   |   |   ├── test_comparisons.py
+|   |   |   ├── test_corrs.py
+|   |   |   ├── test_custom_formats.py
+|   |   |   ├── test_delta.py
+|   |   |   ├── test_fast_parser.py
+|   |   |   ├── test_functions.py
+|   |   |   ├── test_guess.py
+|   |   |   ├── test_mask.py
+|   |   |   ├── test_methods.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_precision.py
+|   |   |   ├── test_quantity_interaction.py
+|   |   |   ├── test_sidereal.py
+|   |   |   ├── test_update_leap_seconds.py
+|   |   |   └── test_ut1.py
+|   |   ├── time_helper
+|   |   |   ├── __init__.py
+|   |   |   └── function_helpers.py
+|   |   └── utils.py
+|   ├── timeseries
+|   |   ├── __init__.py
+|   |   ├── binned.py
+|   |   ├── core.py
+|   |   ├── downsample.py
+|   |   ├── io
+|   |   |   ├── __init__.py
+|   |   |   ├── kepler.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       └── test_kepler.py
+|   |   ├── periodograms
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── bls
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── core.py
+|   |   |   |   ├── methods.py
+|   |   |   |   ├── setup_package.py
+|   |   |   |   └── tests
+|   |   |   └── lombscargle
+|   |   |       ├── __init__.py
+|   |   |       ├── _statistics.py
+|   |   |       ├── core.py
+|   |   |       ├── implementations
+|   |   |       ├── tests
+|   |   |       └── utils.py
+|   |   ├── sampled.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── data
+|   |       ├── test_binned.py
+|   |       ├── test_common.py
+|   |       ├── test_downsample.py
+|   |       └── test_sampled.py
+|   ├── uncertainty
+|   |   ├── __init__.py
+|   |   ├── core.py
+|   |   ├── distributions.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       └── test_distribution.py
+|   ├── units
+|   |   ├── __init__.py
+|   |   ├── _typing.py
+|   |   ├── astrophys.py
+|   |   ├── cds.py
+|   |   ├── cgs.py
+|   |   ├── core.py
+|   |   ├── decorators.py
+|   |   ├── deprecated.py
+|   |   ├── equivalencies.py
+|   |   ├── format
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── cds.py
+|   |   |   ├── cds_lextab.py
+|   |   |   ├── cds_parsetab.py
+|   |   |   ├── console.py
+|   |   |   ├── fits.py
+|   |   |   ├── generic.py
+|   |   |   ├── generic_lextab.py
+|   |   |   ├── generic_parsetab.py
+|   |   |   ├── latex.py
+|   |   |   ├── ogip.py
+|   |   |   ├── ogip_lextab.py
+|   |   |   ├── ogip_parsetab.py
+|   |   |   ├── unicode_format.py
+|   |   |   ├── utils.py
+|   |   |   └── vounit.py
+|   |   ├── function
+|   |   |   ├── __init__.py
+|   |   |   ├── core.py
+|   |   |   ├── logarithmic.py
+|   |   |   ├── mixin.py
+|   |   |   └── units.py
+|   |   ├── imperial.py
+|   |   ├── misc.py
+|   |   ├── photometric.py
+|   |   ├── physical.py
+|   |   ├── quantity.py
+|   |   ├── quantity_helper
+|   |   |   ├── __init__.py
+|   |   |   ├── converters.py
+|   |   |   ├── erfa.py
+|   |   |   ├── function_helpers.py
+|   |   |   ├── helpers.py
+|   |   |   └── scipy_special.py
+|   |   ├── required_by_vounit.py
+|   |   ├── si.py
+|   |   ├── structured.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_aliases.py
+|   |   |   ├── test_deprecated.py
+|   |   |   ├── test_equivalencies.py
+|   |   |   ├── test_format.py
+|   |   |   ├── test_logarithmic.py
+|   |   |   ├── test_photometric.py
+|   |   |   ├── test_physical.py
+|   |   |   ├── test_quantity.py
+|   |   |   ├── test_quantity_annotations.py
+|   |   |   ├── test_quantity_array_methods.py
+|   |   |   ├── test_quantity_decorator.py
+|   |   |   ├── test_quantity_helpers.py
+|   |   |   ├── test_quantity_info.py
+|   |   |   ├── test_quantity_non_ufuncs.py
+|   |   |   ├── test_quantity_typing.py
+|   |   |   ├── test_quantity_ufuncs.py
+|   |   |   ├── test_structured.py
+|   |   |   ├── test_structured_erfa_ufuncs.py
+|   |   |   ├── test_units.py
+|   |   |   └── test_utils.py
+|   |   └── utils.py
+|   ├── utils
+|   |   ├── __init__.py
+|   |   ├── argparse.py
+|   |   ├── codegen.py
+|   |   ├── collections.py
+|   |   ├── compat
+|   |   |   ├── __init__.py
+|   |   |   ├── misc.py
+|   |   |   ├── numpycompat.py
+|   |   |   └── optional_deps.py
+|   |   ├── console.py
+|   |   ├── data.py
+|   |   ├── data_info.py
+|   |   ├── decorators.py
+|   |   ├── diff.py
+|   |   ├── exceptions.py
+|   |   ├── iers
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   |   └── update_builtin_iers.sh
+|   |   |   ├── iers.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── data
+|   |   |       ├── test_iers.py
+|   |   |       └── test_leap_second.py
+|   |   ├── introspection.py
+|   |   ├── masked
+|   |   |   ├── __init__.py
+|   |   |   ├── core.py
+|   |   |   ├── function_helpers.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_containers.py
+|   |   |       ├── test_function_helpers.py
+|   |   |       ├── test_functions.py
+|   |   |       ├── test_masked.py
+|   |   |       └── test_table.py
+|   |   ├── metadata.py
+|   |   ├── misc.py
+|   |   ├── parsing.py
+|   |   ├── setup_package.py
+|   |   ├── shapes.py
+|   |   ├── src
+|   |   |   └── compiler.c
+|   |   ├── state.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   |   ├── .hidden_file.txt
+|   |   |   |   ├── dataurl
+|   |   |   |   ├── dataurl_mirror
+|   |   |   |   ├── test_package
+|   |   |   |   └── unicode.txt
+|   |   |   ├── test_codegen.py
+|   |   |   ├── test_collections.py
+|   |   |   ├── test_console.py
+|   |   |   ├── test_data.py
+|   |   |   ├── test_data_info.py
+|   |   |   ├── test_decorators.py
+|   |   |   ├── test_diff.py
+|   |   |   ├── test_introspection.py
+|   |   |   ├── test_metadata.py
+|   |   |   ├── test_misc.py
+|   |   |   ├── test_parsing.py
+|   |   |   ├── test_progress_bar_func.py
+|   |   |   ├── test_shapes.py
+|   |   |   ├── test_state.py
+|   |   |   └── test_xml.py
+|   |   └── xml
+|   |       ├── __init__.py
+|   |       ├── check.py
+|   |       ├── iterparser.py
+|   |       ├── setup_package.py
+|   |       ├── src
+|   |       |   └── iterparse.c
+|   |       ├── tests
+|   |       |   ├── __init__.py
+|   |       |   └── test_iterparse.py
+|   |       ├── unescaper.py
+|   |       ├── validate.py
+|   |       └── writer.py
+|   ├── version.py
+|   ├── visualization
+|   |   ├── __init__.py
+|   |   ├── hist.py
+|   |   ├── interval.py
+|   |   ├── lupton_rgb.py
+|   |   ├── mpl_normalize.py
+|   |   ├── mpl_style.py
+|   |   ├── scripts
+|   |   |   ├── __init__.py
+|   |   |   ├── fits2bitmap.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       └── test_fits2bitmap.py
+|   |   ├── stretch.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_histogram.py
+|   |   |   ├── test_interval.py
+|   |   |   ├── test_lupton_rgb.py
+|   |   |   ├── test_norm.py
+|   |   |   ├── test_stretch.py
+|   |   |   ├── test_time.py
+|   |   |   └── test_units.py
+|   |   ├── time.py
+|   |   ├── transform.py
+|   |   ├── units.py
+|   |   └── wcsaxes
+|   |       ├── __init__.py
+|   |       ├── axislabels.py
+|   |       ├── coordinate_helpers.py
+|   |       ├── coordinate_range.py
+|   |       ├── coordinates_map.py
+|   |       ├── core.py
+|   |       ├── formatter_locator.py
+|   |       ├── frame.py
+|   |       ├── grid_paths.py
+|   |       ├── helpers.py
+|   |       ├── patches.py
+|   |       ├── tests
+|   |       |   ├── __init__.py
+|   |       |   ├── data
+|   |       |   ├── test_coordinate_helpers.py
+|   |       |   ├── test_display_world_coordinates.py
+|   |       |   ├── test_formatter_locator.py
+|   |       |   ├── test_frame.py
+|   |       |   ├── test_grid_paths.py
+|   |       |   ├── test_images.py
+|   |       |   ├── test_misc.py
+|   |       |   ├── test_transform_coord_meta.py
+|   |       |   ├── test_transforms.py
+|   |       |   ├── test_utils.py
+|   |       |   └── test_wcsapi.py
+|   |       ├── ticklabels.py
+|   |       ├── ticks.py
+|   |       ├── transforms.py
+|   |       ├── utils.py
+|   |       └── wcsapi.py
+|   └── wcs
+|       ├── __init__.py
+|       ├── docstrings.py
+|       ├── include
+|       |   ├── astropy_wcs
+|       |   └── wcslib
+|       ├── setup_package.py
+|       ├── src
+|       |   ├── astropy_wcs.c
+|       |   ├── astropy_wcs_api.c
+|       |   ├── distortion.c
+|       |   ├── distortion_wrap.c
+|       |   ├── pipeline.c
+|       |   ├── pyutil.c
+|       |   ├── sip.c
+|       |   ├── sip_wrap.c
+|       |   ├── str_list_proxy.c
+|       |   ├── unit_list_proxy.c
+|       |   ├── util.c
+|       |   ├── wcslib_auxprm_wrap.c
+|       |   ├── wcslib_celprm_wrap.c
+|       |   ├── wcslib_prjprm_wrap.c
+|       |   ├── wcslib_tabprm_wrap.c
+|       |   ├── wcslib_wrap.c
+|       |   └── wcslib_wtbarr_wrap.c
+|       ├── tests
+|       |   ├── __init__.py
+|       |   ├── conftest.py
+|       |   ├── data
+|       |   |   ├── maps
+|       |   |   ├── spectra
+|       |   |   ├── validate.5.0.txt
+|       |   |   ├── validate.5.13.txt
+|       |   |   ├── validate.6.txt
+|       |   |   ├── validate.7.4.txt
+|       |   |   ├── validate.7.6.txt
+|       |   |   └── validate.txt
+|       |   ├── helper.py
+|       |   ├── test_auxprm.py
+|       |   ├── test_celprm.py
+|       |   ├── test_pickle.py
+|       |   ├── test_prjprm.py
+|       |   ├── test_profiling.py
+|       |   ├── test_tab.py
+|       |   ├── test_tabprm.py
+|       |   ├── test_utils.py
+|       |   ├── test_wcs.py
+|       |   ├── test_wcsprm.py
+|       |   └── test_wtbarr.py
+|       ├── utils.py
+|       ├── wcs.py
+|       ├── wcsapi
+|       |   ├── __init__.py
+|       |   ├── conftest.py
+|       |   ├── data
+|       |   |   └── ucds.txt
+|       |   ├── fitswcs.py
+|       |   ├── high_level_api.py
+|       |   ├── high_level_wcs_wrapper.py
+|       |   ├── low_level_api.py
+|       |   ├── sliced_low_level_wcs.py
+|       |   ├── tests
+|       |   |   ├── __init__.py
+|       |   |   ├── test_fitswcs.py
+|       |   |   ├── test_high_level_api.py
+|       |   |   ├── test_high_level_wcs_wrapper.py
+|       |   |   ├── test_low_level_api.py
+|       |   |   └── test_utils.py
+|       |   ├── utils.py
+|       |   └── wrappers
+|       |       ├── __init__.py
+|       |       ├── base.py
+|       |       ├── sliced_wcs.py
+|       |       └── tests
+|       └── wcslint.py
+├── cextern
+|   ├── README.rst
+|   ├── cfitsio
+|   |   ├── License.txt
+|   |   ├── README.rst
+|   |   ├── docs
+|   |   |   └── changes.txt
+|   |   └── lib
+|   |       ├── fits_hcompress.c
+|   |       ├── fits_hdecompress.c
+|   |       ├── pliocomp.c
+|   |       ├── quantize.c
+|   |       └── ricecomp.c
+|   ├── expat
+|   |   ├── README.md
+|   |   ├── README.txt
+|   |   └── lib
+|   |       ├── xmlparse.c
+|   |       ├── xmlrole.c
+|   |       ├── xmltok.c
+|   |       ├── xmltok_impl.c
+|   |       └── xmltok_ns.c
+|   ├── trim_cfitsio.sh
+|   ├── trim_expat.sh
+|   ├── trim_wcslib.sh
+|   └── wcslib
+|       ├── C
+|       |   ├── cel.c
+|       |   ├── dis.c
+|       |   ├── flexed
+|       |   |   ├── fitshdr.c
+|       |   |   ├── wcsbth.c
+|       |   |   ├── wcspih.c
+|       |   |   ├── wcsulex.c
+|       |   |   └── wcsutrn.c
+|       |   ├── getwcstab.c
+|       |   ├── lin.c
+|       |   ├── log.c
+|       |   ├── prj.c
+|       |   ├── spc.c
+|       |   ├── sph.c
+|       |   ├── spx.c
+|       |   ├── tab.c
+|       |   ├── wcs.c
+|       |   ├── wcserr.c
+|       |   ├── wcsfix.c
+|       |   ├── wcshdr.c
+|       |   ├── wcsprintf.c
+|       |   ├── wcstrig.c
+|       |   ├── wcsunits.c
+|       |   └── wcsutil.c
+|       └── config
+├── codecov.yml
+├── conftest.py
+├── docs
+|   ├── _pkgtemplate.rst
+|   ├── _static
+|   ├── _templates
+|   |   └── layout.html
+|   ├── changelog.rst
+|   ├── changes
+|   |   ├── 13985.other.rst
+|   |   ├── 14252.other.rst
+|   |   ├── 14311.other.rst
+|   |   ├── 14321.other.rst
+|   |   ├── 14349.other.rst
+|   |   ├── 14517.other.rst
+|   |   ├── README.rst
+|   |   ├── config
+|   |   ├── constants
+|   |   ├── convolution
+|   |   ├── coordinates
+|   |   |   ├── 13993.feature.rst
+|   |   |   ├── 14354.api.rst
+|   |   |   └── 14371.feature.rst
+|   |   ├── cosmology
+|   |   |   └── 12353.feature.rst
+|   |   ├── extern
+|   |   ├── io.ascii
+|   |   |   ├── 14182.feature.rst
+|   |   |   └── 14369.bugfix.rst
+|   |   ├── io.fits
+|   |   |   ├── 14252.bugfix.rst
+|   |   |   ├── 14252.feature.rst
+|   |   |   ├── 14353.feature.rst
+|   |   |   ├── 14408.feature.rst
+|   |   |   ├── 14410.api.rst
+|   |   |   ├── 14428.api.rst
+|   |   |   ├── 14428.feature.rst
+|   |   |   ├── 14508.bugfix.rst
+|   |   |   └── 14528.bugfix.rst
+|   |   ├── io.misc
+|   |   |   └── 14237.feature.rst
+|   |   ├── io.registry
+|   |   ├── io.votable
+|   |   |   └── 14212.feature.rst
+|   |   ├── modeling
+|   |   |   ├── 14037.feature.rst
+|   |   |   ├── 14038.api.rst
+|   |   |   └── 14519.api.rst
+|   |   ├── nddata
+|   |   |   └── 14175.feature.rst
+|   |   ├── samp
+|   |   ├── stats
+|   |   ├── table
+|   |   |   ├── 14187.feature.rst
+|   |   |   └── 14357.bugfix.rst
+|   |   ├── template.rst
+|   |   ├── tests
+|   |   ├── time
+|   |   ├── timeseries
+|   |   |   └── 14294.feature.rst
+|   |   ├── uncertainty
+|   |   ├── units
+|   |   |   ├── 13977.bugfix.rst
+|   |   |   ├── 14042.feature.rst
+|   |   |   ├── 14124.api.rst
+|   |   |   ├── 14135.feature.rst
+|   |   |   ├── 14163.bugfix.rst
+|   |   |   ├── 14253.api.rst
+|   |   |   ├── 14267.api.rst
+|   |   |   ├── 14369.bugfix.rst
+|   |   |   ├── 14407.feature.rst
+|   |   |   ├── 14413.bugfix.rst
+|   |   |   ├── 14417.api.rst
+|   |   |   ├── 14419.bugfix.rst
+|   |   |   ├── 14439.api.rst
+|   |   |   └── 14449.feature.rst
+|   |   ├── utils
+|   |   |   ├── 14341.feature.rst
+|   |   |   └── 14382.feature.rst
+|   |   ├── visualization
+|   |   |   ├── 14050.api.rst
+|   |   |   └── 14326.bugfix.rst
+|   |   └── wcs
+|   |       ├── 14295.bugfix.rst
+|   |       └── 14495.bugfix.rst
+|   ├── common_links.txt
+|   ├── conf.py
+|   ├── config
+|   |   ├── astropy_config.rst
+|   |   └── index.rst
+|   ├── conftest.py
+|   ├── constants
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── convolution
+|   |   ├── images
+|   |   ├── index.rst
+|   |   ├── kernels.rst
+|   |   ├── non_normalized_kernels.rst
+|   |   ├── performance.inc.rst
+|   |   └── using.rst
+|   ├── coordinates
+|   |   ├── angles.rst
+|   |   ├── apply_space_motion.rst
+|   |   ├── common_errors.rst
+|   |   ├── definitions.rst
+|   |   ├── formatting.rst
+|   |   ├── frames.rst
+|   |   ├── galactocentric.rst
+|   |   ├── index.rst
+|   |   ├── inplace.rst
+|   |   ├── matchsep.rst
+|   |   ├── performance.inc.rst
+|   |   ├── remote_methods.rst
+|   |   ├── representations.rst
+|   |   ├── satellites.rst
+|   |   ├── skycoord.rst
+|   |   ├── solarsystem.rst
+|   |   ├── spectralcoord.rst
+|   |   ├── transforming.rst
+|   |   └── velocities.rst
+|   ├── cosmology
+|   |   ├── dev.rst
+|   |   ├── index.rst
+|   |   ├── io.rst
+|   |   └── units.rst
+|   ├── credits.rst
+|   ├── development
+|   |   ├── astropy-package-template.rst
+|   |   ├── building.rst
+|   |   ├── ccython.rst
+|   |   ├── codeguide.rst
+|   |   ├── codeguide_emacs.rst
+|   |   ├── docguide.rst
+|   |   ├── releasing.rst
+|   |   ├── scripts.rst
+|   |   ├── style-guide.rst
+|   |   ├── testguide.rst
+|   |   ├── vision.rst
+|   |   ├── when_to_rebase.rst
+|   |   └── workflow
+|   |       ├── additional_git_topics.rst
+|   |       ├── development_workflow.rst
+|   |       ├── get_devel_version.rst
+|   |       ├── git_edit_workflow_examples.rst
+|   |       ├── git_resources.rst
+|   |       ├── maintainer_workflow.rst
+|   |       └── virtual_pythons.rst
+|   ├── getting_started.rst
+|   ├── glossary.rst
+|   ├── importing_astropy.rst
+|   ├── index.rst
+|   ├── install.rst
+|   ├── io
+|   |   ├── ascii
+|   |   |   ├── base_classes.rst
+|   |   |   ├── ecsv.rst
+|   |   |   ├── extension_classes.rst
+|   |   |   ├── fast_ascii_io.rst
+|   |   |   ├── fixed_width_gallery.rst
+|   |   |   ├── index.rst
+|   |   |   ├── performance.inc.rst
+|   |   |   ├── read.rst
+|   |   |   ├── references.txt
+|   |   |   ├── toc.txt
+|   |   |   └── write.rst
+|   |   ├── asdf-schemas.rst
+|   |   ├── fits
+|   |   |   ├── api
+|   |   |   |   ├── cards.rst
+|   |   |   |   ├── diff.rst
+|   |   |   |   ├── files.rst
+|   |   |   |   ├── hdulists.rst
+|   |   |   |   ├── hdus.rst
+|   |   |   |   ├── headers.rst
+|   |   |   |   ├── images.rst
+|   |   |   |   ├── tables.rst
+|   |   |   |   ├── tiled_compression.rst
+|   |   |   |   └── verification.rst
+|   |   |   ├── appendix
+|   |   |   |   ├── faq.rst
+|   |   |   |   ├── header_transition.rst
+|   |   |   |   └── history.rst
+|   |   |   ├── index.rst
+|   |   |   ├── performance.inc.rst
+|   |   |   └── usage
+|   |   |       ├── cloud.rst
+|   |   |       ├── headers.rst
+|   |   |       ├── image.rst
+|   |   |       ├── misc.rst
+|   |   |       ├── scripts.rst
+|   |   |       ├── table.rst
+|   |   |       ├── unfamiliar.rst
+|   |   |       └── verification.rst
+|   |   ├── misc.rst
+|   |   ├── registry.rst
+|   |   ├── unified.rst
+|   |   └── votable
+|   |       ├── api_exceptions.rst
+|   |       ├── index.rst
+|   |       ├── performance.inc.rst
+|   |       └── references.txt
+|   ├── known_issues.rst
+|   ├── license.rst
+|   ├── logging.rst
+|   ├── lts_policy.rst
+|   ├── modeling
+|   |   ├── add-units.rst
+|   |   ├── compound-models.rst
+|   |   ├── example-fitting-constraints.rst
+|   |   ├── example-fitting-line.rst
+|   |   ├── example-fitting-model-sets.rst
+|   |   ├── fitting.rst
+|   |   ├── index.rst
+|   |   ├── jointfitter.rst
+|   |   ├── models.rst
+|   |   ├── new-fitter.rst
+|   |   ├── new-model.rst
+|   |   ├── parameters.rst
+|   |   ├── performance.rst
+|   |   ├── physical_models.rst
+|   |   ├── polynomial_models.rst
+|   |   ├── powerlaw_models.rst
+|   |   ├── predef_models1D.rst
+|   |   ├── predef_models2D.rst
+|   |   ├── reference_api.rst
+|   |   ├── spline_models.rst
+|   |   └── units.rst
+|   ├── nddata
+|   |   ├── bitmask.rst
+|   |   ├── ccddata.rst
+|   |   ├── decorator.rst
+|   |   ├── examples
+|   |   |   └── cutout2d_tofits.py
+|   |   ├── index.rst
+|   |   ├── mixins
+|   |   |   ├── index.rst
+|   |   |   ├── ndarithmetic.rst
+|   |   |   ├── ndio.rst
+|   |   |   └── ndslicing.rst
+|   |   ├── nddata.rst
+|   |   ├── performance.inc.rst
+|   |   ├── subclassing.rst
+|   |   └── utils.rst
+|   ├── overview.rst
+|   ├── robots.txt
+|   ├── rtd_environment.yaml
+|   ├── samp
+|   |   ├── advanced_embed_samp_hub.rst
+|   |   ├── example_clients.rst
+|   |   ├── example_hub.rst
+|   |   ├── example_table_image.rst
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── stats
+|   |   ├── circ.rst
+|   |   ├── index.rst
+|   |   ├── performance.inc.rst
+|   |   ├── ripley.rst
+|   |   └── robust.rst
+|   ├── table
+|   |   ├── access_table.rst
+|   |   ├── construct_table.rst
+|   |   ├── implementation_details.rst
+|   |   ├── index.rst
+|   |   ├── indexing.rst
+|   |   ├── io.rst
+|   |   ├── masking.rst
+|   |   ├── mixin_columns.rst
+|   |   ├── modify_table.rst
+|   |   ├── operations.rst
+|   |   ├── pandas.rst
+|   |   └── performance.inc.rst
+|   ├── testhelpers.rst
+|   ├── time
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── timeseries
+|   |   ├── analysis.rst
+|   |   ├── bls.rst
+|   |   ├── data_access.rst
+|   |   ├── index.rst
+|   |   ├── initializing.rst
+|   |   ├── io.rst
+|   |   ├── lombscargle.rst
+|   |   ├── masking.rst
+|   |   ├── pandas.rst
+|   |   └── times.rst
+|   ├── uncertainty
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── units
+|   |   ├── combining_and_defining.rst
+|   |   ├── constants_versions.rst
+|   |   ├── conversion.rst
+|   |   ├── decomposing_and_composing.rst
+|   |   ├── equivalencies.rst
+|   |   ├── format.rst
+|   |   ├── index.rst
+|   |   ├── logarithmic_units.rst
+|   |   ├── performance.inc.rst
+|   |   ├── physical_types.rst
+|   |   ├── quantity.rst
+|   |   ├── standard_units.rst
+|   |   ├── structured_units.rst
+|   |   └── type_hints.rst
+|   ├── utils
+|   |   ├── data.rst
+|   |   ├── iers.rst
+|   |   ├── index.rst
+|   |   └── masked
+|   |       └── index.rst
+|   ├── visualization
+|   |   ├── histogram.rst
+|   |   ├── index.rst
+|   |   ├── matplotlib_integration.rst
+|   |   ├── normalization.rst
+|   |   ├── performance.inc.rst
+|   |   ├── rgb.rst
+|   |   └── wcsaxes
+|   |       ├── controlling_axes.rst
+|   |       ├── custom_frames.rst
+|   |       ├── generic_transforms.rst
+|   |       ├── images_contours.rst
+|   |       ├── index.rst
+|   |       ├── initializing_axes.rst
+|   |       ├── overlaying_coordinate_systems.rst
+|   |       ├── overlays.rst
+|   |       ├── slicing_datacubes.rst
+|   |       └── ticks_labels_grid.rst
+|   ├── warnings.rst
+|   ├── wcs
+|   |   ├── example_create_imaging.rst
+|   |   ├── example_cube_wcs.rst
+|   |   ├── examples
+|   |   |   ├── cube_wcs.py
+|   |   |   ├── from_file.py
+|   |   |   └── programmatic.py
+|   |   ├── history.rst
+|   |   ├── index.rst
+|   |   ├── legacy_interface.rst
+|   |   ├── loading_from_fits.rst
+|   |   ├── note_sip.rst
+|   |   ├── performance.inc.rst
+|   |   ├── reference_api.rst
+|   |   ├── references.rst
+|   |   ├── references.txt
+|   |   ├── relax.rst
+|   |   ├── supported_projections.rst
+|   |   ├── validation.rst
+|   |   ├── wcsapi.rst
+|   |   └── wcstools.rst
+|   └── whatsnew
+|       ├── 0.1.rst
+|       ├── 0.2.rst
+|       ├── 0.3.rst
+|       ├── 0.4.rst
+|       ├── 1.0.rst
+|       ├── 1.1.rst
+|       ├── 1.2.rst
+|       ├── 1.3.rst
+|       ├── 2.0.rst
+|       ├── 3.0.rst
+|       ├── 3.1.rst
+|       ├── 3.2.rst
+|       ├── 4.0.rst
+|       ├── 4.1.rst
+|       ├── 4.2.rst
+|       ├── 4.3.rst
+|       ├── 5.0.rst
+|       ├── 5.1.rst
+|       ├── 5.2.rst
+|       ├── 5.3.rst
+|       └── index.rst
+├── examples
+|   ├── README.rst
+|   ├── coordinates
+|   |   ├── README.txt
+|   |   ├── plot_galactocentric-frame.py
+|   |   ├── plot_obs-planning.py
+|   |   ├── plot_sgr-coordinate-frame.py
+|   |   └── rv-to-gsr.py
+|   ├── io
+|   |   ├── README.txt
+|   |   ├── create-mef.py
+|   |   ├── fits-tables.py
+|   |   ├── modify-fits-header.py
+|   |   ├── plot_fits-image.py
+|   |   ├── skip_create-large-fits.py
+|   |   └── split-jpeg-to-fits.py
+|   └── template
+|       └── example-template.py
+├── licenses
+|   ├── AURA_LICENSE.rst
+|   ├── CONFIGOBJ_LICENSE.rst
+|   ├── DATATABLES_LICENSE.rst
+|   ├── ERFA.rst
+|   ├── EXPAT_LICENSE.rst
+|   ├── JQUERY_LICENSE.rst
+|   ├── NUMPY_LICENSE.rst
+|   ├── PLY_LICENSE.rst
+|   ├── PYFITS.rst
+|   ├── PYTHON.rst
+|   ├── README.rst
+|   └── WCSLIB_LICENSE.rst
+└── setup.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: `io.fits.FITSDiff` may sometimes report differences between identical files
+
+Description: ### Description
+
+In some scenarios, `io.fits.FITSDiff` may report differences between identical files, even when comparing the same file to itself. This may be caused by improper handling of VLAs (variable-length arrays).
+
+### Expected behavior
+
+`io.fits.FITSDiff` only reports differences in files if they exist. Comparing a file to itself should never yield a difference.
+
+### How to Reproduce
+
+```python
+from astropy.io import fits
+col = fits.Column('a', format='QD', array=[[0], [0, 0]])
+hdu = fits.BinTableHDU.from_columns([col])
+hdu.writeto('diffbug.fits', overwrite=True)
+
+print(fits.FITSDiff('diffbug.fits', 'diffbug.fits').identical)
+fits.printdiff('diffbug.fits', 'diffbug.fits')
+
+```
+Prints out:
+```
+False
+ fitsdiff: 5.2.1
+ a: diffbug.fits
+ b: diffbug.fits
+ Maximum number of different data values to be reported: 10
+ Relative tolerance: 0.0, Absolute tolerance: 0.0
+Extension HDU 1:
+   Data contains differences:
+     Column a data differs in row 0:
+     1 different table data element(s) found (50.00% different).
+```
+
+I suspect the handling of VLAs is the culprit here as I couldn't reproduce the bug without using at least one VLA column.
+
+### Versions
+
+Windows-10-10.0.19044-SP0
+Python 3.10.10 (tags/v3.10.10:aad5f6a, Feb  7 2023, 17:20:36) [MSC v.1929 64 bit (AMD64)]
+astropy 5.2.1
+Numpy 1.24.2
+pyerfa 2.0.0.1
+Scipy 1.10.0
+Matplotlib 3.6.3
+
+Patch information:
+diff --git a/astropy/io/fits/diff.py b/astropy/io/fits/diff.py
+index 100cdf1b8c..d3608ef01d 100644
+--- a/astropy/io/fits/diff.py
++++ b/astropy/io/fits/diff.py
+@@ -1449,7 +1449,7 @@ class TableDataDiff(_BaseDiff):
+                 arrb.dtype, np.floating
+             ):
+                 diffs = where_not_allclose(arra, arrb, rtol=self.rtol, atol=self.atol)
+-            elif "P" in col.format:
++            elif "P" in col.format or "Q" in col.format:
+                 diffs = (
+                     [
+                         idx
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 17:07:58,224 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to find test cases related to a bug in `FITSDiff` when handling Variable-Length Arrays. The most relevant tests for `FITSDiff` are expected to be in `astropy/io/fits/tests/test_diff.py`. I need to examine this file to find tests that use VLAs and `FITSDiff`. The current context is empty, so I need the content of this test file.' query='Please provide the full content of the file `astropy/io/fits/tests/test_diff.py`.' extra_requirements='' purpose='I need to analyze the tests for `FITSDiff` to find existing test cases that are relevant to the bug involving Variable-Length Arrays.'
+2025-12-21 17:07:58,224 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the file `astropy/io/fits/tests/test_diff.py`.
+2025-12-21 17:07:58,225 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 17:07:58,225 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 17:07:58,226 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 17:07:58,226 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the file `astropy/io/fits/tests/test_diff.py`.
+Purpose: I need to analyze the tests for `FITSDiff` to find existing test cases that are relevant to the bug involving Variable-Length Arrays.
+2025-12-21 17:08:01,407 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have read the file `astropy/io/fits/tests/test_diff.py` to provide you with its full content. You can now analyze the tests for `FITSDiff` to find existing test cases that are relevant to the bug involving Variable-Length Arrays.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "astropy/io/fits/tests/test_diff.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2124, 'candidates_token_count': 86, 'total_token_count': 2399, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2124}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 86}], 'thoughts_token_count': 189, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.1663229077361351, 'model_name': 'gemini-2.5-pro'} id='run--36342e24-23b7-48a0-9902-a68cccc17d64-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'astropy/io/fits/tests/test_diff.py'}, 'id': '4a53caa9-2bc6-44a2-95b9-927d52e51766', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2124, 'output_tokens': 86, 'total_tokens': 2399, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 189}}
+2025-12-21 17:08:04,291 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have provided the full content of `astropy/io/fits/tests/test_diff.py` by reading it in two parts. You can now examine the complete test suite for `FITSDiff` to locate test cases related to the Variable-Length Array bug. I will wait for your further instructions.' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"relative_path": "astropy/io/fits/tests/test_diff.py", "end_line": 1001.0, "start_line": 501.0}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 10910, 'candidates_token_count': 99, 'total_token_count': 11103, 'cached_content_token_count': 1853, 'prompt_tokens_details': [{'modality': 1, 'token_count': 10910}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1853}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 99}], 'thoughts_token_count': 94}, 'finish_reason': 'STOP', 'avg_logprobs': -0.19777276780870226, 'model_name': 'gemini-2.5-pro'} id='run--8317128b-2329-4a19-bd04-72b1f1fa562f-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'relative_path': 'astropy/io/fits/tests/test_diff.py', 'end_line': 1001.0, 'start_line': 501.0}, 'id': 'aac78abd-e694-4f55-806a-46e08232c513', 'type': 'tool_call'}] usage_metadata={'input_tokens': 10910, 'output_tokens': 99, 'total_tokens': 11103, 'input_token_details': {'cache_read': 1853}, 'output_token_details': {'reasoning': 94}}
+2025-12-21 17:08:08,488 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have now provided the entire content of the file `astropy/io/fits/tests/test_diff.py`. You can proceed with your analysis of the `FITSDiff` tests to identify any test cases relevant to the Variable-Length Array bug.' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"relative_path": "astropy/io/fits/tests/test_diff.py", "end_line": 1501.0, "start_line": 1002.0}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 18764, 'candidates_token_count': 88, 'total_token_count': 19099, 'cached_content_token_count': 9526, 'prompt_tokens_details': [{'modality': 1, 'token_count': 18764}], 'cache_tokens_details': [{'modality': 1, 'token_count': 9526}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 88}], 'thoughts_token_count': 247}, 'finish_reason': 'STOP', 'avg_logprobs': -0.3628276694904674, 'model_name': 'gemini-2.5-pro'} id='run--f9e5c151-4aee-48e2-bd2c-9ee9672fa5e5-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'relative_path': 'astropy/io/fits/tests/test_diff.py', 'end_line': 1501.0, 'start_line': 1002.0}, 'id': 'acae9990-9c4c-47e8-ad86-ff6b0b370c38', 'type': 'tool_call'}] usage_metadata={'input_tokens': 18764, 'output_tokens': 88, 'total_tokens': 19099, 'input_token_details': {'cache_read': 9526}, 'output_token_details': {'reasoning': 247}}
+2025-12-21 17:08:09,351 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={} response_metadata={'usage_metadata': {'prompt_token_count': 18945, 'total_token_count': 18945, 'cached_content_token_count': 17112, 'prompt_tokens_details': [{'modality': 1, 'token_count': 18945}], 'cache_tokens_details': [{'modality': 1, 'token_count': 17112}], 'candidates_token_count': 0, 'thoughts_token_count': 0, 'candidates_tokens_details': []}, 'model_name': 'gemini-2.5-pro'} id='run--dee1b36d-cb1a-44e9-bcef-7ebc4ef4efdb-0' usage_metadata={'input_tokens': 18945, 'output_tokens': 0, 'total_tokens': 18945, 'input_token_details': {'cache_read': 17112}}
+2025-12-21 17:08:09,353 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the file `astropy/io/fits/tests/test_diff.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to analyze the tests for `FITSDiff` to find existing test cases that are relevant to the bug involving Variable-Length Arrays.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: astropy/io/fits/tests/test_diff.py
+Line number range: 1 - 500
+Content:
+1. # Licensed under a 3-clause BSD style license - see LICENSE.rst
+2. import numpy as np
+3. import pytest
+4. 
+5. from astropy.io import fits
+6. from astropy.io.fits.column import Column
+7. from astropy.io.fits.diff import (
+8.     FITSDiff,
+9.     HDUDiff,
+10.     HeaderDiff,
+11.     ImageDataDiff,
+12.     TableDataDiff,
+13. )
+14. from astropy.io.fits.hdu import HDUList, ImageHDU, PrimaryHDU
+15. from astropy.io.fits.hdu.base import NonstandardExtHDU
+16. from astropy.io.fits.hdu.table import BinTableHDU
+17. from astropy.io.fits.header import Header
+18. from astropy.utils.misc import _NOT_OVERWRITING_MSG_MATCH
+19. 
+20. from .conftest import FitsTestCase
+21. 
+22. 
+23. class DummyNonstandardExtHDU(NonstandardExtHDU):
+24.     def __init__(self, data=None, *args, **kwargs):
+25.         super().__init__(self, *args, **kwargs)
+26.         self._buffer = np.asarray(data).tobytes()
+27.         self._data_offset = 0
+28. 
+29.     @property
+30.     def size(self):
+31.         return len(self._buffer)
+32. 
+33. 
+34. class TestDiff(FitsTestCase):
+35.     def test_identical_headers(self):
+36.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+37.         hb = ha.copy()
+38.         assert HeaderDiff(ha, hb).identical
+39.         assert HeaderDiff(ha.tostring(), hb.tostring()).identical
+40. 
+41.         with pytest.raises(TypeError):
+42.             HeaderDiff(1, 2)
+43. 
+44.     def test_slightly_different_headers(self):
+45.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+46.         hb = ha.copy()
+47.         hb["C"] = 4
+48.         assert not HeaderDiff(ha, hb).identical
+49. 
+50.     def test_common_keywords(self):
+51.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+52.         hb = ha.copy()
+53.         hb["C"] = 4
+54.         hb["D"] = (5, "Comment")
+55.         assert HeaderDiff(ha, hb).common_keywords == ["A", "B", "C"]
+56. 
+57.     def test_different_keyword_count(self):
+58.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+59.         hb = ha.copy()
+60.         del hb["B"]
+61.         diff = HeaderDiff(ha, hb)
+62.         assert not diff.identical
+63.         assert diff.diff_keyword_count == (3, 2)
+64. 
+65.         # But make sure the common keywords are at least correct
+66.         assert diff.common_keywords == ["A", "C"]
+67. 
+68.     def test_different_keywords(self):
+69.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+70.         hb = ha.copy()
+71.         hb["C"] = 4
+72.         hb["D"] = (5, "Comment")
+73.         ha["E"] = (6, "Comment")
+74.         ha["F"] = (7, "Comment")
+75.         diff = HeaderDiff(ha, hb)
+76.         assert not diff.identical
+77.         assert diff.diff_keywords == (["E", "F"], ["D"])
+78. 
+79.     def test_different_keyword_values(self):
+80.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+81.         hb = ha.copy()
+82.         hb["C"] = 4
+83.         diff = HeaderDiff(ha, hb)
+84.         assert not diff.identical
+85.         assert diff.diff_keyword_values == {"C": [(3, 4)]}
+86. 
+87.     def test_different_keyword_comments(self):
+88.         ha = Header([("A", 1), ("B", 2), ("C", 3, "comment 1")])
+89.         hb = ha.copy()
+90.         hb.comments["C"] = "comment 2"
+91.         diff = HeaderDiff(ha, hb)
+92.         assert not diff.identical
+93.         assert diff.diff_keyword_comments == {"C": [("comment 1", "comment 2")]}
+94. 
+95.     def test_different_keyword_values_with_duplicate(self):
+96.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+97.         hb = ha.copy()
+98.         ha.append(("C", 4))
+99.         hb.append(("C", 5))
+100.         diff = HeaderDiff(ha, hb)
+101.         assert not diff.identical
+102.         assert diff.diff_keyword_values == {"C": [None, (4, 5)]}
+103. 
+104.     def test_asymmetric_duplicate_keywords(self):
+105.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+106.         hb = ha.copy()
+107.         ha.append(("A", 2, "comment 1"))
+108.         ha.append(("A", 3, "comment 2"))
+109.         hb.append(("B", 4, "comment 3"))
+110.         hb.append(("C", 5, "comment 4"))
+111.         diff = HeaderDiff(ha, hb)
+112.         assert not diff.identical
+113.         assert diff.diff_keyword_values == {}
+114.         assert diff.diff_duplicate_keywords == {"A": (3, 1), "B": (1, 2), "C": (1, 2)}
+115. 
+116.         report = diff.report()
+117.         assert (
+118.             "Inconsistent duplicates of keyword 'A'     :\n"
+119.             "  Occurs 3 time(s) in a, 1 times in (b)" in report
+120.         )
+121. 
+122.     def test_floating_point_rtol(self):
+123.         ha = Header([("A", 1), ("B", 2.00001), ("C", 3.000001)])
+124.         hb = ha.copy()
+125.         hb["B"] = 2.00002
+126.         hb["C"] = 3.000002
+127.         diff = HeaderDiff(ha, hb)
+128.         assert not diff.identical
+129.         assert diff.diff_keyword_values == {
+130.             "B": [(2.00001, 2.00002)],
+131.             "C": [(3.000001, 3.000002)],
+132.         }
+133.         diff = HeaderDiff(ha, hb, rtol=1e-6)
+134.         assert not diff.identical
+135.         assert diff.diff_keyword_values == {"B": [(2.00001, 2.00002)]}
+136.         diff = HeaderDiff(ha, hb, rtol=1e-5)
+137.         assert diff.identical
+138. 
+139.     def test_floating_point_atol(self):
+140.         ha = Header([("A", 1), ("B", 1.0), ("C", 0.0)])
+141.         hb = ha.copy()
+142.         hb["B"] = 1.00001
+143.         hb["C"] = 0.000001
+144.         diff = HeaderDiff(ha, hb, rtol=1e-6)
+145.         assert not diff.identical
+146.         assert diff.diff_keyword_values == {
+147.             "B": [(1.0, 1.00001)],
+148.             "C": [(0.0, 0.000001)],
+149.         }
+150.         diff = HeaderDiff(ha, hb, rtol=1e-5)
+151.         assert not diff.identical
+152.         assert diff.diff_keyword_values == {"C": [(0.0, 0.000001)]}
+153.         diff = HeaderDiff(ha, hb, atol=1e-6)
+154.         assert not diff.identical
+155.         assert diff.diff_keyword_values == {"B": [(1.0, 1.00001)]}
+156.         diff = HeaderDiff(ha, hb, atol=1e-5)  # strict inequality
+157.         assert not diff.identical
+158.         assert diff.diff_keyword_values == {"B": [(1.0, 1.00001)]}
+159.         diff = HeaderDiff(ha, hb, rtol=1e-5, atol=1e-5)
+160.         assert diff.identical
+161.         diff = HeaderDiff(ha, hb, atol=1.1e-5)
+162.         assert diff.identical
+163.         diff = HeaderDiff(ha, hb, rtol=1e-6, atol=1e-6)
+164.         assert not diff.identical
+165. 
+166.     def test_ignore_blanks(self):
+167.         with fits.conf.set_temp("strip_header_whitespace", False):
+168.             ha = Header([("A", 1), ("B", 2), ("C", "A       ")])
+169.             hb = ha.copy()
+170.             hb["C"] = "A"
+171.             assert ha["C"] != hb["C"]
+172. 
+173.             diff = HeaderDiff(ha, hb)
+174.             # Trailing blanks are ignored by default
+175.             assert diff.identical
+176.             assert diff.diff_keyword_values == {}
+177. 
+178.             # Don't ignore blanks
+179.             diff = HeaderDiff(ha, hb, ignore_blanks=False)
+180.             assert not diff.identical
+181.             assert diff.diff_keyword_values == {"C": [("A       ", "A")]}
+182. 
+183.     @pytest.mark.parametrize("differ", [HeaderDiff, HDUDiff, FITSDiff])
+184.     def test_ignore_blank_cards(self, differ):
+185.         """Test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/152
+186. 
+187.         Ignore blank cards.
+188.         """
+189. 
+190.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+191.         hb = Header([("A", 1), ("", ""), ("B", 2), ("", ""), ("C", 3)])
+192.         hc = ha.copy()
+193.         if differ is HeaderDiff:
+194.             hc.append()
+195.             hc.append()
+196.         else:  # Ensure blanks are not at the end as they are stripped by HDUs
+197.             hc.add_blank(after=-2)
+198.             hc.add_blank(after=-2)
+199. 
+200.         if differ in (HDUDiff, FITSDiff):  # wrap it in a PrimaryHDU
+201.             ha, hb, hc = (PrimaryHDU(np.arange(10), h) for h in (ha, hb, hc))
+202.             hc_header = hc.header
+203.         if differ is FITSDiff:  # wrap it in a HDUList
+204.             ha, hb, hc = (HDUList([h]) for h in (ha, hb, hc))
+205.             hc_header = hc[0].header
+206. 
+207.         # We now have a header with interleaved blanks, and a header with end
+208.         # blanks, both of which should ignore the blanks
+209.         assert differ(ha, hb).identical
+210.         assert differ(ha, hc).identical
+211.         assert differ(hb, hc).identical
+212. 
+213.         assert not differ(ha, hb, ignore_blank_cards=False).identical
+214.         assert not differ(ha, hc, ignore_blank_cards=False).identical
+215. 
+216.         # Both hb and hc have the same number of blank cards; since order is
+217.         # currently ignored, these should still be identical even if blank
+218.         # cards are not ignored
+219.         assert differ(hb, hc, ignore_blank_cards=False).identical
+220. 
+221.         if differ is HeaderDiff:
+222.             hc.append()
+223.         else:  # Ensure blanks are not at the end as they are stripped by HDUs
+224.             hc_header.add_blank(after=-2)
+225.         # But now there are different numbers of blanks, so they should not be
+226.         # ignored:
+227.         assert not differ(hb, hc, ignore_blank_cards=False).identical
+228. 
+229.     def test_ignore_hdus(self):
+230.         a = np.arange(100).reshape(10, 10)
+231.         b = a.copy()
+232.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+233.         xa = np.array([(1.0, 1), (3.0, 4)], dtype=[("x", float), ("y", int)])
+234.         xb = np.array([(1.0, 2), (3.0, 5)], dtype=[("x", float), ("y", int)])
+235.         phdu = PrimaryHDU(header=ha)
+236.         ihdua = ImageHDU(data=a, name="SCI")
+237.         ihdub = ImageHDU(data=b, name="SCI")
+238.         bhdu1 = BinTableHDU(data=xa, name="ASDF")
+239.         bhdu2 = BinTableHDU(data=xb, name="ASDF")
+240.         hdula = HDUList([phdu, ihdua, bhdu1])
+241.         hdulb = HDUList([phdu, ihdub, bhdu2])
+242. 
+243.         # ASDF extension should be different
+244.         diff = FITSDiff(hdula, hdulb)
+245.         assert not diff.identical
+246.         assert diff.diff_hdus[0][0] == 2
+247. 
+248.         # ASDF extension should be ignored
+249.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["ASDF"])
+250.         assert diff.identical, diff.report()
+251. 
+252.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["ASD*"])
+253.         assert diff.identical, diff.report()
+254. 
+255.         # SCI extension should be different
+256.         hdulb["SCI"].data += 1
+257.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["ASDF"])
+258.         assert not diff.identical
+259. 
+260.         # SCI and ASDF extensions should be ignored
+261.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["SCI", "ASDF"])
+262.         assert diff.identical, diff.report()
+263. 
+264.         # All EXTVER of SCI should be ignored
+265.         ihduc = ImageHDU(data=a, name="SCI", ver=2)
+266.         hdulb.append(ihduc)
+267.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["SCI", "ASDF"])
+268.         assert not any(diff.diff_hdus), diff.report()
+269.         assert any(diff.diff_hdu_count), diff.report()
+270. 
+271.     def test_ignore_keyword_values(self):
+272.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+273.         hb = ha.copy()
+274.         hb["B"] = 4
+275.         hb["C"] = 5
+276.         diff = HeaderDiff(ha, hb, ignore_keywords=["*"])
+277.         assert diff.identical
+278.         diff = HeaderDiff(ha, hb, ignore_keywords=["B"])
+279.         assert not diff.identical
+280.         assert diff.diff_keyword_values == {"C": [(3, 5)]}
+281. 
+282.         report = diff.report()
+283.         assert "Keyword B        has different values" not in report
+284.         assert "Keyword C        has different values" in report
+285. 
+286.         # Test case-insensitivity
+287.         diff = HeaderDiff(ha, hb, ignore_keywords=["b"])
+288.         assert not diff.identical
+289.         assert diff.diff_keyword_values == {"C": [(3, 5)]}
+290. 
+291.     def test_ignore_keyword_comments(self):
+292.         ha = Header([("A", 1, "A"), ("B", 2, "B"), ("C", 3, "C")])
+293.         hb = ha.copy()
+294.         hb.comments["B"] = "D"
+295.         hb.comments["C"] = "E"
+296.         diff = HeaderDiff(ha, hb, ignore_comments=["*"])
+297.         assert diff.identical
+298.         diff = HeaderDiff(ha, hb, ignore_comments=["B"])
+299.         assert not diff.identical
+300.         assert diff.diff_keyword_comments == {"C": [("C", "E")]}
+301. 
+302.         report = diff.report()
+303.         assert "Keyword B        has different comments" not in report
+304.         assert "Keyword C        has different comments" in report
+305. 
+306.         # Test case-insensitivity
+307.         diff = HeaderDiff(ha, hb, ignore_comments=["b"])
+308.         assert not diff.identical
+309.         assert diff.diff_keyword_comments == {"C": [("C", "E")]}
+310. 
+311.     def test_trivial_identical_images(self):
+312.         ia = np.arange(100).reshape(10, 10)
+313.         ib = np.arange(100).reshape(10, 10)
+314.         diff = ImageDataDiff(ia, ib)
+315.         assert diff.identical
+316.         assert diff.diff_total == 0
+317. 
+318.     def test_identical_within_relative_tolerance(self):
+319.         ia = np.ones((10, 10)) - 0.00001
+320.         ib = np.ones((10, 10)) - 0.00002
+321.         diff = ImageDataDiff(ia, ib, rtol=1.0e-4)
+322.         assert diff.identical
+323.         assert diff.diff_total == 0
+324. 
+325.     def test_identical_within_absolute_tolerance(self):
+326.         ia = np.zeros((10, 10)) - 0.00001
+327.         ib = np.zeros((10, 10)) - 0.00002
+328.         diff = ImageDataDiff(ia, ib, rtol=1.0e-4)
+329.         assert not diff.identical
+330.         assert diff.diff_total == 100
+331.         diff = ImageDataDiff(ia, ib, atol=1.0e-4)
+332.         assert diff.identical
+333.         assert diff.diff_total == 0
+334. 
+335.     def test_identical_within_rtol_and_atol(self):
+336.         ia = np.zeros((10, 10)) - 0.00001
+337.         ib = np.zeros((10, 10)) - 0.00002
+338.         diff = ImageDataDiff(ia, ib, rtol=1.0e-5, atol=1.0e-5)
+339.         assert diff.identical
+340.         assert diff.diff_total == 0
+341. 
+342.     def test_not_identical_within_rtol_and_atol(self):
+343.         ia = np.zeros((10, 10)) - 0.00001
+344.         ib = np.zeros((10, 10)) - 0.00002
+345.         diff = ImageDataDiff(ia, ib, rtol=1.0e-5, atol=1.0e-6)
+346.         assert not diff.identical
+347.         assert diff.diff_total == 100
+348. 
+349.     def test_identical_comp_image_hdus(self):
+350.         """Regression test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/189
+351. 
+352.         For this test we mostly just care that comparing to compressed images
+353.         does not crash, and returns the correct results.  Two compressed images
+354.         will be considered identical if the decompressed data is the same.
+355.         Obviously we test whether or not the same compression was used by
+356.         looking for (or ignoring) header differences.
+357.         """
+358. 
+359.         data = np.arange(100.0).reshape(10, 10)
+360.         hdu = fits.CompImageHDU(data=data)
+361.         hdu.writeto(self.temp("test.fits"))
+362. 
+363.         with fits.open(self.temp("test.fits")) as hdula, fits.open(
+364.             self.temp("test.fits")
+365.         ) as hdulb:
+366.             diff = FITSDiff(hdula, hdulb)
+367.             assert diff.identical
+368. 
+369.     def test_different_dimensions(self):
+370.         ia = np.arange(100).reshape(10, 10)
+371.         ib = np.arange(100) - 1
+372. 
+373.         # Although ib could be reshaped into the same dimensions, for now the
+374.         # data is not compared anyways
+375.         diff = ImageDataDiff(ia, ib)
+376.         assert not diff.identical
+377.         assert diff.diff_dimensions == ((10, 10), (100,))
+378.         assert diff.diff_total == 0
+379. 
+380.         report = diff.report()
+381.         assert "Data dimensions differ" in report
+382.         assert "a: 10 x 10" in report
+383.         assert "b: 100" in report
+384.         assert "No further data comparison performed."
+385. 
+386.     def test_different_pixels(self):
+387.         ia = np.arange(100).reshape(10, 10)
+388.         ib = np.arange(100).reshape(10, 10)
+389.         ib[0, 0] = 10
+390.         ib[5, 5] = 20
+391.         diff = ImageDataDiff(ia, ib)
+392.         assert not diff.identical
+393.         assert diff.diff_dimensions == ()
+394.         assert diff.diff_total == 2
+395.         assert diff.diff_ratio == 0.02
+396.         assert diff.diff_pixels == [((0, 0), (0, 10)), ((5, 5), (55, 20))]
+397. 
+398.     def test_identical_tables(self):
+399.         c1 = Column("A", format="L", array=[True, False])
+400.         c2 = Column("B", format="X", array=[[0], [1]])
+401.         c3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [4, 5, 6, 7]])
+402.         c4 = Column("D", format="J", bscale=2.0, array=[0, 1])
+403.         c5 = Column("E", format="A3", array=["abc", "def"])
+404.         c6 = Column("F", format="E", unit="m", array=[0.0, 1.0])
+405.         c7 = Column("G", format="D", bzero=-0.1, array=[0.0, 1.0])
+406.         c8 = Column("H", format="C", array=[0.0 + 1.0j, 2.0 + 3.0j])
+407.         c9 = Column("I", format="M", array=[4.0 + 5.0j, 6.0 + 7.0j])
+408.         c10 = Column("J", format="PI(2)", array=[[0, 1], [2, 3]])
+409. 
+410.         columns = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10]
+411. 
+412.         ta = BinTableHDU.from_columns(columns)
+413.         tb = BinTableHDU.from_columns([c.copy() for c in columns])
+414. 
+415.         diff = TableDataDiff(ta.data, tb.data)
+416.         assert diff.identical
+417.         assert len(diff.common_columns) == 10
+418.         assert diff.common_column_names == set("abcdefghij")
+419.         assert diff.diff_ratio == 0
+420.         assert diff.diff_total == 0
+421. 
+422.     def test_diff_empty_tables(self):
+423.         """
+424.         Regression test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/178
+425. 
+426.         Ensure that diffing tables containing empty data doesn't crash.
+427.         """
+428. 
+429.         c1 = Column("D", format="J")
+430.         c2 = Column("E", format="J")
+431.         thdu = BinTableHDU.from_columns([c1, c2], nrows=0)
+432. 
+433.         hdula = fits.HDUList([thdu])
+434.         hdulb = fits.HDUList([thdu])
+435. 
+436.         diff = FITSDiff(hdula, hdulb)
+437.         assert diff.identical
+438. 
+439.     def test_ignore_table_fields(self):
+440.         c1 = Column("A", format="L", array=[True, False])
+441.         c2 = Column("B", format="X", array=[[0], [1]])
+442.         c3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [4, 5, 6, 7]])
+443. 
+444.         c4 = Column("B", format="X", array=[[1], [0]])
+445.         c5 = Column("C", format="4I", dim="(2, 2)", array=[[1, 2, 3, 4], [5, 6, 7, 8]])
+446. 
+447.         ta = BinTableHDU.from_columns([c1, c2, c3])
+448.         tb = BinTableHDU.from_columns([c1, c4, c5])
+449. 
+450.         diff = TableDataDiff(ta.data, tb.data, ignore_fields=["B", "C"])
+451.         assert diff.identical
+452. 
+453.         # The only common column should be c1
+454.         assert len(diff.common_columns) == 1
+455.         assert diff.common_column_names == {"a"}
+456.         assert diff.diff_ratio == 0
+457.         assert diff.diff_total == 0
+458. 
+459.     def test_different_table_field_names(self):
+460.         ca = Column("A", format="L", array=[True, False])
+461.         cb = Column("B", format="L", array=[True, False])
+462.         cc = Column("C", format="L", array=[True, False])
+463. 
+464.         ta = BinTableHDU.from_columns([ca, cb])
+465.         tb = BinTableHDU.from_columns([ca, cc])
+466. 
+467.         diff = TableDataDiff(ta.data, tb.data)
+468. 
+469.         assert not diff.identical
+470.         assert len(diff.common_columns) == 1
+471.         assert diff.common_column_names == {"a"}
+472.         assert diff.diff_column_names == (["B"], ["C"])
+473.         assert diff.diff_ratio == 0
+474.         assert diff.diff_total == 0
+475. 
+476.         report = diff.report()
+477.         assert "Extra column B of format L in a" in report
+478.         assert "Extra column C of format L in b" in report
+479. 
+480.     def test_different_table_field_counts(self):
+481.         """
+482.         Test tables with some common columns, but different number of columns
+483.         overall.
+484.         """
+485. 
+486.         ca = Column("A", format="L", array=[True, False])
+487.         cb = Column("B", format="L", array=[True, False])
+488.         cc = Column("C", format="L", array=[True, False])
+489. 
+490.         ta = BinTableHDU.from_columns([cb])
+491.         tb = BinTableHDU.from_columns([ca, cb, cc])
+492. 
+493.         diff = TableDataDiff(ta.data, tb.data)
+494. 
+495.         assert not diff.identical
+496.         assert diff.diff_column_count == (1, 3)
+497.         assert len(diff.common_columns) == 1
+498.         assert diff.common_column_names == {"b"}
+499.         assert diff.diff_column_names == ([], ["A", "C"])
+500.         assert diff.diff_ratio == 0
+
+
+File: astropy/io/fits/tests/test_diff.py
+Line number range: 501 - 1001
+Content:
+501.         assert diff.diff_total == 0
+502. 
+503.         report = diff.report()
+504.         assert " Tables have different number of columns:" in report
+505.         assert "  a: 1\n  b: 3" in report
+506. 
+507.     def test_different_table_rows(self):
+508.         """
+509.         Test tables that are otherwise identical but one has more rows than the
+510.         other.
+511.         """
+512. 
+513.         ca1 = Column("A", format="L", array=[True, False])
+514.         cb1 = Column("B", format="L", array=[True, False])
+515.         ca2 = Column("A", format="L", array=[True, False, True])
+516.         cb2 = Column("B", format="L", array=[True, False, True])
+517. 
+518.         ta = BinTableHDU.from_columns([ca1, cb1])
+519.         tb = BinTableHDU.from_columns([ca2, cb2])
+520. 
+521.         diff = TableDataDiff(ta.data, tb.data)
+522. 
+523.         assert not diff.identical
+524.         assert diff.diff_column_count == ()
+525.         assert len(diff.common_columns) == 2
+526.         assert diff.diff_rows == (2, 3)
+527.         assert diff.diff_values == []
+528. 
+529.         report = diff.report()
+530. 
+531.         assert "Table rows differ" in report
+532.         assert "a: 2" in report
+533.         assert "b: 3" in report
+534.         assert "No further data comparison performed."
+535. 
+536.     def test_different_table_data(self):
+537.         """
+538.         Test diffing table data on columns of several different data formats
+539.         and dimensions.
+540.         """
+541. 
+542.         ca1 = Column("A", format="L", array=[True, False])
+543.         ca2 = Column("B", format="X", array=[[0], [1]])
+544.         ca3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [4, 5, 6, 7]])
+545.         ca4 = Column("D", format="J", bscale=2.0, array=[0.0, 2.0])
+546.         ca5 = Column("E", format="A3", array=["abc", "def"])
+547.         ca6 = Column("F", format="E", unit="m", array=[0.0, 1.0])
+548.         ca7 = Column("G", format="D", bzero=-0.1, array=[0.0, 1.0])
+549.         ca8 = Column("H", format="C", array=[0.0 + 1.0j, 2.0 + 3.0j])
+550.         ca9 = Column("I", format="M", array=[4.0 + 5.0j, 6.0 + 7.0j])
+551.         ca10 = Column("J", format="PI(2)", array=[[0, 1], [2, 3]])
+552. 
+553.         cb1 = Column("A", format="L", array=[False, False])
+554.         cb2 = Column("B", format="X", array=[[0], [0]])
+555.         cb3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [5, 6, 7, 8]])
+556.         cb4 = Column("D", format="J", bscale=2.0, array=[2.0, 2.0])
+557.         cb5 = Column("E", format="A3", array=["abc", "ghi"])
+558.         cb6 = Column("F", format="E", unit="m", array=[1.0, 2.0])
+559.         cb7 = Column("G", format="D", bzero=-0.1, array=[2.0, 3.0])
+560.         cb8 = Column("H", format="C", array=[1.0 + 1.0j, 2.0 + 3.0j])
+561.         cb9 = Column("I", format="M", array=[5.0 + 5.0j, 6.0 + 7.0j])
+562.         cb10 = Column("J", format="PI(2)", array=[[1, 2], [3, 4]])
+563. 
+564.         ta = BinTableHDU.from_columns(
+565.             [ca1, ca2, ca3, ca4, ca5, ca6, ca7, ca8, ca9, ca10]
+566.         )
+567.         tb = BinTableHDU.from_columns(
+568.             [cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8, cb9, cb10]
+569.         )
+570. 
+571.         diff = TableDataDiff(ta.data, tb.data, numdiffs=20)
+572.         assert not diff.identical
+573.         # The column definitions are the same, but not the column values
+574.         assert diff.diff_columns == ()
+575.         assert diff.diff_values[0] == (("A", 0), (True, False))
+576.         assert diff.diff_values[1] == (("B", 1), ([1], [0]))
+577.         assert diff.diff_values[2][0] == ("C", 1)
+578.         assert (diff.diff_values[2][1][0] == [[4, 5], [6, 7]]).all()
+579.         assert (diff.diff_values[2][1][1] == [[5, 6], [7, 8]]).all()
+580.         assert diff.diff_values[3] == (("D", 0), (0, 2.0))
+581.         assert diff.diff_values[4] == (("E", 1), ("def", "ghi"))
+582.         assert diff.diff_values[5] == (("F", 0), (0.0, 1.0))
+583.         assert diff.diff_values[6] == (("F", 1), (1.0, 2.0))
+584.         assert diff.diff_values[7] == (("G", 0), (0.0, 2.0))
+585.         assert diff.diff_values[8] == (("G", 1), (1.0, 3.0))
+586.         assert diff.diff_values[9] == (("H", 0), (0.0 + 1.0j, 1.0 + 1.0j))
+587.         assert diff.diff_values[10] == (("I", 0), (4.0 + 5.0j, 5.0 + 5.0j))
+588.         assert diff.diff_values[11][0] == ("J", 0)
+589.         assert (diff.diff_values[11][1][0] == [0, 1]).all()
+590.         assert (diff.diff_values[11][1][1] == [1, 2]).all()
+591.         assert diff.diff_values[12][0] == ("J", 1)
+592.         assert (diff.diff_values[12][1][0] == [2, 3]).all()
+593.         assert (diff.diff_values[12][1][1] == [3, 4]).all()
+594. 
+595.         assert diff.diff_total == 13
+596.         assert diff.diff_ratio == 0.65
+597. 
+598.         report = diff.report()
+599.         assert "Column A data differs in row 0:\n    a> True\n    b> False" in report
+600.         assert "...and at 1 more indices.\n Column D data differs in row 0:" in report
+601.         assert "13 different table data element(s) found (65.00% different)" in report
+602.         assert report.count("more indices") == 1
+603. 
+604.     def test_identical_files_basic(self):
+605.         """Test identicality of two simple, extensionless files."""
+606. 
+607.         a = np.arange(100).reshape(10, 10)
+608.         hdu = PrimaryHDU(data=a)
+609.         hdu.writeto(self.temp("testa.fits"))
+610.         hdu.writeto(self.temp("testb.fits"))
+611.         diff = FITSDiff(self.temp("testa.fits"), self.temp("testb.fits"))
+612.         assert diff.identical
+613. 
+614.         report = diff.report()
+615.         # Primary HDUs should contain no differences
+616.         assert "Primary HDU" not in report
+617.         assert "Extension HDU" not in report
+618.         assert "No differences found." in report
+619. 
+620.         a = np.arange(10)
+621.         ehdu = ImageHDU(data=a)
+622.         diff = HDUDiff(ehdu, ehdu)
+623.         assert diff.identical
+624.         report = diff.report()
+625.         assert "No differences found." in report
+626. 
+627.     def test_partially_identical_files1(self):
+628.         """
+629.         Test files that have some identical HDUs but a different extension
+630.         count.
+631.         """
+632. 
+633.         a = np.arange(100).reshape(10, 10)
+634.         phdu = PrimaryHDU(data=a)
+635.         ehdu = ImageHDU(data=a)
+636.         hdula = HDUList([phdu, ehdu])
+637.         hdulb = HDUList([phdu, ehdu, ehdu])
+638.         diff = FITSDiff(hdula, hdulb)
+639.         assert not diff.identical
+640.         assert diff.diff_hdu_count == (2, 3)
+641. 
+642.         # diff_hdus should be empty, since the third extension in hdulb
+643.         # has nothing to compare against
+644.         assert diff.diff_hdus == []
+645. 
+646.         report = diff.report()
+647.         assert "Files contain different numbers of HDUs" in report
+648.         assert "a: 2\n b: 3" in report
+649.         assert "No differences found between common HDUs" in report
+650. 
+651.     def test_partially_identical_files2(self):
+652.         """
+653.         Test files that have some identical HDUs but one different HDU.
+654.         """
+655. 
+656.         a = np.arange(100).reshape(10, 10)
+657.         phdu = PrimaryHDU(data=a)
+658.         ehdu = ImageHDU(data=a)
+659.         ehdu2 = ImageHDU(data=(a + 1))
+660.         hdula = HDUList([phdu, ehdu, ehdu])
+661.         hdulb = HDUList([phdu, ehdu2, ehdu])
+662.         diff = FITSDiff(hdula, hdulb)
+663. 
+664.         assert not diff.identical
+665.         assert diff.diff_hdu_count == ()
+666.         assert len(diff.diff_hdus) == 1
+667.         assert diff.diff_hdus[0][0] == 1
+668. 
+669.         hdudiff = diff.diff_hdus[0][1]
+670.         assert not hdudiff.identical
+671.         assert hdudiff.diff_extnames == ()
+672.         assert hdudiff.diff_extvers == ()
+673.         assert hdudiff.diff_extension_types == ()
+674.         assert hdudiff.diff_headers.identical
+675.         assert hdudiff.diff_data is not None
+676. 
+677.         datadiff = hdudiff.diff_data
+678.         assert isinstance(datadiff, ImageDataDiff)
+679.         assert not datadiff.identical
+680.         assert datadiff.diff_dimensions == ()
+681.         assert datadiff.diff_pixels == [((0, y), (y, y + 1)) for y in range(10)]
+682.         assert datadiff.diff_ratio == 1.0
+683.         assert datadiff.diff_total == 100
+684. 
+685.         report = diff.report()
+686.         # Primary HDU and 2nd extension HDU should have no differences
+687.         assert "Primary HDU" not in report
+688.         assert "Extension HDU 2" not in report
+689.         assert "Extension HDU 1" in report
+690. 
+691.         assert "Headers contain differences" not in report
+692.         assert "Data contains differences" in report
+693.         for y in range(10):
+694.             assert f"Data differs at [{y + 1}, 1]" in report
+695.         assert "100 different pixels found (100.00% different)." in report
+696. 
+697.     def test_partially_identical_files3(self):
+698.         """
+699.         Test files that have some identical HDUs but a different extension
+700.         name.
+701.         """
+702. 
+703.         phdu = PrimaryHDU()
+704.         ehdu = ImageHDU(name="FOO")
+705.         hdula = HDUList([phdu, ehdu])
+706.         ehdu = BinTableHDU(name="BAR")
+707.         ehdu.header["EXTVER"] = 2
+708.         ehdu.header["EXTLEVEL"] = 3
+709.         hdulb = HDUList([phdu, ehdu])
+710.         diff = FITSDiff(hdula, hdulb)
+711.         assert not diff.identical
+712. 
+713.         assert diff.diff_hdus[0][0] == 1
+714. 
+715.         hdu_diff = diff.diff_hdus[0][1]
+716.         assert hdu_diff.diff_extension_types == ("IMAGE", "BINTABLE")
+717.         assert hdu_diff.diff_extnames == ("FOO", "BAR")
+718.         assert hdu_diff.diff_extvers == (1, 2)
+719.         assert hdu_diff.diff_extlevels == (1, 3)
+720. 
+721.         report = diff.report()
+722.         assert "Extension types differ" in report
+723.         assert "a: IMAGE\n    b: BINTABLE" in report
+724.         assert "Extension names differ" in report
+725.         assert "a: FOO\n    b: BAR" in report
+726.         assert "Extension versions differ" in report
+727.         assert "a: 1\n    b: 2" in report
+728.         assert "Extension levels differ" in report
+729.         assert "a: 1\n    b: 2" in report
+730. 
+731.     def test_diff_nans(self):
+732.         """
+733.         Regression test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/204
+734.         """
+735. 
+736.         # First test some arrays that should be equivalent....
+737.         arr = np.empty((10, 10), dtype=np.float64)
+738.         arr[:5] = 1.0
+739.         arr[5:] = np.nan
+740.         arr2 = arr.copy()
+741. 
+742.         table = np.rec.array(
+743.             [(1.0, 2.0), (3.0, np.nan), (np.nan, np.nan)], names=["cola", "colb"]
+744.         ).view(fits.FITS_rec)
+745.         table2 = table.copy()
+746. 
+747.         assert ImageDataDiff(arr, arr2).identical
+748.         assert TableDataDiff(table, table2).identical
+749. 
+750.         # Now let's introduce some differences, where there are nans and where
+751.         # there are not nans
+752.         arr2[0][0] = 2.0
+753.         arr2[5][0] = 2.0
+754.         table2[0][0] = 2.0
+755.         table2[1][1] = 2.0
+756. 
+757.         diff = ImageDataDiff(arr, arr2)
+758.         assert not diff.identical
+759.         assert diff.diff_pixels[0] == ((0, 0), (1.0, 2.0))
+760.         assert diff.diff_pixels[1][0] == (5, 0)
+761.         assert np.isnan(diff.diff_pixels[1][1][0])
+762.         assert diff.diff_pixels[1][1][1] == 2.0
+763. 
+764.         diff = TableDataDiff(table, table2)
+765.         assert not diff.identical
+766.         assert diff.diff_values[0] == (("cola", 0), (1.0, 2.0))
+767.         assert diff.diff_values[1][0] == ("colb", 1)
+768.         assert np.isnan(diff.diff_values[1][1][0])
+769.         assert diff.diff_values[1][1][1] == 2.0
+770. 
+771.     def test_file_output_from_path_string(self):
+772.         outpath = self.temp("diff_output.txt")
+773.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+774.         hb = ha.copy()
+775.         hb["C"] = 4
+776.         diffobj = HeaderDiff(ha, hb)
+777.         diffobj.report(fileobj=outpath)
+778.         report_as_string = diffobj.report()
+779.         with open(outpath) as fout:
+780.             assert fout.read() == report_as_string
+781. 
+782.     def test_file_output_overwrite_safety(self):
+783.         outpath = self.temp("diff_output.txt")
+784.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+785.         hb = ha.copy()
+786.         hb["C"] = 4
+787.         diffobj = HeaderDiff(ha, hb)
+788.         diffobj.report(fileobj=outpath)
+789. 
+790.         with pytest.raises(OSError, match=_NOT_OVERWRITING_MSG_MATCH):
+791.             diffobj.report(fileobj=outpath)
+792. 
+793.     def test_file_output_overwrite_success(self):
+794.         outpath = self.temp("diff_output.txt")
+795.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+796.         hb = ha.copy()
+797.         hb["C"] = 4
+798.         diffobj = HeaderDiff(ha, hb)
+799.         diffobj.report(fileobj=outpath)
+800.         report_as_string = diffobj.report()
+801.         diffobj.report(fileobj=outpath, overwrite=True)
+802.         with open(outpath) as fout:
+803.             assert (
+804.                 fout.read() == report_as_string
+805.             ), "overwritten output file is not identical to report string"
+806. 
+807.     def test_rawdatadiff_nodiff(self):
+808.         a = np.arange(100, dtype="uint8").reshape(10, 10)
+809.         b = a.copy()
+810.         hdu_a = DummyNonstandardExtHDU(data=a)
+811.         hdu_b = DummyNonstandardExtHDU(data=b)
+812.         diff = HDUDiff(hdu_a, hdu_b)
+813.         assert diff.identical
+814.         report = diff.report()
+815.         assert "No differences found." in report
+816. 
+817.     def test_rawdatadiff_dimsdiff(self):
+818.         a = np.arange(100, dtype="uint8") + 10
+819.         b = a[:80].copy()
+820.         hdu_a = DummyNonstandardExtHDU(data=a)
+821.         hdu_b = DummyNonstandardExtHDU(data=b)
+822.         diff = HDUDiff(hdu_a, hdu_b)
+823.         assert not diff.identical
+824.         report = diff.report()
+825.         assert "Data sizes differ:" in report
+826.         assert "a: 100 bytes" in report
+827.         assert "b: 80 bytes" in report
+828.         assert "No further data comparison performed." in report
+829. 
+830.     def test_rawdatadiff_bytesdiff(self):
+831.         a = np.arange(100, dtype="uint8") + 10
+832.         b = a.copy()
+833.         changes = [(30, 200), (89, 170)]
+834.         for i, v in changes:
+835.             b[i] = v
+836. 
+837.         hdu_a = DummyNonstandardExtHDU(data=a)
+838.         hdu_b = DummyNonstandardExtHDU(data=b)
+839.         diff = HDUDiff(hdu_a, hdu_b)
+840. 
+841.         assert not diff.identical
+842. 
+843.         diff_bytes = diff.diff_data.diff_bytes
+844.         assert len(changes) == len(diff_bytes)
+845.         for j, (i, v) in enumerate(changes):
+846.             assert diff_bytes[j] == (i, (i + 10, v))
+847. 
+848.         report = diff.report()
+849.         assert "Data contains differences:" in report
+850.         for i, _ in changes:
+851.             assert f"Data differs at byte {i}:" in report
+852.         assert "2 different bytes found (2.00% different)." in report
+853. 
+854. 
+855. def test_fitsdiff_hdu_name(tmp_path):
+856.     """Make sure diff report reports HDU name and ver if same in files"""
+857.     path1 = tmp_path / "test1.fits"
+858.     path2 = tmp_path / "test2.fits"
+859. 
+860.     hdulist = HDUList([PrimaryHDU(), ImageHDU(data=np.zeros(5), name="SCI")])
+861.     hdulist.writeto(path1)
+862.     hdulist[1].data[0] = 1
+863.     hdulist.writeto(path2)
+864. 
+865.     diff = FITSDiff(path1, path2)
+866.     assert "Extension HDU 1 (SCI, 1):" in diff.report()
+867. 
+868. 
+869. def test_fitsdiff_no_hdu_name(tmp_path):
+870.     """Make sure diff report doesn't report HDU name if not in files"""
+871.     path1 = tmp_path / "test1.fits"
+872.     path2 = tmp_path / "test2.fits"
+873. 
+874.     hdulist = HDUList([PrimaryHDU(), ImageHDU(data=np.zeros(5))])
+875.     hdulist.writeto(path1)
+876.     hdulist[1].data[0] = 1
+877.     hdulist.writeto(path2)
+878. 
+879.     diff = FITSDiff(path1, path2)
+880.     assert "Extension HDU 1:" in diff.report()
+881. 
+882. 
+883. def test_fitsdiff_with_names(tmp_path):
+884.     """Make sure diff report doesn't report HDU name if not same in files"""
+885.     path1 = tmp_path / "test1.fits"
+886.     path2 = tmp_path / "test2.fits"
+887. 
+888.     hdulist = HDUList([PrimaryHDU(), ImageHDU(data=np.zeros(5), name="SCI", ver=1)])
+889.     hdulist.writeto(path1)
+890.     hdulist[1].name = "ERR"
+891.     hdulist.writeto(path2)
+892. 
+893.     diff = FITSDiff(path1, path2)
+894.     assert "Extension HDU 1:" in diff.report()
+895. 
+896. 
+897. def test_rawdatadiff_diff_with_rtol(tmp_path):
+898.     """Regression test for https://github.com/astropy/astropy/issues/13330"""
+899.     path1 = tmp_path / "test1.fits"
+900.     path2 = tmp_path / "test2.fits"
+901.     a = np.zeros((10, 2), dtype="float32")
+902.     a[:, 0] = np.arange(10, dtype="float32") + 10
+903.     a[:, 1] = np.arange(10, dtype="float32") + 20
+904.     b = a.copy()
+905.     changes = [(3, 13.1, 23.1), (8, 20.5, 30.5)]
+906.     for i, v, w in changes:
+907.         b[i, 0] = v
+908.         b[i, 1] = w
+909. 
+910.     ca = Column("A", format="20E", array=[a])
+911.     cb = Column("A", format="20E", array=[b])
+912.     hdu_a = BinTableHDU.from_columns([ca])
+913.     hdu_a.writeto(path1, overwrite=True)
+914.     hdu_b = BinTableHDU.from_columns([cb])
+915.     hdu_b.writeto(path2, overwrite=True)
+916.     with fits.open(path1) as fits1:
+917.         with fits.open(path2) as fits2:
+918.             diff = FITSDiff(fits1, fits2, atol=0, rtol=0.001)
+919.             str1 = diff.report(fileobj=None, indent=0)
+920. 
+921.             diff = FITSDiff(fits1, fits2, atol=0, rtol=0.01)
+922.             str2 = diff.report(fileobj=None, indent=0)
+923. 
+924.     assert "...and at 1 more indices." in str1
+925.     assert "...and at 1 more indices." not in str2
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 17:08:14,384 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='The user has requested the full content of the file `astropy/io/fits/tests/test_diff.py`. The provided context contains the entire content of this file, from line 1 to 925. Therefore, the whole file is selected to fulfill the request.', relative_path='astropy/io/fits/tests/test_diff.py', start_line=1, end_line=925)]
+2025-12-21 17:08:14,387 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the file `astropy/io/fits/tests/test_diff.py`.
+2025-12-21 17:08:14,387 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 17:08:14,387 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 17:08:14,387 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 17:08:14,387 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 17:08:14,388 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+astropy
+├── .circleci
+|   └── config.yml
+├── .devcontainer
+|   └── welcome-message.txt
+├── .github
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bug_report.yaml
+|   |   ├── config.yml
+|   |   └── feature_request.yaml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── labeler.yml
+|   └── workflows
+|       ├── check_changelog.yml
+|       ├── ci_cron_daily.yml
+|       ├── ci_cron_weekly.yml
+|       ├── ci_workflows.yml
+|       ├── codeql-analysis.yml
+|       ├── open_actions.yml
+|       ├── publish.yml
+|       ├── stalebot.yml
+|       └── update_iers.yml
+├── .pre-commit-config.yaml
+├── .pyinstaller
+|   ├── hooks
+|   |   └── hook-skyfield.py
+|   └── run_astropy_tests.py
+├── .readthedocs.yaml
+├── CHANGES.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── GOVERNANCE.md
+├── LICENSE.rst
+├── README.rst
+├── astropy
+|   ├── __init__.py
+|   ├── _dev
+|   |   ├── __init__.py
+|   |   └── scm_version.py
+|   ├── config
+|   |   ├── __init__.py
+|   |   ├── configuration.py
+|   |   ├── paths.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── data
+|   |       └── test_configs.py
+|   ├── conftest.py
+|   ├── constants
+|   |   ├── __init__.py
+|   |   ├── astropyconst13.py
+|   |   ├── astropyconst20.py
+|   |   ├── astropyconst40.py
+|   |   ├── cgs.py
+|   |   ├── codata2010.py
+|   |   ├── codata2014.py
+|   |   ├── codata2018.py
+|   |   ├── config.py
+|   |   ├── constant.py
+|   |   ├── iau2012.py
+|   |   ├── iau2015.py
+|   |   ├── si.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_constant.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_prior_version.py
+|   |   |   └── test_sciencestate.py
+|   |   └── utils.py
+|   ├── convolution
+|   |   ├── __init__.py
+|   |   ├── convolve.py
+|   |   ├── core.py
+|   |   ├── kernels.py
+|   |   ├── setup_package.py
+|   |   ├── src
+|   |   |   └── convolve.c
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_convolve.py
+|   |   |   ├── test_convolve_fft.py
+|   |   |   ├── test_convolve_kernels.py
+|   |   |   ├── test_convolve_models.py
+|   |   |   ├── test_convolve_nddata.py
+|   |   |   ├── test_convolve_speeds.py
+|   |   |   ├── test_discretize.py
+|   |   |   ├── test_kernel_class.py
+|   |   |   └── test_pickle.py
+|   |   └── utils.py
+|   ├── coordinates
+|   |   ├── __init__.py
+|   |   ├── angle_formats.py
+|   |   ├── angle_lextab.py
+|   |   ├── angle_parsetab.py
+|   |   ├── angle_utilities.py
+|   |   ├── angles.py
+|   |   ├── attributes.py
+|   |   ├── baseframe.py
+|   |   ├── builtin_frames
+|   |   |   ├── __init__.py
+|   |   |   ├── altaz.py
+|   |   |   ├── baseradec.py
+|   |   |   ├── cirs.py
+|   |   |   ├── cirs_observed_transforms.py
+|   |   |   ├── ecliptic.py
+|   |   |   ├── ecliptic_transforms.py
+|   |   |   ├── equatorial.py
+|   |   |   ├── fk4.py
+|   |   |   ├── fk4_fk5_transforms.py
+|   |   |   ├── fk5.py
+|   |   |   ├── galactic.py
+|   |   |   ├── galactic_transforms.py
+|   |   |   ├── galactocentric.py
+|   |   |   ├── gcrs.py
+|   |   |   ├── hadec.py
+|   |   |   ├── hcrs.py
+|   |   |   ├── icrs.py
+|   |   |   ├── icrs_cirs_transforms.py
+|   |   |   ├── icrs_fk5_transforms.py
+|   |   |   ├── icrs_observed_transforms.py
+|   |   |   ├── intermediate_rotation_transforms.py
+|   |   |   ├── itrs.py
+|   |   |   ├── itrs_observed_transforms.py
+|   |   |   ├── lsr.py
+|   |   |   ├── skyoffset.py
+|   |   |   ├── supergalactic.py
+|   |   |   ├── supergalactic_transforms.py
+|   |   |   └── utils.py
+|   |   ├── calculation.py
+|   |   ├── data
+|   |   ├── distances.py
+|   |   ├── earth.py
+|   |   ├── earth_orientation.py
+|   |   ├── erfa_astrom.py
+|   |   ├── errors.py
+|   |   ├── funcs.py
+|   |   ├── jparser.py
+|   |   ├── matching.py
+|   |   ├── matrix_utilities.py
+|   |   ├── name_resolve.py
+|   |   ├── orbital_elements.py
+|   |   ├── representation.py
+|   |   ├── sites.py
+|   |   ├── sky_coordinate.py
+|   |   ├── sky_coordinate_parsers.py
+|   |   ├── solar_system.py
+|   |   ├── spectral_coordinate.py
+|   |   ├── spectral_quantity.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── accuracy
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── data
+|   |   |   |   ├── generate_ref_ast.py
+|   |   |   |   ├── generate_spectralcoord_ref.py
+|   |   |   |   ├── test_altaz_icrs.py
+|   |   |   |   ├── test_ecliptic.py
+|   |   |   |   ├── test_fk4_no_e_fk4.py
+|   |   |   |   ├── test_fk4_no_e_fk5.py
+|   |   |   |   ├── test_galactic_fk4.py
+|   |   |   |   └── test_icrs_fk5.py
+|   |   |   ├── helper.py
+|   |   |   ├── test_angle_generators.py
+|   |   |   ├── test_angles.py
+|   |   |   ├── test_angular_separation.py
+|   |   |   ├── test_api_ape5.py
+|   |   |   ├── test_arrays.py
+|   |   |   ├── test_atc_replacements.py
+|   |   |   ├── test_celestial_transformations.py
+|   |   |   ├── test_distance.py
+|   |   |   ├── test_earth.py
+|   |   |   ├── test_earth_orientation.py
+|   |   |   ├── test_erfa_astrom.py
+|   |   |   ├── test_finite_difference_velocities.py
+|   |   |   ├── test_formatting.py
+|   |   |   ├── test_frames.py
+|   |   |   ├── test_frames_with_velocity.py
+|   |   |   ├── test_funcs.py
+|   |   |   ├── test_geodetic_representations.py
+|   |   |   ├── test_iau_fullstack.py
+|   |   |   ├── test_icrs_observed_transformations.py
+|   |   |   ├── test_intermediate_transformations.py
+|   |   |   ├── test_matching.py
+|   |   |   ├── test_matrix_utilities.py
+|   |   |   ├── test_name_resolve.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_regression.py
+|   |   |   ├── test_representation.py
+|   |   |   ├── test_representation_arithmetic.py
+|   |   |   ├── test_representation_methods.py
+|   |   |   ├── test_shape_manipulation.py
+|   |   |   ├── test_sites.py
+|   |   |   ├── test_sky_coord.py
+|   |   |   ├── test_sky_coord_velocities.py
+|   |   |   ├── test_skyoffset_transformations.py
+|   |   |   ├── test_solar_system.py
+|   |   |   ├── test_spectral_coordinate.py
+|   |   |   ├── test_spectral_quantity.py
+|   |   |   ├── test_transformations.py
+|   |   |   ├── test_unit_representation.py
+|   |   |   ├── test_utils.py
+|   |   |   └── test_velocity_corrs.py
+|   |   └── transformations.py
+|   ├── cosmology
+|   |   ├── __init__.py
+|   |   ├── connect.py
+|   |   ├── core.py
+|   |   ├── data
+|   |   ├── flrw
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── lambdacdm.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── conftest.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_base.py
+|   |   |   |   ├── test_init.py
+|   |   |   |   ├── test_lambdacdm.py
+|   |   |   |   ├── test_w.py
+|   |   |   |   ├── test_w0cdm.py
+|   |   |   |   ├── test_w0wacdm.py
+|   |   |   |   ├── test_w0wzcdm.py
+|   |   |   |   └── test_wpwazpcdm.py
+|   |   |   ├── w0cdm.py
+|   |   |   ├── w0wacdm.py
+|   |   |   ├── w0wzcdm.py
+|   |   |   └── wpwazpcdm.py
+|   |   ├── funcs
+|   |   |   ├── __init__.py
+|   |   |   ├── comparison.py
+|   |   |   ├── optimize.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_comparison.py
+|   |   |       └── test_funcs.py
+|   |   ├── io
+|   |   |   ├── __init__.py
+|   |   |   ├── cosmology.py
+|   |   |   ├── ecsv.py
+|   |   |   ├── html.py
+|   |   |   ├── mapping.py
+|   |   |   ├── model.py
+|   |   |   ├── row.py
+|   |   |   ├── table.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── base.py
+|   |   |   |   ├── test_.py
+|   |   |   |   ├── test_cosmology.py
+|   |   |   |   ├── test_ecsv.py
+|   |   |   |   ├── test_html.py
+|   |   |   |   ├── test_json.py
+|   |   |   |   ├── test_mapping.py
+|   |   |   |   ├── test_model.py
+|   |   |   |   ├── test_row.py
+|   |   |   |   ├── test_table.py
+|   |   |   |   └── test_yaml.py
+|   |   |   ├── utils.py
+|   |   |   └── yaml.py
+|   |   ├── parameter.py
+|   |   ├── parameters.py
+|   |   ├── realizations.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── conftest.py
+|   |   |   ├── helper.py
+|   |   |   ├── test_connect.py
+|   |   |   ├── test_core.py
+|   |   |   ├── test_parameter.py
+|   |   |   ├── test_parameters.py
+|   |   |   ├── test_realizations.py
+|   |   |   ├── test_units.py
+|   |   |   └── test_utils.py
+|   |   ├── units.py
+|   |   └── utils.py
+|   ├── extern
+|   |   ├── README.rst
+|   |   ├── __init__.py
+|   |   ├── _strptime.py
+|   |   ├── configobj
+|   |   |   ├── __init__.py
+|   |   |   ├── configobj.py
+|   |   |   └── validate.py
+|   |   ├── jquery
+|   |   |   ├── __init__.py
+|   |   |   └── data
+|   |   |       ├── css
+|   |   |       ├── images
+|   |   |       └── js
+|   |   └── ply
+|   |       ├── __init__.py
+|   |       ├── cpp.py
+|   |       ├── ctokens.py
+|   |       ├── lex.py
+|   |       ├── yacc.py
+|   |       └── ygen.py
+|   ├── io
+|   |   ├── __init__.py
+|   |   ├── ascii
+|   |   |   ├── __init__.py
+|   |   |   ├── basic.py
+|   |   |   ├── cds.py
+|   |   |   ├── connect.py
+|   |   |   ├── core.py
+|   |   |   ├── daophot.py
+|   |   |   ├── docs.py
+|   |   |   ├── ecsv.py
+|   |   |   ├── fastbasic.py
+|   |   |   ├── fixedwidth.py
+|   |   |   ├── html.py
+|   |   |   ├── ipac.py
+|   |   |   ├── latex.py
+|   |   |   ├── misc.py
+|   |   |   ├── mrt.py
+|   |   |   ├── qdp.py
+|   |   |   ├── rst.py
+|   |   |   ├── setup_package.py
+|   |   |   ├── sextractor.py
+|   |   |   ├── src
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── common.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_c_reader.py
+|   |   |   |   ├── test_cds.py
+|   |   |   |   ├── test_cds_header_from_readme.py
+|   |   |   |   ├── test_compressed.py
+|   |   |   |   ├── test_connect.py
+|   |   |   |   ├── test_ecsv.py
+|   |   |   |   ├── test_fixedwidth.py
+|   |   |   |   ├── test_html.py
+|   |   |   |   ├── test_ipac_definitions.py
+|   |   |   |   ├── test_qdp.py
+|   |   |   |   ├── test_read.py
+|   |   |   |   ├── test_rst.py
+|   |   |   |   ├── test_types.py
+|   |   |   |   └── test_write.py
+|   |   |   └── ui.py
+|   |   ├── fits
+|   |   |   ├── __init__.py
+|   |   |   ├── _tiled_compression
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── codecs.py
+|   |   |   |   ├── quantization.py
+|   |   |   |   ├── setup_package.py
+|   |   |   |   ├── src
+|   |   |   |   ├── tests
+|   |   |   |   ├── tiled_compression.py
+|   |   |   |   └── utils.py
+|   |   |   ├── card.py
+|   |   |   ├── column.py
+|   |   |   ├── connect.py
+|   |   |   ├── convenience.py
+|   |   |   ├── diff.py
+|   |   |   ├── file.py
+|   |   |   ├── fitsrec.py
+|   |   |   ├── fitstime.py
+|   |   |   ├── hdu
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── base.py
+|   |   |   |   ├── compressed.py
+|   |   |   |   ├── groups.py
+|   |   |   |   ├── hdulist.py
+|   |   |   |   ├── image.py
+|   |   |   |   ├── nonstandard.py
+|   |   |   |   ├── streaming.py
+|   |   |   |   └── table.py
+|   |   |   ├── header.py
+|   |   |   ├── scripts
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── fitscheck.py
+|   |   |   |   ├── fitsdiff.py
+|   |   |   |   ├── fitsheader.py
+|   |   |   |   └── fitsinfo.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── conftest.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_checksum.py
+|   |   |   |   ├── test_compression_failures.py
+|   |   |   |   ├── test_connect.py
+|   |   |   |   ├── test_convenience.py
+|   |   |   |   ├── test_core.py
+|   |   |   |   ├── test_diff.py
+|   |   |   |   ├── test_division.py
+|   |   |   |   ├── test_fitscheck.py
+|   |   |   |   ├── test_fitsdiff.py
+|   |   |   |   ├── test_fitsheader.py
+|   |   |   |   ├── test_fitsinfo.py
+|   |   |   |   ├── test_fitstime.py
+|   |   |   |   ├── test_fsspec.py
+|   |   |   |   ├── test_groups.py
+|   |   |   |   ├── test_hdulist.py
+|   |   |   |   ├── test_header.py
+|   |   |   |   ├── test_image.py
+|   |   |   |   ├── test_image_dask.py
+|   |   |   |   ├── test_nonstandard.py
+|   |   |   |   ├── test_structured.py
+|   |   |   |   ├── test_table.py
+|   |   |   |   ├── test_tilde_path.py
+|   |   |   |   ├── test_uint.py
+|   |   |   |   └── test_util.py
+|   |   |   ├── util.py
+|   |   |   └── verify.py
+|   |   ├── misc
+|   |   |   ├── __init__.py
+|   |   |   ├── asdf
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── conftest.py
+|   |   |   |   ├── connect.py
+|   |   |   |   ├── data
+|   |   |   |   ├── deprecation.py
+|   |   |   |   ├── extension.py
+|   |   |   |   ├── tags
+|   |   |   |   ├── tests
+|   |   |   |   └── types.py
+|   |   |   ├── connect.py
+|   |   |   ├── hdf5.py
+|   |   |   ├── pandas
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── connect.py
+|   |   |   ├── parquet.py
+|   |   |   ├── pickle_helpers.py
+|   |   |   ├── tests
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── data
+|   |   |   |   ├── test_hdf5.py
+|   |   |   |   ├── test_pandas.py
+|   |   |   |   ├── test_parquet.py
+|   |   |   |   ├── test_pickle_helpers.py
+|   |   |   |   └── test_yaml.py
+|   |   |   └── yaml.py
+|   |   ├── registry
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── compat.py
+|   |   |   ├── core.py
+|   |   |   ├── interface.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_registries.py
+|   |   |       └── test_registry_help.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── mixin_columns.py
+|   |   |   └── safeio.py
+|   |   └── votable
+|   |       ├── __init__.py
+|   |       ├── connect.py
+|   |       ├── converters.py
+|   |       ├── data
+|   |       |   └── ucd1p-words.txt
+|   |       ├── exceptions.py
+|   |       ├── setup_package.py
+|   |       ├── src
+|   |       |   └── tablewriter.c
+|   |       ├── table.py
+|   |       ├── tests
+|   |       |   ├── __init__.py
+|   |       |   ├── converter_test.py
+|   |       |   ├── data
+|   |       |   ├── exception_test.py
+|   |       |   ├── resource_test.py
+|   |       |   ├── table_test.py
+|   |       |   ├── tree_test.py
+|   |       |   ├── ucd_test.py
+|   |       |   ├── util_test.py
+|   |       |   └── vo_test.py
+|   |       ├── tree.py
+|   |       ├── ucd.py
+|   |       ├── util.py
+|   |       ├── validator
+|   |       |   ├── __init__.py
+|   |       |   ├── data
+|   |       |   ├── html.py
+|   |       |   ├── main.py
+|   |       |   └── result.py
+|   |       ├── volint.py
+|   |       └── xmlutil.py
+|   ├── logger.py
+|   ├── modeling
+|   |   ├── __init__.py
+|   |   ├── bounding_box.py
+|   |   ├── convolution.py
+|   |   ├── core.py
+|   |   ├── fitting.py
+|   |   ├── functional_models.py
+|   |   ├── mappings.py
+|   |   ├── math_functions.py
+|   |   ├── models.py
+|   |   ├── optimizers.py
+|   |   ├── parameters.py
+|   |   ├── physical_models.py
+|   |   ├── polynomial.py
+|   |   ├── powerlaws.py
+|   |   ├── projections.py
+|   |   ├── rotations.py
+|   |   ├── separable.py
+|   |   ├── spline.py
+|   |   ├── statistic.py
+|   |   ├── tabular.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   |   ├── __init__.py
+|   |   |   |   └── spec.txt
+|   |   |   ├── example_models.py
+|   |   |   ├── irafutil.py
+|   |   |   ├── test_bounding_box.py
+|   |   |   ├── test_compound.py
+|   |   |   ├── test_constraints.py
+|   |   |   ├── test_convolution.py
+|   |   |   ├── test_core.py
+|   |   |   ├── test_fitters.py
+|   |   |   ├── test_functional_models.py
+|   |   |   ├── test_input.py
+|   |   |   ├── test_mappings.py
+|   |   |   ├── test_math_func.py
+|   |   |   ├── test_model_sets.py
+|   |   |   ├── test_models.py
+|   |   |   ├── test_models_quantities.py
+|   |   |   ├── test_parameters.py
+|   |   |   ├── test_physical_models.py
+|   |   |   ├── test_polynomial.py
+|   |   |   ├── test_projections.py
+|   |   |   ├── test_quantities_evaluation.py
+|   |   |   ├── test_quantities_fitting.py
+|   |   |   ├── test_quantities_model.py
+|   |   |   ├── test_quantities_parameters.py
+|   |   |   ├── test_quantities_rotations.py
+|   |   |   ├── test_rotations.py
+|   |   |   ├── test_separable.py
+|   |   |   ├── test_spline.py
+|   |   |   ├── test_statistics.py
+|   |   |   ├── test_units_mapping.py
+|   |   |   └── test_utils.py
+|   |   └── utils.py
+|   ├── nddata
+|   |   ├── __init__.py
+|   |   ├── _testing.py
+|   |   ├── bitmask.py
+|   |   ├── blocks.py
+|   |   ├── ccddata.py
+|   |   ├── compat.py
+|   |   ├── decorators.py
+|   |   ├── flag_collection.py
+|   |   ├── mixins
+|   |   |   ├── __init__.py
+|   |   |   ├── ndarithmetic.py
+|   |   |   ├── ndio.py
+|   |   |   ├── ndslicing.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_ndarithmetic.py
+|   |   |       ├── test_ndio.py
+|   |   |       └── test_ndslicing.py
+|   |   ├── nddata.py
+|   |   ├── nddata_base.py
+|   |   ├── nddata_withmixins.py
+|   |   ├── nduncertainty.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   ├── test_bitmask.py
+|   |   |   ├── test_blocks.py
+|   |   |   ├── test_ccddata.py
+|   |   |   ├── test_compat.py
+|   |   |   ├── test_decorators.py
+|   |   |   ├── test_flag_collection.py
+|   |   |   ├── test_nddata.py
+|   |   |   ├── test_nddata_base.py
+|   |   |   ├── test_nduncertainty.py
+|   |   |   └── test_utils.py
+|   |   └── utils.py
+|   ├── samp
+|   |   ├── __init__.py
+|   |   ├── client.py
+|   |   ├── constants.py
+|   |   ├── data
+|   |   |   ├── clientaccesspolicy.xml
+|   |   |   └── crossdomain.xml
+|   |   ├── errors.py
+|   |   ├── hub.py
+|   |   ├── hub_proxy.py
+|   |   ├── hub_script.py
+|   |   ├── integrated_client.py
+|   |   ├── lockfile_helpers.py
+|   |   ├── setup_package.py
+|   |   ├── standard_profile.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_client.py
+|   |   |   ├── test_errors.py
+|   |   |   ├── test_helpers.py
+|   |   |   ├── test_hub.py
+|   |   |   ├── test_hub_proxy.py
+|   |   |   ├── test_hub_script.py
+|   |   |   ├── test_standard_profile.py
+|   |   |   ├── test_web_profile.py
+|   |   |   └── web_profile_test_helpers.py
+|   |   ├── utils.py
+|   |   └── web_profile.py
+|   ├── stats
+|   |   ├── __init__.py
+|   |   ├── bayesian_blocks.py
+|   |   ├── biweight.py
+|   |   ├── bls
+|   |   |   └── __init__.py
+|   |   ├── circstats.py
+|   |   ├── funcs.py
+|   |   ├── histogram.py
+|   |   ├── info_theory.py
+|   |   ├── jackknife.py
+|   |   ├── lombscargle
+|   |   |   └── __init__.py
+|   |   ├── setup_package.py
+|   |   ├── sigma_clipping.py
+|   |   ├── spatial.py
+|   |   ├── src
+|   |   |   ├── compute_bounds.c
+|   |   |   ├── fast_sigma_clip.c
+|   |   |   └── wirth_select.c
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── test_bayesian_blocks.py
+|   |       ├── test_biweight.py
+|   |       ├── test_circstats.py
+|   |       ├── test_funcs.py
+|   |       ├── test_histogram.py
+|   |       ├── test_info_theory.py
+|   |       ├── test_jackknife.py
+|   |       ├── test_sigma_clipping.py
+|   |       └── test_spatial.py
+|   ├── table
+|   |   ├── __init__.py
+|   |   ├── bst.py
+|   |   ├── column.py
+|   |   ├── connect.py
+|   |   ├── groups.py
+|   |   ├── index.py
+|   |   ├── info.py
+|   |   ├── jsviewer.py
+|   |   ├── meta.py
+|   |   ├── mixins
+|   |   |   ├── __init__.py
+|   |   |   ├── dask.py
+|   |   |   ├── registry.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_dask.py
+|   |   |       └── test_registry.py
+|   |   ├── ndarray_mixin.py
+|   |   ├── np_utils.py
+|   |   ├── operations.py
+|   |   ├── pandas.py
+|   |   ├── pprint.py
+|   |   ├── row.py
+|   |   ├── scripts
+|   |   |   ├── __init__.py
+|   |   |   └── showtable.py
+|   |   ├── serialize.py
+|   |   ├── setup_package.py
+|   |   ├── soco.py
+|   |   ├── sorted_array.py
+|   |   ├── table.py
+|   |   ├── table_helpers.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── conftest.py
+|   |       ├── test_array.py
+|   |       ├── test_bst.py
+|   |       ├── test_column.py
+|   |       ├── test_groups.py
+|   |       ├── test_index.py
+|   |       ├── test_info.py
+|   |       ├── test_init_table.py
+|   |       ├── test_item_access.py
+|   |       ├── test_jsviewer.py
+|   |       ├── test_masked.py
+|   |       ├── test_mixin.py
+|   |       ├── test_np_utils.py
+|   |       ├── test_operations.py
+|   |       ├── test_pickle.py
+|   |       ├── test_pprint.py
+|   |       ├── test_row.py
+|   |       ├── test_showtable.py
+|   |       ├── test_subclass.py
+|   |       └── test_table.py
+|   ├── tests
+|   |   ├── __init__.py
+|   |   ├── command.py
+|   |   ├── figures
+|   |   |   ├── __init__.py
+|   |   |   └── helpers.py
+|   |   ├── helper.py
+|   |   ├── runner.py
+|   |   ├── test_logger.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── test_imports.py
+|   |       ├── test_quantity_helpers.py
+|   |       ├── test_run_tests.py
+|   |       └── test_runner.py
+|   ├── time
+|   |   ├── __init__.py
+|   |   ├── core.py
+|   |   ├── formats.py
+|   |   ├── setup_package.py
+|   |   ├── src
+|   |   |   └── parse_times.c
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_basic.py
+|   |   |   ├── test_comparisons.py
+|   |   |   ├── test_corrs.py
+|   |   |   ├── test_custom_formats.py
+|   |   |   ├── test_delta.py
+|   |   |   ├── test_fast_parser.py
+|   |   |   ├── test_functions.py
+|   |   |   ├── test_guess.py
+|   |   |   ├── test_mask.py
+|   |   |   ├── test_methods.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_precision.py
+|   |   |   ├── test_quantity_interaction.py
+|   |   |   ├── test_sidereal.py
+|   |   |   ├── test_update_leap_seconds.py
+|   |   |   └── test_ut1.py
+|   |   ├── time_helper
+|   |   |   ├── __init__.py
+|   |   |   └── function_helpers.py
+|   |   └── utils.py
+|   ├── timeseries
+|   |   ├── __init__.py
+|   |   ├── binned.py
+|   |   ├── core.py
+|   |   ├── downsample.py
+|   |   ├── io
+|   |   |   ├── __init__.py
+|   |   |   ├── kepler.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       └── test_kepler.py
+|   |   ├── periodograms
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── bls
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── core.py
+|   |   |   |   ├── methods.py
+|   |   |   |   ├── setup_package.py
+|   |   |   |   └── tests
+|   |   |   └── lombscargle
+|   |   |       ├── __init__.py
+|   |   |       ├── _statistics.py
+|   |   |       ├── core.py
+|   |   |       ├── implementations
+|   |   |       ├── tests
+|   |   |       └── utils.py
+|   |   ├── sampled.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       ├── data
+|   |       ├── test_binned.py
+|   |       ├── test_common.py
+|   |       ├── test_downsample.py
+|   |       └── test_sampled.py
+|   ├── uncertainty
+|   |   ├── __init__.py
+|   |   ├── core.py
+|   |   ├── distributions.py
+|   |   └── tests
+|   |       ├── __init__.py
+|   |       └── test_distribution.py
+|   ├── units
+|   |   ├── __init__.py
+|   |   ├── _typing.py
+|   |   ├── astrophys.py
+|   |   ├── cds.py
+|   |   ├── cgs.py
+|   |   ├── core.py
+|   |   ├── decorators.py
+|   |   ├── deprecated.py
+|   |   ├── equivalencies.py
+|   |   ├── format
+|   |   |   ├── __init__.py
+|   |   |   ├── base.py
+|   |   |   ├── cds.py
+|   |   |   ├── cds_lextab.py
+|   |   |   ├── cds_parsetab.py
+|   |   |   ├── console.py
+|   |   |   ├── fits.py
+|   |   |   ├── generic.py
+|   |   |   ├── generic_lextab.py
+|   |   |   ├── generic_parsetab.py
+|   |   |   ├── latex.py
+|   |   |   ├── ogip.py
+|   |   |   ├── ogip_lextab.py
+|   |   |   ├── ogip_parsetab.py
+|   |   |   ├── unicode_format.py
+|   |   |   ├── utils.py
+|   |   |   └── vounit.py
+|   |   ├── function
+|   |   |   ├── __init__.py
+|   |   |   ├── core.py
+|   |   |   ├── logarithmic.py
+|   |   |   ├── mixin.py
+|   |   |   └── units.py
+|   |   ├── imperial.py
+|   |   ├── misc.py
+|   |   ├── photometric.py
+|   |   ├── physical.py
+|   |   ├── quantity.py
+|   |   ├── quantity_helper
+|   |   |   ├── __init__.py
+|   |   |   ├── converters.py
+|   |   |   ├── erfa.py
+|   |   |   ├── function_helpers.py
+|   |   |   ├── helpers.py
+|   |   |   └── scipy_special.py
+|   |   ├── required_by_vounit.py
+|   |   ├── si.py
+|   |   ├── structured.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_aliases.py
+|   |   |   ├── test_deprecated.py
+|   |   |   ├── test_equivalencies.py
+|   |   |   ├── test_format.py
+|   |   |   ├── test_logarithmic.py
+|   |   |   ├── test_photometric.py
+|   |   |   ├── test_physical.py
+|   |   |   ├── test_quantity.py
+|   |   |   ├── test_quantity_annotations.py
+|   |   |   ├── test_quantity_array_methods.py
+|   |   |   ├── test_quantity_decorator.py
+|   |   |   ├── test_quantity_helpers.py
+|   |   |   ├── test_quantity_info.py
+|   |   |   ├── test_quantity_non_ufuncs.py
+|   |   |   ├── test_quantity_typing.py
+|   |   |   ├── test_quantity_ufuncs.py
+|   |   |   ├── test_structured.py
+|   |   |   ├── test_structured_erfa_ufuncs.py
+|   |   |   ├── test_units.py
+|   |   |   └── test_utils.py
+|   |   └── utils.py
+|   ├── utils
+|   |   ├── __init__.py
+|   |   ├── argparse.py
+|   |   ├── codegen.py
+|   |   ├── collections.py
+|   |   ├── compat
+|   |   |   ├── __init__.py
+|   |   |   ├── misc.py
+|   |   |   ├── numpycompat.py
+|   |   |   └── optional_deps.py
+|   |   ├── console.py
+|   |   ├── data.py
+|   |   ├── data_info.py
+|   |   ├── decorators.py
+|   |   ├── diff.py
+|   |   ├── exceptions.py
+|   |   ├── iers
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   |   └── update_builtin_iers.sh
+|   |   |   ├── iers.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── data
+|   |   |       ├── test_iers.py
+|   |   |       └── test_leap_second.py
+|   |   ├── introspection.py
+|   |   ├── masked
+|   |   |   ├── __init__.py
+|   |   |   ├── core.py
+|   |   |   ├── function_helpers.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── test_containers.py
+|   |   |       ├── test_function_helpers.py
+|   |   |       ├── test_functions.py
+|   |   |       ├── test_masked.py
+|   |   |       └── test_table.py
+|   |   ├── metadata.py
+|   |   ├── misc.py
+|   |   ├── parsing.py
+|   |   ├── setup_package.py
+|   |   ├── shapes.py
+|   |   ├── src
+|   |   |   └── compiler.c
+|   |   ├── state.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── data
+|   |   |   |   ├── .hidden_file.txt
+|   |   |   |   ├── dataurl
+|   |   |   |   ├── dataurl_mirror
+|   |   |   |   ├── test_package
+|   |   |   |   └── unicode.txt
+|   |   |   ├── test_codegen.py
+|   |   |   ├── test_collections.py
+|   |   |   ├── test_console.py
+|   |   |   ├── test_data.py
+|   |   |   ├── test_data_info.py
+|   |   |   ├── test_decorators.py
+|   |   |   ├── test_diff.py
+|   |   |   ├── test_introspection.py
+|   |   |   ├── test_metadata.py
+|   |   |   ├── test_misc.py
+|   |   |   ├── test_parsing.py
+|   |   |   ├── test_progress_bar_func.py
+|   |   |   ├── test_shapes.py
+|   |   |   ├── test_state.py
+|   |   |   └── test_xml.py
+|   |   └── xml
+|   |       ├── __init__.py
+|   |       ├── check.py
+|   |       ├── iterparser.py
+|   |       ├── setup_package.py
+|   |       ├── src
+|   |       |   └── iterparse.c
+|   |       ├── tests
+|   |       |   ├── __init__.py
+|   |       |   └── test_iterparse.py
+|   |       ├── unescaper.py
+|   |       ├── validate.py
+|   |       └── writer.py
+|   ├── version.py
+|   ├── visualization
+|   |   ├── __init__.py
+|   |   ├── hist.py
+|   |   ├── interval.py
+|   |   ├── lupton_rgb.py
+|   |   ├── mpl_normalize.py
+|   |   ├── mpl_style.py
+|   |   ├── scripts
+|   |   |   ├── __init__.py
+|   |   |   ├── fits2bitmap.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       └── test_fits2bitmap.py
+|   |   ├── stretch.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── test_histogram.py
+|   |   |   ├── test_interval.py
+|   |   |   ├── test_lupton_rgb.py
+|   |   |   ├── test_norm.py
+|   |   |   ├── test_stretch.py
+|   |   |   ├── test_time.py
+|   |   |   └── test_units.py
+|   |   ├── time.py
+|   |   ├── transform.py
+|   |   ├── units.py
+|   |   └── wcsaxes
+|   |       ├── __init__.py
+|   |       ├── axislabels.py
+|   |       ├── coordinate_helpers.py
+|   |       ├── coordinate_range.py
+|   |       ├── coordinates_map.py
+|   |       ├── core.py
+|   |       ├── formatter_locator.py
+|   |       ├── frame.py
+|   |       ├── grid_paths.py
+|   |       ├── helpers.py
+|   |       ├── patches.py
+|   |       ├── tests
+|   |       |   ├── __init__.py
+|   |       |   ├── data
+|   |       |   ├── test_coordinate_helpers.py
+|   |       |   ├── test_display_world_coordinates.py
+|   |       |   ├── test_formatter_locator.py
+|   |       |   ├── test_frame.py
+|   |       |   ├── test_grid_paths.py
+|   |       |   ├── test_images.py
+|   |       |   ├── test_misc.py
+|   |       |   ├── test_transform_coord_meta.py
+|   |       |   ├── test_transforms.py
+|   |       |   ├── test_utils.py
+|   |       |   └── test_wcsapi.py
+|   |       ├── ticklabels.py
+|   |       ├── ticks.py
+|   |       ├── transforms.py
+|   |       ├── utils.py
+|   |       └── wcsapi.py
+|   └── wcs
+|       ├── __init__.py
+|       ├── docstrings.py
+|       ├── include
+|       |   ├── astropy_wcs
+|       |   └── wcslib
+|       ├── setup_package.py
+|       ├── src
+|       |   ├── astropy_wcs.c
+|       |   ├── astropy_wcs_api.c
+|       |   ├── distortion.c
+|       |   ├── distortion_wrap.c
+|       |   ├── pipeline.c
+|       |   ├── pyutil.c
+|       |   ├── sip.c
+|       |   ├── sip_wrap.c
+|       |   ├── str_list_proxy.c
+|       |   ├── unit_list_proxy.c
+|       |   ├── util.c
+|       |   ├── wcslib_auxprm_wrap.c
+|       |   ├── wcslib_celprm_wrap.c
+|       |   ├── wcslib_prjprm_wrap.c
+|       |   ├── wcslib_tabprm_wrap.c
+|       |   ├── wcslib_wrap.c
+|       |   └── wcslib_wtbarr_wrap.c
+|       ├── tests
+|       |   ├── __init__.py
+|       |   ├── conftest.py
+|       |   ├── data
+|       |   |   ├── maps
+|       |   |   ├── spectra
+|       |   |   ├── validate.5.0.txt
+|       |   |   ├── validate.5.13.txt
+|       |   |   ├── validate.6.txt
+|       |   |   ├── validate.7.4.txt
+|       |   |   ├── validate.7.6.txt
+|       |   |   └── validate.txt
+|       |   ├── helper.py
+|       |   ├── test_auxprm.py
+|       |   ├── test_celprm.py
+|       |   ├── test_pickle.py
+|       |   ├── test_prjprm.py
+|       |   ├── test_profiling.py
+|       |   ├── test_tab.py
+|       |   ├── test_tabprm.py
+|       |   ├── test_utils.py
+|       |   ├── test_wcs.py
+|       |   ├── test_wcsprm.py
+|       |   └── test_wtbarr.py
+|       ├── utils.py
+|       ├── wcs.py
+|       ├── wcsapi
+|       |   ├── __init__.py
+|       |   ├── conftest.py
+|       |   ├── data
+|       |   |   └── ucds.txt
+|       |   ├── fitswcs.py
+|       |   ├── high_level_api.py
+|       |   ├── high_level_wcs_wrapper.py
+|       |   ├── low_level_api.py
+|       |   ├── sliced_low_level_wcs.py
+|       |   ├── tests
+|       |   |   ├── __init__.py
+|       |   |   ├── test_fitswcs.py
+|       |   |   ├── test_high_level_api.py
+|       |   |   ├── test_high_level_wcs_wrapper.py
+|       |   |   ├── test_low_level_api.py
+|       |   |   └── test_utils.py
+|       |   ├── utils.py
+|       |   └── wrappers
+|       |       ├── __init__.py
+|       |       ├── base.py
+|       |       ├── sliced_wcs.py
+|       |       └── tests
+|       └── wcslint.py
+├── cextern
+|   ├── README.rst
+|   ├── cfitsio
+|   |   ├── License.txt
+|   |   ├── README.rst
+|   |   ├── docs
+|   |   |   └── changes.txt
+|   |   └── lib
+|   |       ├── fits_hcompress.c
+|   |       ├── fits_hdecompress.c
+|   |       ├── pliocomp.c
+|   |       ├── quantize.c
+|   |       └── ricecomp.c
+|   ├── expat
+|   |   ├── README.md
+|   |   ├── README.txt
+|   |   └── lib
+|   |       ├── xmlparse.c
+|   |       ├── xmlrole.c
+|   |       ├── xmltok.c
+|   |       ├── xmltok_impl.c
+|   |       └── xmltok_ns.c
+|   ├── trim_cfitsio.sh
+|   ├── trim_expat.sh
+|   ├── trim_wcslib.sh
+|   └── wcslib
+|       ├── C
+|       |   ├── cel.c
+|       |   ├── dis.c
+|       |   ├── flexed
+|       |   |   ├── fitshdr.c
+|       |   |   ├── wcsbth.c
+|       |   |   ├── wcspih.c
+|       |   |   ├── wcsulex.c
+|       |   |   └── wcsutrn.c
+|       |   ├── getwcstab.c
+|       |   ├── lin.c
+|       |   ├── log.c
+|       |   ├── prj.c
+|       |   ├── spc.c
+|       |   ├── sph.c
+|       |   ├── spx.c
+|       |   ├── tab.c
+|       |   ├── wcs.c
+|       |   ├── wcserr.c
+|       |   ├── wcsfix.c
+|       |   ├── wcshdr.c
+|       |   ├── wcsprintf.c
+|       |   ├── wcstrig.c
+|       |   ├── wcsunits.c
+|       |   └── wcsutil.c
+|       └── config
+├── codecov.yml
+├── conftest.py
+├── docs
+|   ├── _pkgtemplate.rst
+|   ├── _static
+|   ├── _templates
+|   |   └── layout.html
+|   ├── changelog.rst
+|   ├── changes
+|   |   ├── 13985.other.rst
+|   |   ├── 14252.other.rst
+|   |   ├── 14311.other.rst
+|   |   ├── 14321.other.rst
+|   |   ├── 14349.other.rst
+|   |   ├── 14517.other.rst
+|   |   ├── README.rst
+|   |   ├── config
+|   |   ├── constants
+|   |   ├── convolution
+|   |   ├── coordinates
+|   |   |   ├── 13993.feature.rst
+|   |   |   ├── 14354.api.rst
+|   |   |   └── 14371.feature.rst
+|   |   ├── cosmology
+|   |   |   └── 12353.feature.rst
+|   |   ├── extern
+|   |   ├── io.ascii
+|   |   |   ├── 14182.feature.rst
+|   |   |   └── 14369.bugfix.rst
+|   |   ├── io.fits
+|   |   |   ├── 14252.bugfix.rst
+|   |   |   ├── 14252.feature.rst
+|   |   |   ├── 14353.feature.rst
+|   |   |   ├── 14408.feature.rst
+|   |   |   ├── 14410.api.rst
+|   |   |   ├── 14428.api.rst
+|   |   |   ├── 14428.feature.rst
+|   |   |   ├── 14508.bugfix.rst
+|   |   |   └── 14528.bugfix.rst
+|   |   ├── io.misc
+|   |   |   └── 14237.feature.rst
+|   |   ├── io.registry
+|   |   ├── io.votable
+|   |   |   └── 14212.feature.rst
+|   |   ├── modeling
+|   |   |   ├── 14037.feature.rst
+|   |   |   ├── 14038.api.rst
+|   |   |   └── 14519.api.rst
+|   |   ├── nddata
+|   |   |   └── 14175.feature.rst
+|   |   ├── samp
+|   |   ├── stats
+|   |   ├── table
+|   |   |   ├── 14187.feature.rst
+|   |   |   └── 14357.bugfix.rst
+|   |   ├── template.rst
+|   |   ├── tests
+|   |   ├── time
+|   |   ├── timeseries
+|   |   |   └── 14294.feature.rst
+|   |   ├── uncertainty
+|   |   ├── units
+|   |   |   ├── 13977.bugfix.rst
+|   |   |   ├── 14042.feature.rst
+|   |   |   ├── 14124.api.rst
+|   |   |   ├── 14135.feature.rst
+|   |   |   ├── 14163.bugfix.rst
+|   |   |   ├── 14253.api.rst
+|   |   |   ├── 14267.api.rst
+|   |   |   ├── 14369.bugfix.rst
+|   |   |   ├── 14407.feature.rst
+|   |   |   ├── 14413.bugfix.rst
+|   |   |   ├── 14417.api.rst
+|   |   |   ├── 14419.bugfix.rst
+|   |   |   ├── 14439.api.rst
+|   |   |   └── 14449.feature.rst
+|   |   ├── utils
+|   |   |   ├── 14341.feature.rst
+|   |   |   └── 14382.feature.rst
+|   |   ├── visualization
+|   |   |   ├── 14050.api.rst
+|   |   |   └── 14326.bugfix.rst
+|   |   └── wcs
+|   |       ├── 14295.bugfix.rst
+|   |       └── 14495.bugfix.rst
+|   ├── common_links.txt
+|   ├── conf.py
+|   ├── config
+|   |   ├── astropy_config.rst
+|   |   └── index.rst
+|   ├── conftest.py
+|   ├── constants
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── convolution
+|   |   ├── images
+|   |   ├── index.rst
+|   |   ├── kernels.rst
+|   |   ├── non_normalized_kernels.rst
+|   |   ├── performance.inc.rst
+|   |   └── using.rst
+|   ├── coordinates
+|   |   ├── angles.rst
+|   |   ├── apply_space_motion.rst
+|   |   ├── common_errors.rst
+|   |   ├── definitions.rst
+|   |   ├── formatting.rst
+|   |   ├── frames.rst
+|   |   ├── galactocentric.rst
+|   |   ├── index.rst
+|   |   ├── inplace.rst
+|   |   ├── matchsep.rst
+|   |   ├── performance.inc.rst
+|   |   ├── remote_methods.rst
+|   |   ├── representations.rst
+|   |   ├── satellites.rst
+|   |   ├── skycoord.rst
+|   |   ├── solarsystem.rst
+|   |   ├── spectralcoord.rst
+|   |   ├── transforming.rst
+|   |   └── velocities.rst
+|   ├── cosmology
+|   |   ├── dev.rst
+|   |   ├── index.rst
+|   |   ├── io.rst
+|   |   └── units.rst
+|   ├── credits.rst
+|   ├── development
+|   |   ├── astropy-package-template.rst
+|   |   ├── building.rst
+|   |   ├── ccython.rst
+|   |   ├── codeguide.rst
+|   |   ├── codeguide_emacs.rst
+|   |   ├── docguide.rst
+|   |   ├── releasing.rst
+|   |   ├── scripts.rst
+|   |   ├── style-guide.rst
+|   |   ├── testguide.rst
+|   |   ├── vision.rst
+|   |   ├── when_to_rebase.rst
+|   |   └── workflow
+|   |       ├── additional_git_topics.rst
+|   |       ├── development_workflow.rst
+|   |       ├── get_devel_version.rst
+|   |       ├── git_edit_workflow_examples.rst
+|   |       ├── git_resources.rst
+|   |       ├── maintainer_workflow.rst
+|   |       └── virtual_pythons.rst
+|   ├── getting_started.rst
+|   ├── glossary.rst
+|   ├── importing_astropy.rst
+|   ├── index.rst
+|   ├── install.rst
+|   ├── io
+|   |   ├── ascii
+|   |   |   ├── base_classes.rst
+|   |   |   ├── ecsv.rst
+|   |   |   ├── extension_classes.rst
+|   |   |   ├── fast_ascii_io.rst
+|   |   |   ├── fixed_width_gallery.rst
+|   |   |   ├── index.rst
+|   |   |   ├── performance.inc.rst
+|   |   |   ├── read.rst
+|   |   |   ├── references.txt
+|   |   |   ├── toc.txt
+|   |   |   └── write.rst
+|   |   ├── asdf-schemas.rst
+|   |   ├── fits
+|   |   |   ├── api
+|   |   |   |   ├── cards.rst
+|   |   |   |   ├── diff.rst
+|   |   |   |   ├── files.rst
+|   |   |   |   ├── hdulists.rst
+|   |   |   |   ├── hdus.rst
+|   |   |   |   ├── headers.rst
+|   |   |   |   ├── images.rst
+|   |   |   |   ├── tables.rst
+|   |   |   |   ├── tiled_compression.rst
+|   |   |   |   └── verification.rst
+|   |   |   ├── appendix
+|   |   |   |   ├── faq.rst
+|   |   |   |   ├── header_transition.rst
+|   |   |   |   └── history.rst
+|   |   |   ├── index.rst
+|   |   |   ├── performance.inc.rst
+|   |   |   └── usage
+|   |   |       ├── cloud.rst
+|   |   |       ├── headers.rst
+|   |   |       ├── image.rst
+|   |   |       ├── misc.rst
+|   |   |       ├── scripts.rst
+|   |   |       ├── table.rst
+|   |   |       ├── unfamiliar.rst
+|   |   |       └── verification.rst
+|   |   ├── misc.rst
+|   |   ├── registry.rst
+|   |   ├── unified.rst
+|   |   └── votable
+|   |       ├── api_exceptions.rst
+|   |       ├── index.rst
+|   |       ├── performance.inc.rst
+|   |       └── references.txt
+|   ├── known_issues.rst
+|   ├── license.rst
+|   ├── logging.rst
+|   ├── lts_policy.rst
+|   ├── modeling
+|   |   ├── add-units.rst
+|   |   ├── compound-models.rst
+|   |   ├── example-fitting-constraints.rst
+|   |   ├── example-fitting-line.rst
+|   |   ├── example-fitting-model-sets.rst
+|   |   ├── fitting.rst
+|   |   ├── index.rst
+|   |   ├── jointfitter.rst
+|   |   ├── models.rst
+|   |   ├── new-fitter.rst
+|   |   ├── new-model.rst
+|   |   ├── parameters.rst
+|   |   ├── performance.rst
+|   |   ├── physical_models.rst
+|   |   ├── polynomial_models.rst
+|   |   ├── powerlaw_models.rst
+|   |   ├── predef_models1D.rst
+|   |   ├── predef_models2D.rst
+|   |   ├── reference_api.rst
+|   |   ├── spline_models.rst
+|   |   └── units.rst
+|   ├── nddata
+|   |   ├── bitmask.rst
+|   |   ├── ccddata.rst
+|   |   ├── decorator.rst
+|   |   ├── examples
+|   |   |   └── cutout2d_tofits.py
+|   |   ├── index.rst
+|   |   ├── mixins
+|   |   |   ├── index.rst
+|   |   |   ├── ndarithmetic.rst
+|   |   |   ├── ndio.rst
+|   |   |   └── ndslicing.rst
+|   |   ├── nddata.rst
+|   |   ├── performance.inc.rst
+|   |   ├── subclassing.rst
+|   |   └── utils.rst
+|   ├── overview.rst
+|   ├── robots.txt
+|   ├── rtd_environment.yaml
+|   ├── samp
+|   |   ├── advanced_embed_samp_hub.rst
+|   |   ├── example_clients.rst
+|   |   ├── example_hub.rst
+|   |   ├── example_table_image.rst
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── stats
+|   |   ├── circ.rst
+|   |   ├── index.rst
+|   |   ├── performance.inc.rst
+|   |   ├── ripley.rst
+|   |   └── robust.rst
+|   ├── table
+|   |   ├── access_table.rst
+|   |   ├── construct_table.rst
+|   |   ├── implementation_details.rst
+|   |   ├── index.rst
+|   |   ├── indexing.rst
+|   |   ├── io.rst
+|   |   ├── masking.rst
+|   |   ├── mixin_columns.rst
+|   |   ├── modify_table.rst
+|   |   ├── operations.rst
+|   |   ├── pandas.rst
+|   |   └── performance.inc.rst
+|   ├── testhelpers.rst
+|   ├── time
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── timeseries
+|   |   ├── analysis.rst
+|   |   ├── bls.rst
+|   |   ├── data_access.rst
+|   |   ├── index.rst
+|   |   ├── initializing.rst
+|   |   ├── io.rst
+|   |   ├── lombscargle.rst
+|   |   ├── masking.rst
+|   |   ├── pandas.rst
+|   |   └── times.rst
+|   ├── uncertainty
+|   |   ├── index.rst
+|   |   └── performance.inc.rst
+|   ├── units
+|   |   ├── combining_and_defining.rst
+|   |   ├── constants_versions.rst
+|   |   ├── conversion.rst
+|   |   ├── decomposing_and_composing.rst
+|   |   ├── equivalencies.rst
+|   |   ├── format.rst
+|   |   ├── index.rst
+|   |   ├── logarithmic_units.rst
+|   |   ├── performance.inc.rst
+|   |   ├── physical_types.rst
+|   |   ├── quantity.rst
+|   |   ├── standard_units.rst
+|   |   ├── structured_units.rst
+|   |   └── type_hints.rst
+|   ├── utils
+|   |   ├── data.rst
+|   |   ├── iers.rst
+|   |   ├── index.rst
+|   |   └── masked
+|   |       └── index.rst
+|   ├── visualization
+|   |   ├── histogram.rst
+|   |   ├── index.rst
+|   |   ├── matplotlib_integration.rst
+|   |   ├── normalization.rst
+|   |   ├── performance.inc.rst
+|   |   ├── rgb.rst
+|   |   └── wcsaxes
+|   |       ├── controlling_axes.rst
+|   |       ├── custom_frames.rst
+|   |       ├── generic_transforms.rst
+|   |       ├── images_contours.rst
+|   |       ├── index.rst
+|   |       ├── initializing_axes.rst
+|   |       ├── overlaying_coordinate_systems.rst
+|   |       ├── overlays.rst
+|   |       ├── slicing_datacubes.rst
+|   |       └── ticks_labels_grid.rst
+|   ├── warnings.rst
+|   ├── wcs
+|   |   ├── example_create_imaging.rst
+|   |   ├── example_cube_wcs.rst
+|   |   ├── examples
+|   |   |   ├── cube_wcs.py
+|   |   |   ├── from_file.py
+|   |   |   └── programmatic.py
+|   |   ├── history.rst
+|   |   ├── index.rst
+|   |   ├── legacy_interface.rst
+|   |   ├── loading_from_fits.rst
+|   |   ├── note_sip.rst
+|   |   ├── performance.inc.rst
+|   |   ├── reference_api.rst
+|   |   ├── references.rst
+|   |   ├── references.txt
+|   |   ├── relax.rst
+|   |   ├── supported_projections.rst
+|   |   ├── validation.rst
+|   |   ├── wcsapi.rst
+|   |   └── wcstools.rst
+|   └── whatsnew
+|       ├── 0.1.rst
+|       ├── 0.2.rst
+|       ├── 0.3.rst
+|       ├── 0.4.rst
+|       ├── 1.0.rst
+|       ├── 1.1.rst
+|       ├── 1.2.rst
+|       ├── 1.3.rst
+|       ├── 2.0.rst
+|       ├── 3.0.rst
+|       ├── 3.1.rst
+|       ├── 3.2.rst
+|       ├── 4.0.rst
+|       ├── 4.1.rst
+|       ├── 4.2.rst
+|       ├── 4.3.rst
+|       ├── 5.0.rst
+|       ├── 5.1.rst
+|       ├── 5.2.rst
+|       ├── 5.3.rst
+|       └── index.rst
+├── examples
+|   ├── README.rst
+|   ├── coordinates
+|   |   ├── README.txt
+|   |   ├── plot_galactocentric-frame.py
+|   |   ├── plot_obs-planning.py
+|   |   ├── plot_sgr-coordinate-frame.py
+|   |   └── rv-to-gsr.py
+|   ├── io
+|   |   ├── README.txt
+|   |   ├── create-mef.py
+|   |   ├── fits-tables.py
+|   |   ├── modify-fits-header.py
+|   |   ├── plot_fits-image.py
+|   |   ├── skip_create-large-fits.py
+|   |   └── split-jpeg-to-fits.py
+|   └── template
+|       └── example-template.py
+├── licenses
+|   ├── AURA_LICENSE.rst
+|   ├── CONFIGOBJ_LICENSE.rst
+|   ├── DATATABLES_LICENSE.rst
+|   ├── ERFA.rst
+|   ├── EXPAT_LICENSE.rst
+|   ├── JQUERY_LICENSE.rst
+|   ├── NUMPY_LICENSE.rst
+|   ├── PLY_LICENSE.rst
+|   ├── PYFITS.rst
+|   ├── PYTHON.rst
+|   ├── README.rst
+|   └── WCSLIB_LICENSE.rst
+└── setup.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: `io.fits.FITSDiff` may sometimes report differences between identical files
+
+Description: ### Description
+
+In some scenarios, `io.fits.FITSDiff` may report differences between identical files, even when comparing the same file to itself. This may be caused by improper handling of VLAs (variable-length arrays).
+
+### Expected behavior
+
+`io.fits.FITSDiff` only reports differences in files if they exist. Comparing a file to itself should never yield a difference.
+
+### How to Reproduce
+
+```python
+from astropy.io import fits
+col = fits.Column('a', format='QD', array=[[0], [0, 0]])
+hdu = fits.BinTableHDU.from_columns([col])
+hdu.writeto('diffbug.fits', overwrite=True)
+
+print(fits.FITSDiff('diffbug.fits', 'diffbug.fits').identical)
+fits.printdiff('diffbug.fits', 'diffbug.fits')
+
+```
+Prints out:
+```
+False
+ fitsdiff: 5.2.1
+ a: diffbug.fits
+ b: diffbug.fits
+ Maximum number of different data values to be reported: 10
+ Relative tolerance: 0.0, Absolute tolerance: 0.0
+Extension HDU 1:
+   Data contains differences:
+     Column a data differs in row 0:
+     1 different table data element(s) found (50.00% different).
+```
+
+I suspect the handling of VLAs is the culprit here as I couldn't reproduce the bug without using at least one VLA column.
+
+### Versions
+
+Windows-10-10.0.19044-SP0
+Python 3.10.10 (tags/v3.10.10:aad5f6a, Feb  7 2023, 17:20:36) [MSC v.1929 64 bit (AMD64)]
+astropy 5.2.1
+Numpy 1.24.2
+pyerfa 2.0.0.1
+Scipy 1.10.0
+Matplotlib 3.6.3
+
+Patch information:
+diff --git a/astropy/io/fits/diff.py b/astropy/io/fits/diff.py
+index 100cdf1b8c..d3608ef01d 100644
+--- a/astropy/io/fits/diff.py
++++ b/astropy/io/fits/diff.py
+@@ -1449,7 +1449,7 @@ class TableDataDiff(_BaseDiff):
+                 arrb.dtype, np.floating
+             ):
+                 diffs = where_not_allclose(arra, arrb, rtol=self.rtol, atol=self.atol)
+-            elif "P" in col.format:
++            elif "P" in col.format or "Q" in col.format:
+                 diffs = (
+                     [
+                         idx
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the file `astropy/io/fits/tests/test_diff.py`.
+Extra Requirements: 
+Purpose: I need to analyze the tests for `FITSDiff` to find existing test cases that are relevant to the bug involving Variable-Length Arrays.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: astropy/io/fits/tests/test_diff.py
+Line number range: 1 - 925
+Content:
+1. # Licensed under a 3-clause BSD style license - see LICENSE.rst
+2. import numpy as np
+3. import pytest
+4. 
+5. from astropy.io import fits
+6. from astropy.io.fits.column import Column
+7. from astropy.io.fits.diff import (
+8.     FITSDiff,
+9.     HDUDiff,
+10.     HeaderDiff,
+11.     ImageDataDiff,
+12.     TableDataDiff,
+13. )
+14. from astropy.io.fits.hdu import HDUList, ImageHDU, PrimaryHDU
+15. from astropy.io.fits.hdu.base import NonstandardExtHDU
+16. from astropy.io.fits.hdu.table import BinTableHDU
+17. from astropy.io.fits.header import Header
+18. from astropy.utils.misc import _NOT_OVERWRITING_MSG_MATCH
+19. 
+20. from .conftest import FitsTestCase
+21. 
+22. 
+23. class DummyNonstandardExtHDU(NonstandardExtHDU):
+24.     def __init__(self, data=None, *args, **kwargs):
+25.         super().__init__(self, *args, **kwargs)
+26.         self._buffer = np.asarray(data).tobytes()
+27.         self._data_offset = 0
+28. 
+29.     @property
+30.     def size(self):
+31.         return len(self._buffer)
+32. 
+33. 
+34. class TestDiff(FitsTestCase):
+35.     def test_identical_headers(self):
+36.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+37.         hb = ha.copy()
+38.         assert HeaderDiff(ha, hb).identical
+39.         assert HeaderDiff(ha.tostring(), hb.tostring()).identical
+40. 
+41.         with pytest.raises(TypeError):
+42.             HeaderDiff(1, 2)
+43. 
+44.     def test_slightly_different_headers(self):
+45.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+46.         hb = ha.copy()
+47.         hb["C"] = 4
+48.         assert not HeaderDiff(ha, hb).identical
+49. 
+50.     def test_common_keywords(self):
+51.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+52.         hb = ha.copy()
+53.         hb["C"] = 4
+54.         hb["D"] = (5, "Comment")
+55.         assert HeaderDiff(ha, hb).common_keywords == ["A", "B", "C"]
+56. 
+57.     def test_different_keyword_count(self):
+58.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+59.         hb = ha.copy()
+60.         del hb["B"]
+61.         diff = HeaderDiff(ha, hb)
+62.         assert not diff.identical
+63.         assert diff.diff_keyword_count == (3, 2)
+64. 
+65.         # But make sure the common keywords are at least correct
+66.         assert diff.common_keywords == ["A", "C"]
+67. 
+68.     def test_different_keywords(self):
+69.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+70.         hb = ha.copy()
+71.         hb["C"] = 4
+72.         hb["D"] = (5, "Comment")
+73.         ha["E"] = (6, "Comment")
+74.         ha["F"] = (7, "Comment")
+75.         diff = HeaderDiff(ha, hb)
+76.         assert not diff.identical
+77.         assert diff.diff_keywords == (["E", "F"], ["D"])
+78. 
+79.     def test_different_keyword_values(self):
+80.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+81.         hb = ha.copy()
+82.         hb["C"] = 4
+83.         diff = HeaderDiff(ha, hb)
+84.         assert not diff.identical
+85.         assert diff.diff_keyword_values == {"C": [(3, 4)]}
+86. 
+87.     def test_different_keyword_comments(self):
+88.         ha = Header([("A", 1), ("B", 2), ("C", 3, "comment 1")])
+89.         hb = ha.copy()
+90.         hb.comments["C"] = "comment 2"
+91.         diff = HeaderDiff(ha, hb)
+92.         assert not diff.identical
+93.         assert diff.diff_keyword_comments == {"C": [("comment 1", "comment 2")]}
+94. 
+95.     def test_different_keyword_values_with_duplicate(self):
+96.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+97.         hb = ha.copy()
+98.         ha.append(("C", 4))
+99.         hb.append(("C", 5))
+100.         diff = HeaderDiff(ha, hb)
+101.         assert not diff.identical
+102.         assert diff.diff_keyword_values == {"C": [None, (4, 5)]}
+103. 
+104.     def test_asymmetric_duplicate_keywords(self):
+105.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+106.         hb = ha.copy()
+107.         ha.append(("A", 2, "comment 1"))
+108.         ha.append(("A", 3, "comment 2"))
+109.         hb.append(("B", 4, "comment 3"))
+110.         hb.append(("C", 5, "comment 4"))
+111.         diff = HeaderDiff(ha, hb)
+112.         assert not diff.identical
+113.         assert diff.diff_keyword_values == {}
+114.         assert diff.diff_duplicate_keywords == {"A": (3, 1), "B": (1, 2), "C": (1, 2)}
+115. 
+116.         report = diff.report()
+117.         assert (
+118.             "Inconsistent duplicates of keyword 'A'     :\n"
+119.             "  Occurs 3 time(s) in a, 1 times in (b)" in report
+120.         )
+121. 
+122.     def test_floating_point_rtol(self):
+123.         ha = Header([("A", 1), ("B", 2.00001), ("C", 3.000001)])
+124.         hb = ha.copy()
+125.         hb["B"] = 2.00002
+126.         hb["C"] = 3.000002
+127.         diff = HeaderDiff(ha, hb)
+128.         assert not diff.identical
+129.         assert diff.diff_keyword_values == {
+130.             "B": [(2.00001, 2.00002)],
+131.             "C": [(3.000001, 3.000002)],
+132.         }
+133.         diff = HeaderDiff(ha, hb, rtol=1e-6)
+134.         assert not diff.identical
+135.         assert diff.diff_keyword_values == {"B": [(2.00001, 2.00002)]}
+136.         diff = HeaderDiff(ha, hb, rtol=1e-5)
+137.         assert diff.identical
+138. 
+139.     def test_floating_point_atol(self):
+140.         ha = Header([("A", 1), ("B", 1.0), ("C", 0.0)])
+141.         hb = ha.copy()
+142.         hb["B"] = 1.00001
+143.         hb["C"] = 0.000001
+144.         diff = HeaderDiff(ha, hb, rtol=1e-6)
+145.         assert not diff.identical
+146.         assert diff.diff_keyword_values == {
+147.             "B": [(1.0, 1.00001)],
+148.             "C": [(0.0, 0.000001)],
+149.         }
+150.         diff = HeaderDiff(ha, hb, rtol=1e-5)
+151.         assert not diff.identical
+152.         assert diff.diff_keyword_values == {"C": [(0.0, 0.000001)]}
+153.         diff = HeaderDiff(ha, hb, atol=1e-6)
+154.         assert not diff.identical
+155.         assert diff.diff_keyword_values == {"B": [(1.0, 1.00001)]}
+156.         diff = HeaderDiff(ha, hb, atol=1e-5)  # strict inequality
+157.         assert not diff.identical
+158.         assert diff.diff_keyword_values == {"B": [(1.0, 1.00001)]}
+159.         diff = HeaderDiff(ha, hb, rtol=1e-5, atol=1e-5)
+160.         assert diff.identical
+161.         diff = HeaderDiff(ha, hb, atol=1.1e-5)
+162.         assert diff.identical
+163.         diff = HeaderDiff(ha, hb, rtol=1e-6, atol=1e-6)
+164.         assert not diff.identical
+165. 
+166.     def test_ignore_blanks(self):
+167.         with fits.conf.set_temp("strip_header_whitespace", False):
+168.             ha = Header([("A", 1), ("B", 2), ("C", "A       ")])
+169.             hb = ha.copy()
+170.             hb["C"] = "A"
+171.             assert ha["C"] != hb["C"]
+172. 
+173.             diff = HeaderDiff(ha, hb)
+174.             # Trailing blanks are ignored by default
+175.             assert diff.identical
+176.             assert diff.diff_keyword_values == {}
+177. 
+178.             # Don't ignore blanks
+179.             diff = HeaderDiff(ha, hb, ignore_blanks=False)
+180.             assert not diff.identical
+181.             assert diff.diff_keyword_values == {"C": [("A       ", "A")]}
+182. 
+183.     @pytest.mark.parametrize("differ", [HeaderDiff, HDUDiff, FITSDiff])
+184.     def test_ignore_blank_cards(self, differ):
+185.         """Test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/152
+186. 
+187.         Ignore blank cards.
+188.         """
+189. 
+190.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+191.         hb = Header([("A", 1), ("", ""), ("B", 2), ("", ""), ("C", 3)])
+192.         hc = ha.copy()
+193.         if differ is HeaderDiff:
+194.             hc.append()
+195.             hc.append()
+196.         else:  # Ensure blanks are not at the end as they are stripped by HDUs
+197.             hc.add_blank(after=-2)
+198.             hc.add_blank(after=-2)
+199. 
+200.         if differ in (HDUDiff, FITSDiff):  # wrap it in a PrimaryHDU
+201.             ha, hb, hc = (PrimaryHDU(np.arange(10), h) for h in (ha, hb, hc))
+202.             hc_header = hc.header
+203.         if differ is FITSDiff:  # wrap it in a HDUList
+204.             ha, hb, hc = (HDUList([h]) for h in (ha, hb, hc))
+205.             hc_header = hc[0].header
+206. 
+207.         # We now have a header with interleaved blanks, and a header with end
+208.         # blanks, both of which should ignore the blanks
+209.         assert differ(ha, hb).identical
+210.         assert differ(ha, hc).identical
+211.         assert differ(hb, hc).identical
+212. 
+213.         assert not differ(ha, hb, ignore_blank_cards=False).identical
+214.         assert not differ(ha, hc, ignore_blank_cards=False).identical
+215. 
+216.         # Both hb and hc have the same number of blank cards; since order is
+217.         # currently ignored, these should still be identical even if blank
+218.         # cards are not ignored
+219.         assert differ(hb, hc, ignore_blank_cards=False).identical
+220. 
+221.         if differ is HeaderDiff:
+222.             hc.append()
+223.         else:  # Ensure blanks are not at the end as they are stripped by HDUs
+224.             hc_header.add_blank(after=-2)
+225.         # But now there are different numbers of blanks, so they should not be
+226.         # ignored:
+227.         assert not differ(hb, hc, ignore_blank_cards=False).identical
+228. 
+229.     def test_ignore_hdus(self):
+230.         a = np.arange(100).reshape(10, 10)
+231.         b = a.copy()
+232.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+233.         xa = np.array([(1.0, 1), (3.0, 4)], dtype=[("x", float), ("y", int)])
+234.         xb = np.array([(1.0, 2), (3.0, 5)], dtype=[("x", float), ("y", int)])
+235.         phdu = PrimaryHDU(header=ha)
+236.         ihdua = ImageHDU(data=a, name="SCI")
+237.         ihdub = ImageHDU(data=b, name="SCI")
+238.         bhdu1 = BinTableHDU(data=xa, name="ASDF")
+239.         bhdu2 = BinTableHDU(data=xb, name="ASDF")
+240.         hdula = HDUList([phdu, ihdua, bhdu1])
+241.         hdulb = HDUList([phdu, ihdub, bhdu2])
+242. 
+243.         # ASDF extension should be different
+244.         diff = FITSDiff(hdula, hdulb)
+245.         assert not diff.identical
+246.         assert diff.diff_hdus[0][0] == 2
+247. 
+248.         # ASDF extension should be ignored
+249.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["ASDF"])
+250.         assert diff.identical, diff.report()
+251. 
+252.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["ASD*"])
+253.         assert diff.identical, diff.report()
+254. 
+255.         # SCI extension should be different
+256.         hdulb["SCI"].data += 1
+257.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["ASDF"])
+258.         assert not diff.identical
+259. 
+260.         # SCI and ASDF extensions should be ignored
+261.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["SCI", "ASDF"])
+262.         assert diff.identical, diff.report()
+263. 
+264.         # All EXTVER of SCI should be ignored
+265.         ihduc = ImageHDU(data=a, name="SCI", ver=2)
+266.         hdulb.append(ihduc)
+267.         diff = FITSDiff(hdula, hdulb, ignore_hdus=["SCI", "ASDF"])
+268.         assert not any(diff.diff_hdus), diff.report()
+269.         assert any(diff.diff_hdu_count), diff.report()
+270. 
+271.     def test_ignore_keyword_values(self):
+272.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+273.         hb = ha.copy()
+274.         hb["B"] = 4
+275.         hb["C"] = 5
+276.         diff = HeaderDiff(ha, hb, ignore_keywords=["*"])
+277.         assert diff.identical
+278.         diff = HeaderDiff(ha, hb, ignore_keywords=["B"])
+279.         assert not diff.identical
+280.         assert diff.diff_keyword_values == {"C": [(3, 5)]}
+281. 
+282.         report = diff.report()
+283.         assert "Keyword B        has different values" not in report
+284.         assert "Keyword C        has different values" in report
+285. 
+286.         # Test case-insensitivity
+287.         diff = HeaderDiff(ha, hb, ignore_keywords=["b"])
+288.         assert not diff.identical
+289.         assert diff.diff_keyword_values == {"C": [(3, 5)]}
+290. 
+291.     def test_ignore_keyword_comments(self):
+292.         ha = Header([("A", 1, "A"), ("B", 2, "B"), ("C", 3, "C")])
+293.         hb = ha.copy()
+294.         hb.comments["B"] = "D"
+295.         hb.comments["C"] = "E"
+296.         diff = HeaderDiff(ha, hb, ignore_comments=["*"])
+297.         assert diff.identical
+298.         diff = HeaderDiff(ha, hb, ignore_comments=["B"])
+299.         assert not diff.identical
+300.         assert diff.diff_keyword_comments == {"C": [("C", "E")]}
+301. 
+302.         report = diff.report()
+303.         assert "Keyword B        has different comments" not in report
+304.         assert "Keyword C        has different comments" in report
+305. 
+306.         # Test case-insensitivity
+307.         diff = HeaderDiff(ha, hb, ignore_comments=["b"])
+308.         assert not diff.identical
+309.         assert diff.diff_keyword_comments == {"C": [("C", "E")]}
+310. 
+311.     def test_trivial_identical_images(self):
+312.         ia = np.arange(100).reshape(10, 10)
+313.         ib = np.arange(100).reshape(10, 10)
+314.         diff = ImageDataDiff(ia, ib)
+315.         assert diff.identical
+316.         assert diff.diff_total == 0
+317. 
+318.     def test_identical_within_relative_tolerance(self):
+319.         ia = np.ones((10, 10)) - 0.00001
+320.         ib = np.ones((10, 10)) - 0.00002
+321.         diff = ImageDataDiff(ia, ib, rtol=1.0e-4)
+322.         assert diff.identical
+323.         assert diff.diff_total == 0
+324. 
+325.     def test_identical_within_absolute_tolerance(self):
+326.         ia = np.zeros((10, 10)) - 0.00001
+327.         ib = np.zeros((10, 10)) - 0.00002
+328.         diff = ImageDataDiff(ia, ib, rtol=1.0e-4)
+329.         assert not diff.identical
+330.         assert diff.diff_total == 100
+331.         diff = ImageDataDiff(ia, ib, atol=1.0e-4)
+332.         assert diff.identical
+333.         assert diff.diff_total == 0
+334. 
+335.     def test_identical_within_rtol_and_atol(self):
+336.         ia = np.zeros((10, 10)) - 0.00001
+337.         ib = np.zeros((10, 10)) - 0.00002
+338.         diff = ImageDataDiff(ia, ib, rtol=1.0e-5, atol=1.0e-5)
+339.         assert diff.identical
+340.         assert diff.diff_total == 0
+341. 
+342.     def test_not_identical_within_rtol_and_atol(self):
+343.         ia = np.zeros((10, 10)) - 0.00001
+344.         ib = np.zeros((10, 10)) - 0.00002
+345.         diff = ImageDataDiff(ia, ib, rtol=1.0e-5, atol=1.0e-6)
+346.         assert not diff.identical
+347.         assert diff.diff_total == 100
+348. 
+349.     def test_identical_comp_image_hdus(self):
+350.         """Regression test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/189
+351. 
+352.         For this test we mostly just care that comparing to compressed images
+353.         does not crash, and returns the correct results.  Two compressed images
+354.         will be considered identical if the decompressed data is the same.
+355.         Obviously we test whether or not the same compression was used by
+356.         looking for (or ignoring) header differences.
+357.         """
+358. 
+359.         data = np.arange(100.0).reshape(10, 10)
+360.         hdu = fits.CompImageHDU(data=data)
+361.         hdu.writeto(self.temp("test.fits"))
+362. 
+363.         with fits.open(self.temp("test.fits")) as hdula, fits.open(
+364.             self.temp("test.fits")
+365.         ) as hdulb:
+366.             diff = FITSDiff(hdula, hdulb)
+367.             assert diff.identical
+368. 
+369.     def test_different_dimensions(self):
+370.         ia = np.arange(100).reshape(10, 10)
+371.         ib = np.arange(100) - 1
+372. 
+373.         # Although ib could be reshaped into the same dimensions, for now the
+374.         # data is not compared anyways
+375.         diff = ImageDataDiff(ia, ib)
+376.         assert not diff.identical
+377.         assert diff.diff_dimensions == ((10, 10), (100,))
+378.         assert diff.diff_total == 0
+379. 
+380.         report = diff.report()
+381.         assert "Data dimensions differ" in report
+382.         assert "a: 10 x 10" in report
+383.         assert "b: 100" in report
+384.         assert "No further data comparison performed."
+385. 
+386.     def test_different_pixels(self):
+387.         ia = np.arange(100).reshape(10, 10)
+388.         ib = np.arange(100).reshape(10, 10)
+389.         ib[0, 0] = 10
+390.         ib[5, 5] = 20
+391.         diff = ImageDataDiff(ia, ib)
+392.         assert not diff.identical
+393.         assert diff.diff_dimensions == ()
+394.         assert diff.diff_total == 2
+395.         assert diff.diff_ratio == 0.02
+396.         assert diff.diff_pixels == [((0, 0), (0, 10)), ((5, 5), (55, 20))]
+397. 
+398.     def test_identical_tables(self):
+399.         c1 = Column("A", format="L", array=[True, False])
+400.         c2 = Column("B", format="X", array=[[0], [1]])
+401.         c3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [4, 5, 6, 7]])
+402.         c4 = Column("D", format="J", bscale=2.0, array=[0, 1])
+403.         c5 = Column("E", format="A3", array=["abc", "def"])
+404.         c6 = Column("F", format="E", unit="m", array=[0.0, 1.0])
+405.         c7 = Column("G", format="D", bzero=-0.1, array=[0.0, 1.0])
+406.         c8 = Column("H", format="C", array=[0.0 + 1.0j, 2.0 + 3.0j])
+407.         c9 = Column("I", format="M", array=[4.0 + 5.0j, 6.0 + 7.0j])
+408.         c10 = Column("J", format="PI(2)", array=[[0, 1], [2, 3]])
+409. 
+410.         columns = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10]
+411. 
+412.         ta = BinTableHDU.from_columns(columns)
+413.         tb = BinTableHDU.from_columns([c.copy() for c in columns])
+414. 
+415.         diff = TableDataDiff(ta.data, tb.data)
+416.         assert diff.identical
+417.         assert len(diff.common_columns) == 10
+418.         assert diff.common_column_names == set("abcdefghij")
+419.         assert diff.diff_ratio == 0
+420.         assert diff.diff_total == 0
+421. 
+422.     def test_diff_empty_tables(self):
+423.         """
+424.         Regression test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/178
+425. 
+426.         Ensure that diffing tables containing empty data doesn't crash.
+427.         """
+428. 
+429.         c1 = Column("D", format="J")
+430.         c2 = Column("E", format="J")
+431.         thdu = BinTableHDU.from_columns([c1, c2], nrows=0)
+432. 
+433.         hdula = fits.HDUList([thdu])
+434.         hdulb = fits.HDUList([thdu])
+435. 
+436.         diff = FITSDiff(hdula, hdulb)
+437.         assert diff.identical
+438. 
+439.     def test_ignore_table_fields(self):
+440.         c1 = Column("A", format="L", array=[True, False])
+441.         c2 = Column("B", format="X", array=[[0], [1]])
+442.         c3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [4, 5, 6, 7]])
+443. 
+444.         c4 = Column("B", format="X", array=[[1], [0]])
+445.         c5 = Column("C", format="4I", dim="(2, 2)", array=[[1, 2, 3, 4], [5, 6, 7, 8]])
+446. 
+447.         ta = BinTableHDU.from_columns([c1, c2, c3])
+448.         tb = BinTableHDU.from_columns([c1, c4, c5])
+449. 
+450.         diff = TableDataDiff(ta.data, tb.data, ignore_fields=["B", "C"])
+451.         assert diff.identical
+452. 
+453.         # The only common column should be c1
+454.         assert len(diff.common_columns) == 1
+455.         assert diff.common_column_names == {"a"}
+456.         assert diff.diff_ratio == 0
+457.         assert diff.diff_total == 0
+458. 
+459.     def test_different_table_field_names(self):
+460.         ca = Column("A", format="L", array=[True, False])
+461.         cb = Column("B", format="L", array=[True, False])
+462.         cc = Column("C", format="L", array=[True, False])
+463. 
+464.         ta = BinTableHDU.from_columns([ca, cb])
+465.         tb = BinTableHDU.from_columns([ca, cc])
+466. 
+467.         diff = TableDataDiff(ta.data, tb.data)
+468. 
+469.         assert not diff.identical
+470.         assert len(diff.common_columns) == 1
+471.         assert diff.common_column_names == {"a"}
+472.         assert diff.diff_column_names == (["B"], ["C"])
+473.         assert diff.diff_ratio == 0
+474.         assert diff.diff_total == 0
+475. 
+476.         report = diff.report()
+477.         assert "Extra column B of format L in a" in report
+478.         assert "Extra column C of format L in b" in report
+479. 
+480.     def test_different_table_field_counts(self):
+481.         """
+482.         Test tables with some common columns, but different number of columns
+483.         overall.
+484.         """
+485. 
+486.         ca = Column("A", format="L", array=[True, False])
+487.         cb = Column("B", format="L", array=[True, False])
+488.         cc = Column("C", format="L", array=[True, False])
+489. 
+490.         ta = BinTableHDU.from_columns([cb])
+491.         tb = BinTableHDU.from_columns([ca, cb, cc])
+492. 
+493.         diff = TableDataDiff(ta.data, tb.data)
+494. 
+495.         assert not diff.identical
+496.         assert diff.diff_column_count == (1, 3)
+497.         assert len(diff.common_columns) == 1
+498.         assert diff.common_column_names == {"b"}
+499.         assert diff.diff_column_names == ([], ["A", "C"])
+500.         assert diff.diff_ratio == 0
+501.         assert diff.diff_total == 0
+502. 
+503.         report = diff.report()
+504.         assert " Tables have different number of columns:" in report
+505.         assert "  a: 1\n  b: 3" in report
+506. 
+507.     def test_different_table_rows(self):
+508.         """
+509.         Test tables that are otherwise identical but one has more rows than the
+510.         other.
+511.         """
+512. 
+513.         ca1 = Column("A", format="L", array=[True, False])
+514.         cb1 = Column("B", format="L", array=[True, False])
+515.         ca2 = Column("A", format="L", array=[True, False, True])
+516.         cb2 = Column("B", format="L", array=[True, False, True])
+517. 
+518.         ta = BinTableHDU.from_columns([ca1, cb1])
+519.         tb = BinTableHDU.from_columns([ca2, cb2])
+520. 
+521.         diff = TableDataDiff(ta.data, tb.data)
+522. 
+523.         assert not diff.identical
+524.         assert diff.diff_column_count == ()
+525.         assert len(diff.common_columns) == 2
+526.         assert diff.diff_rows == (2, 3)
+527.         assert diff.diff_values == []
+528. 
+529.         report = diff.report()
+530. 
+531.         assert "Table rows differ" in report
+532.         assert "a: 2" in report
+533.         assert "b: 3" in report
+534.         assert "No further data comparison performed."
+535. 
+536.     def test_different_table_data(self):
+537.         """
+538.         Test diffing table data on columns of several different data formats
+539.         and dimensions.
+540.         """
+541. 
+542.         ca1 = Column("A", format="L", array=[True, False])
+543.         ca2 = Column("B", format="X", array=[[0], [1]])
+544.         ca3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [4, 5, 6, 7]])
+545.         ca4 = Column("D", format="J", bscale=2.0, array=[0.0, 2.0])
+546.         ca5 = Column("E", format="A3", array=["abc", "def"])
+547.         ca6 = Column("F", format="E", unit="m", array=[0.0, 1.0])
+548.         ca7 = Column("G", format="D", bzero=-0.1, array=[0.0, 1.0])
+549.         ca8 = Column("H", format="C", array=[0.0 + 1.0j, 2.0 + 3.0j])
+550.         ca9 = Column("I", format="M", array=[4.0 + 5.0j, 6.0 + 7.0j])
+551.         ca10 = Column("J", format="PI(2)", array=[[0, 1], [2, 3]])
+552. 
+553.         cb1 = Column("A", format="L", array=[False, False])
+554.         cb2 = Column("B", format="X", array=[[0], [0]])
+555.         cb3 = Column("C", format="4I", dim="(2, 2)", array=[[0, 1, 2, 3], [5, 6, 7, 8]])
+556.         cb4 = Column("D", format="J", bscale=2.0, array=[2.0, 2.0])
+557.         cb5 = Column("E", format="A3", array=["abc", "ghi"])
+558.         cb6 = Column("F", format="E", unit="m", array=[1.0, 2.0])
+559.         cb7 = Column("G", format="D", bzero=-0.1, array=[2.0, 3.0])
+560.         cb8 = Column("H", format="C", array=[1.0 + 1.0j, 2.0 + 3.0j])
+561.         cb9 = Column("I", format="M", array=[5.0 + 5.0j, 6.0 + 7.0j])
+562.         cb10 = Column("J", format="PI(2)", array=[[1, 2], [3, 4]])
+563. 
+564.         ta = BinTableHDU.from_columns(
+565.             [ca1, ca2, ca3, ca4, ca5, ca6, ca7, ca8, ca9, ca10]
+566.         )
+567.         tb = BinTableHDU.from_columns(
+568.             [cb1, cb2, cb3, cb4, cb5, cb6, cb7, cb8, cb9, cb10]
+569.         )
+570. 
+571.         diff = TableDataDiff(ta.data, tb.data, numdiffs=20)
+572.         assert not diff.identical
+573.         # The column definitions are the same, but not the column values
+574.         assert diff.diff_columns == ()
+575.         assert diff.diff_values[0] == (("A", 0), (True, False))
+576.         assert diff.diff_values[1] == (("B", 1), ([1], [0]))
+577.         assert diff.diff_values[2][0] == ("C", 1)
+578.         assert (diff.diff_values[2][1][0] == [[4, 5], [6, 7]]).all()
+579.         assert (diff.diff_values[2][1][1] == [[5, 6], [7, 8]]).all()
+580.         assert diff.diff_values[3] == (("D", 0), (0, 2.0))
+581.         assert diff.diff_values[4] == (("E", 1), ("def", "ghi"))
+582.         assert diff.diff_values[5] == (("F", 0), (0.0, 1.0))
+583.         assert diff.diff_values[6] == (("F", 1), (1.0, 2.0))
+584.         assert diff.diff_values[7] == (("G", 0), (0.0, 2.0))
+585.         assert diff.diff_values[8] == (("G", 1), (1.0, 3.0))
+586.         assert diff.diff_values[9] == (("H", 0), (0.0 + 1.0j, 1.0 + 1.0j))
+587.         assert diff.diff_values[10] == (("I", 0), (4.0 + 5.0j, 5.0 + 5.0j))
+588.         assert diff.diff_values[11][0] == ("J", 0)
+589.         assert (diff.diff_values[11][1][0] == [0, 1]).all()
+590.         assert (diff.diff_values[11][1][1] == [1, 2]).all()
+591.         assert diff.diff_values[12][0] == ("J", 1)
+592.         assert (diff.diff_values[12][1][0] == [2, 3]).all()
+593.         assert (diff.diff_values[12][1][1] == [3, 4]).all()
+594. 
+595.         assert diff.diff_total == 13
+596.         assert diff.diff_ratio == 0.65
+597. 
+598.         report = diff.report()
+599.         assert "Column A data differs in row 0:\n    a> True\n    b> False" in report
+600.         assert "...and at 1 more indices.\n Column D data differs in row 0:" in report
+601.         assert "13 different table data element(s) found (65.00% different)" in report
+602.         assert report.count("more indices") == 1
+603. 
+604.     def test_identical_files_basic(self):
+605.         """Test identicality of two simple, extensionless files."""
+606. 
+607.         a = np.arange(100).reshape(10, 10)
+608.         hdu = PrimaryHDU(data=a)
+609.         hdu.writeto(self.temp("testa.fits"))
+610.         hdu.writeto(self.temp("testb.fits"))
+611.         diff = FITSDiff(self.temp("testa.fits"), self.temp("testb.fits"))
+612.         assert diff.identical
+613. 
+614.         report = diff.report()
+615.         # Primary HDUs should contain no differences
+616.         assert "Primary HDU" not in report
+617.         assert "Extension HDU" not in report
+618.         assert "No differences found." in report
+619. 
+620.         a = np.arange(10)
+621.         ehdu = ImageHDU(data=a)
+622.         diff = HDUDiff(ehdu, ehdu)
+623.         assert diff.identical
+624.         report = diff.report()
+625.         assert "No differences found." in report
+626. 
+627.     def test_partially_identical_files1(self):
+628.         """
+629.         Test files that have some identical HDUs but a different extension
+630.         count.
+631.         """
+632. 
+633.         a = np.arange(100).reshape(10, 10)
+634.         phdu = PrimaryHDU(data=a)
+635.         ehdu = ImageHDU(data=a)
+636.         hdula = HDUList([phdu, ehdu])
+637.         hdulb = HDUList([phdu, ehdu, ehdu])
+638.         diff = FITSDiff(hdula, hdulb)
+639.         assert not diff.identical
+640.         assert diff.diff_hdu_count == (2, 3)
+641. 
+642.         # diff_hdus should be empty, since the third extension in hdulb
+643.         # has nothing to compare against
+644.         assert diff.diff_hdus == []
+645. 
+646.         report = diff.report()
+647.         assert "Files contain different numbers of HDUs" in report
+648.         assert "a: 2\n b: 3" in report
+649.         assert "No differences found between common HDUs" in report
+650. 
+651.     def test_partially_identical_files2(self):
+652.         """
+653.         Test files that have some identical HDUs but one different HDU.
+654.         """
+655. 
+656.         a = np.arange(100).reshape(10, 10)
+657.         phdu = PrimaryHDU(data=a)
+658.         ehdu = ImageHDU(data=a)
+659.         ehdu2 = ImageHDU(data=(a + 1))
+660.         hdula = HDUList([phdu, ehdu, ehdu])
+661.         hdulb = HDUList([phdu, ehdu2, ehdu])
+662.         diff = FITSDiff(hdula, hdulb)
+663. 
+664.         assert not diff.identical
+665.         assert diff.diff_hdu_count == ()
+666.         assert len(diff.diff_hdus) == 1
+667.         assert diff.diff_hdus[0][0] == 1
+668. 
+669.         hdudiff = diff.diff_hdus[0][1]
+670.         assert not hdudiff.identical
+671.         assert hdudiff.diff_extnames == ()
+672.         assert hdudiff.diff_extvers == ()
+673.         assert hdudiff.diff_extension_types == ()
+674.         assert hdudiff.diff_headers.identical
+675.         assert hdudiff.diff_data is not None
+676. 
+677.         datadiff = hdudiff.diff_data
+678.         assert isinstance(datadiff, ImageDataDiff)
+679.         assert not datadiff.identical
+680.         assert datadiff.diff_dimensions == ()
+681.         assert datadiff.diff_pixels == [((0, y), (y, y + 1)) for y in range(10)]
+682.         assert datadiff.diff_ratio == 1.0
+683.         assert datadiff.diff_total == 100
+684. 
+685.         report = diff.report()
+686.         # Primary HDU and 2nd extension HDU should have no differences
+687.         assert "Primary HDU" not in report
+688.         assert "Extension HDU 2" not in report
+689.         assert "Extension HDU 1" in report
+690. 
+691.         assert "Headers contain differences" not in report
+692.         assert "Data contains differences" in report
+693.         for y in range(10):
+694.             assert f"Data differs at [{y + 1}, 1]" in report
+695.         assert "100 different pixels found (100.00% different)." in report
+696. 
+697.     def test_partially_identical_files3(self):
+698.         """
+699.         Test files that have some identical HDUs but a different extension
+700.         name.
+701.         """
+702. 
+703.         phdu = PrimaryHDU()
+704.         ehdu = ImageHDU(name="FOO")
+705.         hdula = HDUList([phdu, ehdu])
+706.         ehdu = BinTableHDU(name="BAR")
+707.         ehdu.header["EXTVER"] = 2
+708.         ehdu.header["EXTLEVEL"] = 3
+709.         hdulb = HDUList([phdu, ehdu])
+710.         diff = FITSDiff(hdula, hdulb)
+711.         assert not diff.identical
+712. 
+713.         assert diff.diff_hdus[0][0] == 1
+714. 
+715.         hdu_diff = diff.diff_hdus[0][1]
+716.         assert hdu_diff.diff_extension_types == ("IMAGE", "BINTABLE")
+717.         assert hdu_diff.diff_extnames == ("FOO", "BAR")
+718.         assert hdu_diff.diff_extvers == (1, 2)
+719.         assert hdu_diff.diff_extlevels == (1, 3)
+720. 
+721.         report = diff.report()
+722.         assert "Extension types differ" in report
+723.         assert "a: IMAGE\n    b: BINTABLE" in report
+724.         assert "Extension names differ" in report
+725.         assert "a: FOO\n    b: BAR" in report
+726.         assert "Extension versions differ" in report
+727.         assert "a: 1\n    b: 2" in report
+728.         assert "Extension levels differ" in report
+729.         assert "a: 1\n    b: 2" in report
+730. 
+731.     def test_diff_nans(self):
+732.         """
+733.         Regression test for https://aeon.stsci.edu/ssb/trac/pyfits/ticket/204
+734.         """
+735. 
+736.         # First test some arrays that should be equivalent....
+737.         arr = np.empty((10, 10), dtype=np.float64)
+738.         arr[:5] = 1.0
+739.         arr[5:] = np.nan
+740.         arr2 = arr.copy()
+741. 
+742.         table = np.rec.array(
+743.             [(1.0, 2.0), (3.0, np.nan), (np.nan, np.nan)], names=["cola", "colb"]
+744.         ).view(fits.FITS_rec)
+745.         table2 = table.copy()
+746. 
+747.         assert ImageDataDiff(arr, arr2).identical
+748.         assert TableDataDiff(table, table2).identical
+749. 
+750.         # Now let's introduce some differences, where there are nans and where
+751.         # there are not nans
+752.         arr2[0][0] = 2.0
+753.         arr2[5][0] = 2.0
+754.         table2[0][0] = 2.0
+755.         table2[1][1] = 2.0
+756. 
+757.         diff = ImageDataDiff(arr, arr2)
+758.         assert not diff.identical
+759.         assert diff.diff_pixels[0] == ((0, 0), (1.0, 2.0))
+760.         assert diff.diff_pixels[1][0] == (5, 0)
+761.         assert np.isnan(diff.diff_pixels[1][1][0])
+762.         assert diff.diff_pixels[1][1][1] == 2.0
+763. 
+764.         diff = TableDataDiff(table, table2)
+765.         assert not diff.identical
+766.         assert diff.diff_values[0] == (("cola", 0), (1.0, 2.0))
+767.         assert diff.diff_values[1][0] == ("colb", 1)
+768.         assert np.isnan(diff.diff_values[1][1][0])
+769.         assert diff.diff_values[1][1][1] == 2.0
+770. 
+771.     def test_file_output_from_path_string(self):
+772.         outpath = self.temp("diff_output.txt")
+773.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+774.         hb = ha.copy()
+775.         hb["C"] = 4
+776.         diffobj = HeaderDiff(ha, hb)
+777.         diffobj.report(fileobj=outpath)
+778.         report_as_string = diffobj.report()
+779.         with open(outpath) as fout:
+780.             assert fout.read() == report_as_string
+781. 
+782.     def test_file_output_overwrite_safety(self):
+783.         outpath = self.temp("diff_output.txt")
+784.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+785.         hb = ha.copy()
+786.         hb["C"] = 4
+787.         diffobj = HeaderDiff(ha, hb)
+788.         diffobj.report(fileobj=outpath)
+789. 
+790.         with pytest.raises(OSError, match=_NOT_OVERWRITING_MSG_MATCH):
+791.             diffobj.report(fileobj=outpath)
+792. 
+793.     def test_file_output_overwrite_success(self):
+794.         outpath = self.temp("diff_output.txt")
+795.         ha = Header([("A", 1), ("B", 2), ("C", 3)])
+796.         hb = ha.copy()
+797.         hb["C"] = 4
+798.         diffobj = HeaderDiff(ha, hb)
+799.         diffobj.report(fileobj=outpath)
+800.         report_as_string = diffobj.report()
+801.         diffobj.report(fileobj=outpath, overwrite=True)
+802.         with open(outpath) as fout:
+803.             assert (
+804.                 fout.read() == report_as_string
+805.             ), "overwritten output file is not identical to report string"
+806. 
+807.     def test_rawdatadiff_nodiff(self):
+808.         a = np.arange(100, dtype="uint8").reshape(10, 10)
+809.         b = a.copy()
+810.         hdu_a = DummyNonstandardExtHDU(data=a)
+811.         hdu_b = DummyNonstandardExtHDU(data=b)
+812.         diff = HDUDiff(hdu_a, hdu_b)
+813.         assert diff.identical
+814.         report = diff.report()
+815.         assert "No differences found." in report
+816. 
+817.     def test_rawdatadiff_dimsdiff(self):
+818.         a = np.arange(100, dtype="uint8") + 10
+819.         b = a[:80].copy()
+820.         hdu_a = DummyNonstandardExtHDU(data=a)
+821.         hdu_b = DummyNonstandardExtHDU(data=b)
+822.         diff = HDUDiff(hdu_a, hdu_b)
+823.         assert not diff.identical
+824.         report = diff.report()
+825.         assert "Data sizes differ:" in report
+826.         assert "a: 100 bytes" in report
+827.         assert "b: 80 bytes" in report
+828.         assert "No further data comparison performed." in report
+829. 
+830.     def test_rawdatadiff_bytesdiff(self):
+831.         a = np.arange(100, dtype="uint8") + 10
+832.         b = a.copy()
+833.         changes = [(30, 200), (89, 170)]
+834.         for i, v in changes:
+835.             b[i] = v
+836. 
+837.         hdu_a = DummyNonstandardExtHDU(data=a)
+838.         hdu_b = DummyNonstandardExtHDU(data=b)
+839.         diff = HDUDiff(hdu_a, hdu_b)
+840. 
+841.         assert not diff.identical
+842. 
+843.         diff_bytes = diff.diff_data.diff_bytes
+844.         assert len(changes) == len(diff_bytes)
+845.         for j, (i, v) in enumerate(changes):
+846.             assert diff_bytes[j] == (i, (i + 10, v))
+847. 
+848.         report = diff.report()
+849.         assert "Data contains differences:" in report
+850.         for i, _ in changes:
+851.             assert f"Data differs at byte {i}:" in report
+852.         assert "2 different bytes found (2.00% different)." in report
+853. 
+854. 
+855. def test_fitsdiff_hdu_name(tmp_path):
+856.     """Make sure diff report reports HDU name and ver if same in files"""
+857.     path1 = tmp_path / "test1.fits"
+858.     path2 = tmp_path / "test2.fits"
+859. 
+860.     hdulist = HDUList([PrimaryHDU(), ImageHDU(data=np.zeros(5), name="SCI")])
+861.     hdulist.writeto(path1)
+862.     hdulist[1].data[0] = 1
+863.     hdulist.writeto(path2)
+864. 
+865.     diff = FITSDiff(path1, path2)
+866.     assert "Extension HDU 1 (SCI, 1):" in diff.report()
+867. 
+868. 
+869. def test_fitsdiff_no_hdu_name(tmp_path):
+870.     """Make sure diff report doesn't report HDU name if not in files"""
+871.     path1 = tmp_path / "test1.fits"
+872.     path2 = tmp_path / "test2.fits"
+873. 
+874.     hdulist = HDUList([PrimaryHDU(), ImageHDU(data=np.zeros(5))])
+875.     hdulist.writeto(path1)
+876.     hdulist[1].data[0] = 1
+877.     hdulist.writeto(path2)
+878. 
+879.     diff = FITSDiff(path1, path2)
+880.     assert "Extension HDU 1:" in diff.report()
+881. 
+882. 
+883. def test_fitsdiff_with_names(tmp_path):
+884.     """Make sure diff report doesn't report HDU name if not same in files"""
+885.     path1 = tmp_path / "test1.fits"
+886.     path2 = tmp_path / "test2.fits"
+887. 
+888.     hdulist = HDUList([PrimaryHDU(), ImageHDU(data=np.zeros(5), name="SCI", ver=1)])
+889.     hdulist.writeto(path1)
+890.     hdulist[1].name = "ERR"
+891.     hdulist.writeto(path2)
+892. 
+893.     diff = FITSDiff(path1, path2)
+894.     assert "Extension HDU 1:" in diff.report()
+895. 
+896. 
+897. def test_rawdatadiff_diff_with_rtol(tmp_path):
+898.     """Regression test for https://github.com/astropy/astropy/issues/13330"""
+899.     path1 = tmp_path / "test1.fits"
+900.     path2 = tmp_path / "test2.fits"
+901.     a = np.zeros((10, 2), dtype="float32")
+902.     a[:, 0] = np.arange(10, dtype="float32") + 10
+903.     a[:, 1] = np.arange(10, dtype="float32") + 20
+904.     b = a.copy()
+905.     changes = [(3, 13.1, 23.1), (8, 20.5, 30.5)]
+906.     for i, v, w in changes:
+907.         b[i, 0] = v
+908.         b[i, 1] = w
+909. 
+910.     ca = Column("A", format="20E", array=[a])
+911.     cb = Column("A", format="20E", array=[b])
+912.     hdu_a = BinTableHDU.from_columns([ca])
+913.     hdu_a.writeto(path1, overwrite=True)
+914.     hdu_b = BinTableHDU.from_columns([cb])
+915.     hdu_b.writeto(path2, overwrite=True)
+916.     with fits.open(path1) as fits1:
+917.         with fits.open(path2) as fits2:
+918.             diff = FITSDiff(fits1, fits2, atol=0, rtol=0.001)
+919.             str1 = diff.report(fileobj=None, indent=0)
+920. 
+921.             diff = FITSDiff(fits1, fits2, atol=0, rtol=0.01)
+922.             str2 = diff.report(fileobj=None, indent=0)
+923. 
+924.     assert "...and at 1 more indices." in str1
+925.     assert "...and at 1 more indices." not in str2
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 17:09:39,772 - thread-131918823687872.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="I have analyzed the provided test file `astropy/io/fits/tests/test_diff.py` and found it contains sufficient information to identify three relevant test cases for the user's query. The file includes tests for `FITSDiff` and `TableDataDiff`, and specifically contains tests for VLA columns (using 'P' format), which is directly related to the bug concerning 'Q' format VLA columns. I have found two tests that cover VLA data comparison (`test_identical_tables` and `test_different_table_data`) and a third test (`test_identical_comp_image_hdus`) that matches the bug report's pattern of comparing a file to itself. All necessary code, imports, and assertions for these tests are present in the provided context. Therefore, no additional context is required." query='' extra_requirements='' purpose=''
+2025-12-21 17:09:39,773 - thread-131918823687872.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

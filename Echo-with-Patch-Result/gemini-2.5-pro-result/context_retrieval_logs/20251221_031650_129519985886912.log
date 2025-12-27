@@ -1,0 +1,5333 @@
+2025-12-21 03:16:50,541 - thread-129519985886912.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: [Bug]: Windows correction is not correct in `mlab._spectral_helper`
+
+Description: ### Bug summary
+
+Windows correction is not correct in `mlab._spectral_helper`:
+https://github.com/matplotlib/matplotlib/blob/3418bada1c1f44da1f73916c5603e3ae79fe58c1/lib/matplotlib/mlab.py#L423-L430
+
+The `np.abs` is not needed, and give wrong result for window with negative value, such as `flattop`.
+For reference, the implementation of scipy can be found here :
+https://github.com/scipy/scipy/blob/d9f75db82fdffef06187c9d8d2f0f5b36c7a791b/scipy/signal/_spectral_py.py#L1854-L1859
+
+### Code for reproduction
+
+```python
+import numpy as np
+from scipy import signal
+window = signal.windows.flattop(512)
+print(np.abs(window).sum()**2-window.sum()**2)
+```
+
+
+### Actual outcome
+
+4372.942556173262
+
+### Expected outcome
+
+0
+
+### Additional information
+
+_No response_
+
+### Operating system
+
+_No response_
+
+### Matplotlib Version
+
+latest
+
+### Matplotlib Backend
+
+_No response_
+
+### Python version
+
+_No response_
+
+### Jupyter version
+
+_No response_
+
+### Installation
+
+None
+
+Patch information:
+diff --git a/lib/matplotlib/mlab.py b/lib/matplotlib/mlab.py
+index 3552904c3d..efa2f84cae 100644
+--- a/lib/matplotlib/mlab.py
++++ b/lib/matplotlib/mlab.py
+@@ -395,12 +395,12 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+     elif mode == 'psd':
+         result = np.conj(result) * result
+     elif mode == 'magnitude':
+-        result = np.abs(result) / np.abs(window).sum()
++        result = np.abs(result) / window.sum()
+     elif mode == 'angle' or mode == 'phase':
+         # we unwrap the phase later to handle the onesided vs. twosided case
+         result = np.angle(result)
+     elif mode == 'complex':
+-        result /= np.abs(window).sum()
++        result /= window.sum()
+ 
+     if mode == 'psd':
+ 
+@@ -424,10 +424,10 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+             result /= Fs
+             # Scale the spectrum by the norm of the window to compensate for
+             # windowing loss; see Bendat & Piersol Sec 11.5.2.
+-            result /= (np.abs(window)**2).sum()
++            result /= (window**2).sum()
+         else:
+             # In this case, preserve power in the segment, not amplitude
+-            result /= np.abs(window).sum()**2
++            result /= window.sum()**2
+ 
+     t = np.arange(NFFT/2, len(x) - NFFT/2 + 1, NFFT - noverlap)/Fs
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-21 03:16:50,613 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+matplotlib
+├── .appveyor.yml
+├── .circleci
+|   ├── config.yml
+|   ├── deploy-docs.sh
+|   └── fetch_doc_logs.py
+├── .git_archival.txt
+├── .github
+|   ├── CONTRIBUTING.md
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bug_report.yml
+|   |   ├── config.yml
+|   |   ├── documentation.yml
+|   |   ├── feature_request.yml
+|   |   └── maintenance.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── codecov.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── cibuildsdist.yml
+|       ├── cibuildwheel.yml
+|       ├── circleci.yml
+|       ├── clean_pr.yml
+|       ├── codeql-analysis.yml
+|       ├── conflictcheck.yml
+|       ├── cygwin.yml
+|       ├── nightlies.yml
+|       ├── pr_welcome.yml
+|       ├── reviewdog.yml
+|       └── tests.yml
+├── .lgtm.yml
+├── .meeseeksdev.yml
+├── .pre-commit-config.yaml
+├── CODE_OF_CONDUCT.md
+├── INSTALL.rst
+├── LICENSE
+├── README.md
+├── SECURITY.md
+├── azure-pipelines.yml
+├── ci
+|   ├── check_version_number.py
+|   ├── check_wheel_licenses.py
+|   └── codespell-ignore-words.txt
+├── doc
+|   ├── README.txt
+|   ├── _static
+|   |   ├── fa
+|   |   ├── markers
+|   |   ├── mpl.css
+|   |   └── zenodo_cache
+|   ├── _templates
+|   |   ├── autofunctions.rst
+|   |   ├── automodule.rst
+|   |   ├── autosummary.rst
+|   |   ├── autosummary_class_only.rst
+|   |   ├── cheatsheet_sidebar.html
+|   |   ├── donate_sidebar.html
+|   |   ├── function.rst
+|   |   ├── pagesource.html
+|   |   ├── search.html
+|   |   ├── sidebar_announcement.html
+|   |   └── sidebar_versions.html
+|   ├── api
+|   |   ├── _api_api.rst
+|   |   ├── _enums_api.rst
+|   |   ├── afm_api.rst
+|   |   ├── animation_api.rst
+|   |   ├── artist_api.rst
+|   |   ├── axes_api.rst
+|   |   ├── axis_api.rst
+|   |   ├── backend_agg_api.rst
+|   |   ├── backend_bases_api.rst
+|   |   ├── backend_cairo_api.rst
+|   |   ├── backend_gtk3_api.rst
+|   |   ├── backend_gtk4_api.rst
+|   |   ├── backend_managers_api.rst
+|   |   ├── backend_mixed_api.rst
+|   |   ├── backend_nbagg_api.rst
+|   |   ├── backend_pdf_api.rst
+|   |   ├── backend_pgf_api.rst
+|   |   ├── backend_ps_api.rst
+|   |   ├── backend_qt_api.rst
+|   |   ├── backend_svg_api.rst
+|   |   ├── backend_template_api.rst
+|   |   ├── backend_tk_api.rst
+|   |   ├── backend_tools_api.rst
+|   |   ├── backend_webagg_api.rst
+|   |   ├── backend_wx_api.rst
+|   |   ├── bezier_api.rst
+|   |   ├── category_api.rst
+|   |   ├── cbook_api.rst
+|   |   ├── cm_api.rst
+|   |   ├── collections_api.rst
+|   |   ├── colorbar_api.rst
+|   |   ├── colors_api.rst
+|   |   ├── container_api.rst
+|   |   ├── contour_api.rst
+|   |   ├── dates_api.rst
+|   |   ├── docstring_api.rst
+|   |   ├── dviread.rst
+|   |   ├── figure_api.rst
+|   |   ├── font_manager_api.rst
+|   |   ├── ft2font.rst
+|   |   ├── gridspec_api.rst
+|   |   ├── hatch_api.rst
+|   |   ├── image_api.rst
+|   |   ├── index.rst
+|   |   ├── index_backend_api.rst
+|   |   ├── layout_engine_api.rst
+|   |   ├── legend_api.rst
+|   |   ├── legend_handler_api.rst
+|   |   ├── lines_api.rst
+|   |   ├── markers_api.rst
+|   |   ├── mathtext_api.rst
+|   |   ├── matplotlib_configuration_api.rst
+|   |   ├── mlab_api.rst
+|   |   ├── next_api_changes
+|   |   |   ├── README.rst
+|   |   |   ├── behavior
+|   |   |   |   ├── 00001-ABC.rst
+|   |   |   |   ├── 23573-AL.rst
+|   |   |   |   ├── 23579-AL.rst
+|   |   |   |   ├── 23710-ES.rst
+|   |   |   |   ├── 24062-tb.rst
+|   |   |   |   ├── 24131-OG.rst
+|   |   |   |   ├── 24132-GL.rst
+|   |   |   |   ├── 24189-JB.rst
+|   |   |   |   ├── 24570-GL.rst
+|   |   |   |   ├── 24655-AK.rst
+|   |   |   |   ├── 24829-AL.rst
+|   |   |   |   ├── 24870-AL.rst
+|   |   |   |   ├── 24889-AL.rst
+|   |   |   |   ├── 24912-AL.rst
+|   |   |   |   ├── 25061-DS.rst
+|   |   |   |   └── 9598-AFV.rst
+|   |   |   ├── deprecations
+|   |   |   |   ├── 00001-ABC.rst
+|   |   |   |   ├── 19763-ES.rst
+|   |   |   |   ├── 22314-AL.rst
+|   |   |   |   ├── 23449-SS.rst
+|   |   |   |   ├── 23720-RS.rst
+|   |   |   |   ├── 23735-ES.rst
+|   |   |   |   ├── 23824-OG.rst
+|   |   |   |   ├── 24000-TH.rst
+|   |   |   |   ├── 24013-TH.rst
+|   |   |   |   ├── 24071-OG.rst
+|   |   |   |   ├── 24088-JMK.rst
+|   |   |   |   ├── 24131-OG.rst
+|   |   |   |   ├── 24140-AL.rst
+|   |   |   |   ├── 24144-AL.rst
+|   |   |   |   ├── 24198-AL.rst
+|   |   |   |   ├── 24208-AL.rst
+|   |   |   |   ├── 24220-AL.rst
+|   |   |   |   ├── 24221-AL.rst
+|   |   |   |   ├── 24224-OG.rst
+|   |   |   |   ├── 24240-OG.rst
+|   |   |   |   ├── 24254-OG.rst
+|   |   |   |   ├── 24305-AL.rst
+|   |   |   |   ├── 24455-AL.rst
+|   |   |   |   ├── 24465-AL.rst
+|   |   |   |   ├── 24474_CM.rst
+|   |   |   |   ├── 24538-OG.rst
+|   |   |   |   ├── 24577-AL.rst
+|   |   |   |   ├── 24664-OG.rst
+|   |   |   |   ├── 24688-OG.rst
+|   |   |   |   ├── 24730-TH.rst
+|   |   |   |   ├── 24806-KS.rst
+|   |   |   |   ├── 24846-ES.rst
+|   |   |   |   ├── 24864-AL.rst
+|   |   |   |   ├── 24904-AL.rst
+|   |   |   |   ├── 24913-AL.rst
+|   |   |   |   ├── 24985-OG.rst
+|   |   |   |   └── 24990-OG.rst
+|   |   |   ├── development
+|   |   |   |   ├── 00001-ABC.rst
+|   |   |   |   ├── 23683-AL.rst
+|   |   |   |   ├── 24257-AL.rst
+|   |   |   |   ├── 24710-AL.rst
+|   |   |   |   ├── 24724-ES.rst
+|   |   |   |   ├── 24887-OG.rst
+|   |   |   |   ├── 24893-KS.rst
+|   |   |   |   └── 24919-KS.rst
+|   |   |   └── removals
+|   |   |       ├── 00001-ABC.rst
+|   |   |       ├── 21661-TAC.rst
+|   |   |       ├── 24125-OG.rst
+|   |   |       ├── 24128-OG.rst
+|   |   |       ├── 24129-OG.rst
+|   |   |       ├── 24251-OG.rst
+|   |   |       ├── 24253-OG.rst
+|   |   |       ├── 24254-OG.rst
+|   |   |       ├── 24257-AL.rst
+|   |   |       ├── 24355-OG.rst
+|   |   |       ├── 24356-OG.rst
+|   |   |       ├── 24624-AL.rst
+|   |   |       ├── 24923-ES.rst
+|   |   |       ├── 24948-ES.rst
+|   |   |       ├── 24965-ES.rst
+|   |   |       └── 24XXX-OG.rst
+|   |   ├── next_api_changes.rst
+|   |   ├── offsetbox_api.rst
+|   |   ├── patches_api.rst
+|   |   ├── path_api.rst
+|   |   ├── patheffects_api.rst
+|   |   ├── prev_api_changes
+|   |   |   ├── api_changes_0.40.rst
+|   |   |   ├── api_changes_0.42.rst
+|   |   |   ├── api_changes_0.50.rst
+|   |   |   ├── api_changes_0.54.3.rst
+|   |   |   ├── api_changes_0.54.rst
+|   |   |   ├── api_changes_0.60.rst
+|   |   |   ├── api_changes_0.61.rst
+|   |   |   ├── api_changes_0.63.rst
+|   |   |   ├── api_changes_0.65.1.rst
+|   |   |   ├── api_changes_0.65.rst
+|   |   |   ├── api_changes_0.70.rst
+|   |   |   ├── api_changes_0.71.rst
+|   |   |   ├── api_changes_0.72.rst
+|   |   |   ├── api_changes_0.73.rst
+|   |   |   ├── api_changes_0.80.rst
+|   |   |   ├── api_changes_0.81.rst
+|   |   |   ├── api_changes_0.82.rst
+|   |   |   ├── api_changes_0.83.rst
+|   |   |   ├── api_changes_0.84.rst
+|   |   |   ├── api_changes_0.85.rst
+|   |   |   ├── api_changes_0.86.rst
+|   |   |   ├── api_changes_0.87.7.rst
+|   |   |   ├── api_changes_0.90.0.rst
+|   |   |   ├── api_changes_0.90.1.rst
+|   |   |   ├── api_changes_0.91.0.rst
+|   |   |   ├── api_changes_0.91.2.rst
+|   |   |   ├── api_changes_0.98.0.rst
+|   |   |   ├── api_changes_0.98.1.rst
+|   |   |   ├── api_changes_0.98.x.rst
+|   |   |   ├── api_changes_0.99.rst
+|   |   |   ├── api_changes_0.99.x.rst
+|   |   |   ├── api_changes_1.1.x.rst
+|   |   |   ├── api_changes_1.2.x.rst
+|   |   |   ├── api_changes_1.3.x.rst
+|   |   |   ├── api_changes_1.4.x.rst
+|   |   |   ├── api_changes_1.5.0.rst
+|   |   |   ├── api_changes_1.5.2.rst
+|   |   |   ├── api_changes_1.5.3.rst
+|   |   |   ├── api_changes_2.0.0.rst
+|   |   |   ├── api_changes_2.0.1.rst
+|   |   |   ├── api_changes_2.1.0.rst
+|   |   |   ├── api_changes_2.1.1.rst
+|   |   |   ├── api_changes_2.1.2.rst
+|   |   |   ├── api_changes_2.2.0.rst
+|   |   |   ├── api_changes_3.0.0.rst
+|   |   |   ├── api_changes_3.0.1.rst
+|   |   |   ├── api_changes_3.1.0.rst
+|   |   |   ├── api_changes_3.1.1.rst
+|   |   |   ├── api_changes_3.2.0
+|   |   |   |   ├── behavior.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.2.0.rst
+|   |   |   ├── api_changes_3.3.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.3.0.rst
+|   |   |   ├── api_changes_3.3.1.rst
+|   |   |   ├── api_changes_3.4.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.4.0.rst
+|   |   |   ├── api_changes_3.4.2.rst
+|   |   |   ├── api_changes_3.5.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.5.0.rst
+|   |   |   ├── api_changes_3.5.2.rst
+|   |   |   ├── api_changes_3.5.3.rst
+|   |   |   ├── api_changes_3.6.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   └── api_changes_3.6.0.rst
+|   |   ├── projections
+|   |   |   ├── geo.rst
+|   |   |   └── polar.rst
+|   |   ├── projections_api.rst
+|   |   ├── pyplot_summary.rst
+|   |   ├── quiver_api.rst
+|   |   ├── rcsetup_api.rst
+|   |   ├── sankey_api.rst
+|   |   ├── scale_api.rst
+|   |   ├── sphinxext_mathmpl_api.rst
+|   |   ├── sphinxext_plot_directive_api.rst
+|   |   ├── spines_api.rst
+|   |   ├── style_api.rst
+|   |   ├── table_api.rst
+|   |   ├── testing_api.rst
+|   |   ├── texmanager_api.rst
+|   |   ├── text_api.rst
+|   |   ├── ticker_api.rst
+|   |   ├── tight_bbox_api.rst
+|   |   ├── tight_layout_api.rst
+|   |   ├── toolkits
+|   |   |   ├── axes_grid1.rst
+|   |   |   ├── axisartist.rst
+|   |   |   ├── mplot3d
+|   |   |   |   ├── axes3d.rst
+|   |   |   |   ├── faq.rst
+|   |   |   |   └── view_angles.rst
+|   |   |   └── mplot3d.rst
+|   |   ├── transformations.rst
+|   |   ├── tri_api.rst
+|   |   ├── type1font.rst
+|   |   ├── units_api.rst
+|   |   └── widgets_api.rst
+|   ├── conf.py
+|   ├── devel
+|   |   ├── MEP
+|   |   |   ├── MEP08.rst
+|   |   |   ├── MEP09.rst
+|   |   |   ├── MEP10.rst
+|   |   |   ├── MEP11.rst
+|   |   |   ├── MEP12.rst
+|   |   |   ├── MEP13.rst
+|   |   |   ├── MEP14.rst
+|   |   |   ├── MEP15.rst
+|   |   |   ├── MEP19.rst
+|   |   |   ├── MEP21.rst
+|   |   |   ├── MEP22.rst
+|   |   |   ├── MEP23.rst
+|   |   |   ├── MEP24.rst
+|   |   |   ├── MEP25.rst
+|   |   |   ├── MEP26.rst
+|   |   |   ├── MEP27.rst
+|   |   |   ├── MEP28.rst
+|   |   |   ├── MEP29.rst
+|   |   |   ├── README.rst
+|   |   |   ├── index.rst
+|   |   |   └── template.rst
+|   |   ├── README.txt
+|   |   ├── coding_guide.rst
+|   |   ├── color_changes.rst
+|   |   ├── contributing.rst
+|   |   ├── dependencies.rst
+|   |   ├── development_setup.rst
+|   |   ├── development_workflow.rst
+|   |   ├── documenting_mpl.rst
+|   |   ├── index.rst
+|   |   ├── license.rst
+|   |   ├── maintainer_workflow.rst
+|   |   ├── min_dep_policy.rst
+|   |   ├── release_guide.rst
+|   |   ├── style_guide.rst
+|   |   ├── testing.rst
+|   |   └── triage.rst
+|   ├── index.rst
+|   ├── sphinxext
+|   |   ├── __init__.py
+|   |   ├── custom_roles.py
+|   |   ├── gallery_order.py
+|   |   ├── github.py
+|   |   ├── math_symbol_table.py
+|   |   ├── missing_references.py
+|   |   ├── mock_gui_toolkits.py
+|   |   ├── redirect_from.py
+|   |   └── skip_deprecated.py
+|   ├── thirdpartypackages
+|   |   └── index.rst
+|   └── users
+|       ├── explain
+|       |   ├── api_interfaces.rst
+|       |   ├── backends.rst
+|       |   ├── event_handling.rst
+|       |   ├── figures.rst
+|       |   ├── fonts.rst
+|       |   ├── index.rst
+|       |   ├── interactive.rst
+|       |   ├── interactive_guide.rst
+|       |   ├── performance.rst
+|       |   └── writing_a_backend_pyplot_interface.rst
+|       ├── faq
+|       |   ├── environment_variables_faq.rst
+|       |   ├── howto_faq.rst
+|       |   ├── index.rst
+|       |   └── troubleshooting_faq.rst
+|       ├── generate_credits.py
+|       ├── getting_started
+|       |   └── index.rst
+|       ├── github_stats.rst
+|       ├── index.rst
+|       ├── installing
+|       |   └── index.rst
+|       ├── next_whats_new
+|       |   ├── 3d_pane_color_rcparams.rst
+|       |   ├── 3d_plot_aspects_adjustable_keyword.rst
+|       |   ├── 3d_plot_pan_zoom.rst
+|       |   ├── README.rst
+|       |   ├── bar_label_formatting.rst
+|       |   ├── colorbar_has_location_argument.rst
+|       |   ├── documentation.rst
+|       |   ├── ellipse_annotation.rst
+|       |   ├── figure_hooks.rst
+|       |   ├── imshow_extent_units.rst
+|       |   ├── legend-figure-outside.rst
+|       |   ├── per_subplot_mosaic.rst
+|       |   ├── pie_hatch.rst
+|       |   ├── polar_errorbar_caps.rst
+|       |   ├── reverse_legend.rst
+|       |   ├── rgba_pcolormesh.rst
+|       |   ├── savefig_bbox_layout.rst
+|       |   ├── shade_poly3dcollection.rst
+|       |   ├── show_source_links_directive_option.rst
+|       |   ├── styles_from_packages.rst
+|       |   ├── view_current_axis_format.rst
+|       |   ├── widget_blitting.rst
+|       |   └── widget_button_styling.rst
+|       ├── next_whats_new.rst
+|       ├── prev_whats_new
+|       |   ├── changelog.rst
+|       |   ├── dflt_style_changes.rst
+|       |   ├── github_stats_3.0.0.rst
+|       |   ├── github_stats_3.0.1.rst
+|       |   ├── github_stats_3.0.2.rst
+|       |   ├── github_stats_3.0.3.rst
+|       |   ├── github_stats_3.1.0.rst
+|       |   ├── github_stats_3.1.1.rst
+|       |   ├── github_stats_3.1.2.rst
+|       |   ├── github_stats_3.1.3.rst
+|       |   ├── github_stats_3.2.0.rst
+|       |   ├── github_stats_3.2.1.rst
+|       |   ├── github_stats_3.2.2.rst
+|       |   ├── github_stats_3.3.0.rst
+|       |   ├── github_stats_3.3.1.rst
+|       |   ├── github_stats_3.3.2.rst
+|       |   ├── github_stats_3.3.3.rst
+|       |   ├── github_stats_3.3.4.rst
+|       |   ├── github_stats_3.4.0.rst
+|       |   ├── github_stats_3.4.1.rst
+|       |   ├── github_stats_3.4.2.rst
+|       |   ├── github_stats_3.4.3.rst
+|       |   ├── github_stats_3.5.0.rst
+|       |   ├── github_stats_3.5.1.rst
+|       |   ├── github_stats_3.5.2.rst
+|       |   ├── github_stats_3.5.3.rst
+|       |   ├── whats_new_0.98.4.rst
+|       |   ├── whats_new_0.99.rst
+|       |   ├── whats_new_1.0.rst
+|       |   ├── whats_new_1.1.rst
+|       |   ├── whats_new_1.2.2.rst
+|       |   ├── whats_new_1.2.rst
+|       |   ├── whats_new_1.3.rst
+|       |   ├── whats_new_1.4.rst
+|       |   ├── whats_new_1.5.rst
+|       |   ├── whats_new_2.0.0.rst
+|       |   ├── whats_new_2.1.0.rst
+|       |   ├── whats_new_2.2.rst
+|       |   ├── whats_new_3.0.rst
+|       |   ├── whats_new_3.1.0.rst
+|       |   ├── whats_new_3.2.0.rst
+|       |   ├── whats_new_3.3.0.rst
+|       |   ├── whats_new_3.4.0.rst
+|       |   ├── whats_new_3.5.0.rst
+|       |   ├── whats_new_3.5.2.rst
+|       |   └── whats_new_3.6.0.rst
+|       ├── project
+|       |   ├── citing.rst
+|       |   ├── credits.rst
+|       |   ├── history.rst
+|       |   ├── index.rst
+|       |   ├── license.rst
+|       |   └── mission.rst
+|       ├── release_notes.rst
+|       ├── release_notes_next.rst
+|       └── resources
+|           └── index.rst
+├── environment.yml
+├── examples
+|   ├── README.txt
+|   ├── animation
+|   |   ├── README.txt
+|   |   ├── animate_decay.py
+|   |   ├── animated_histogram.py
+|   |   ├── animation_demo.py
+|   |   ├── bayes_update.py
+|   |   ├── double_pendulum.py
+|   |   ├── dynamic_image.py
+|   |   ├── frame_grabbing_sgskip.py
+|   |   ├── multiple_axes.py
+|   |   ├── pause_resume.py
+|   |   ├── rain.py
+|   |   ├── random_walk.py
+|   |   ├── simple_anim.py
+|   |   ├── simple_scatter.py
+|   |   ├── strip_chart.py
+|   |   └── unchained.py
+|   ├── axes_grid1
+|   |   ├── README.txt
+|   |   ├── demo_anchored_direction_arrows.py
+|   |   ├── demo_axes_divider.py
+|   |   ├── demo_axes_grid.py
+|   |   ├── demo_axes_grid2.py
+|   |   ├── demo_axes_hbox_divider.py
+|   |   ├── demo_axes_rgb.py
+|   |   ├── demo_colorbar_of_inset_axes.py
+|   |   ├── demo_colorbar_with_axes_divider.py
+|   |   ├── demo_colorbar_with_inset_locator.py
+|   |   ├── demo_edge_colorbar.py
+|   |   ├── demo_fixed_size_axes.py
+|   |   ├── demo_imagegrid_aspect.py
+|   |   ├── inset_locator_demo.py
+|   |   ├── inset_locator_demo2.py
+|   |   ├── make_room_for_ylabel_using_axesgrid.py
+|   |   ├── parasite_simple.py
+|   |   ├── parasite_simple2.py
+|   |   ├── scatter_hist_locatable_axes.py
+|   |   ├── simple_anchored_artists.py
+|   |   ├── simple_axes_divider1.py
+|   |   ├── simple_axes_divider3.py
+|   |   ├── simple_axesgrid.py
+|   |   ├── simple_axesgrid2.py
+|   |   ├── simple_axisline4.py
+|   |   └── simple_colorbar.py
+|   ├── axisartist
+|   |   ├── README.txt
+|   |   ├── axis_direction.py
+|   |   ├── demo_axis_direction.py
+|   |   ├── demo_axisline_style.py
+|   |   ├── demo_curvelinear_grid.py
+|   |   ├── demo_curvelinear_grid2.py
+|   |   ├── demo_floating_axes.py
+|   |   ├── demo_floating_axis.py
+|   |   ├── demo_parasite_axes.py
+|   |   ├── demo_parasite_axes2.py
+|   |   ├── demo_ticklabel_alignment.py
+|   |   ├── demo_ticklabel_direction.py
+|   |   ├── simple_axis_direction01.py
+|   |   ├── simple_axis_direction03.py
+|   |   ├── simple_axis_pad.py
+|   |   ├── simple_axisartist1.py
+|   |   ├── simple_axisline.py
+|   |   └── simple_axisline3.py
+|   ├── color
+|   |   ├── README.txt
+|   |   ├── color_by_yvalue.py
+|   |   ├── color_cycle_default.py
+|   |   ├── color_demo.py
+|   |   ├── colorbar_basics.py
+|   |   ├── colormap_reference.py
+|   |   ├── custom_cmap.py
+|   |   └── named_colors.py
+|   ├── event_handling
+|   |   ├── README.txt
+|   |   ├── close_event.py
+|   |   ├── coords_demo.py
+|   |   ├── cursor_demo.py
+|   |   ├── data_browser.py
+|   |   ├── figure_axes_enter_leave.py
+|   |   ├── ginput_manual_clabel_sgskip.py
+|   |   ├── image_slices_viewer.py
+|   |   ├── keypress_demo.py
+|   |   ├── lasso_demo.py
+|   |   ├── legend_picking.py
+|   |   ├── looking_glass.py
+|   |   ├── path_editor.py
+|   |   ├── pick_event_demo.py
+|   |   ├── pick_event_demo2.py
+|   |   ├── poly_editor.py
+|   |   ├── pong_sgskip.py
+|   |   ├── resample.py
+|   |   ├── timers.py
+|   |   ├── trifinder_event_demo.py
+|   |   ├── viewlims.py
+|   |   └── zoom_window.py
+|   ├── images_contours_and_fields
+|   |   ├── README.txt
+|   |   ├── affine_image.py
+|   |   ├── barb_demo.py
+|   |   ├── barcode_demo.py
+|   |   ├── colormap_interactive_adjustment.py
+|   |   ├── colormap_normalizations.py
+|   |   ├── colormap_normalizations_symlognorm.py
+|   |   ├── contour_corner_mask.py
+|   |   ├── contour_demo.py
+|   |   ├── contour_image.py
+|   |   ├── contour_label_demo.py
+|   |   ├── contourf_demo.py
+|   |   ├── contourf_hatching.py
+|   |   ├── contourf_log.py
+|   |   ├── contours_in_optimization_demo.py
+|   |   ├── demo_bboximage.py
+|   |   ├── figimage_demo.py
+|   |   ├── image_annotated_heatmap.py
+|   |   ├── image_antialiasing.py
+|   |   ├── image_clip_path.py
+|   |   ├── image_demo.py
+|   |   ├── image_masked.py
+|   |   ├── image_nonuniform.py
+|   |   ├── image_transparency_blend.py
+|   |   ├── image_zcoord.py
+|   |   ├── interpolation_methods.py
+|   |   ├── irregulardatagrid.py
+|   |   ├── layer_images.py
+|   |   ├── matshow.py
+|   |   ├── multi_image.py
+|   |   ├── pcolor_demo.py
+|   |   ├── pcolormesh_grids.py
+|   |   ├── pcolormesh_levels.py
+|   |   ├── plot_streamplot.py
+|   |   ├── quadmesh_demo.py
+|   |   ├── quiver_demo.py
+|   |   ├── quiver_simple_demo.py
+|   |   ├── shading_example.py
+|   |   ├── specgram_demo.py
+|   |   ├── spy_demos.py
+|   |   ├── tricontour_demo.py
+|   |   ├── tricontour_smooth_delaunay.py
+|   |   ├── tricontour_smooth_user.py
+|   |   ├── trigradient_demo.py
+|   |   ├── triinterp_demo.py
+|   |   ├── tripcolor_demo.py
+|   |   ├── triplot_demo.py
+|   |   └── watermark_image.py
+|   ├── lines_bars_and_markers
+|   |   ├── README.txt
+|   |   ├── bar_colors.py
+|   |   ├── bar_label_demo.py
+|   |   ├── bar_stacked.py
+|   |   ├── barchart.py
+|   |   ├── barh.py
+|   |   ├── broken_barh.py
+|   |   ├── capstyle.py
+|   |   ├── categorical_variables.py
+|   |   ├── cohere.py
+|   |   ├── csd_demo.py
+|   |   ├── curve_error_band.py
+|   |   ├── errorbar_limits_simple.py
+|   |   ├── errorbar_subsample.py
+|   |   ├── eventcollection_demo.py
+|   |   ├── eventplot_demo.py
+|   |   ├── fill.py
+|   |   ├── fill_between_alpha.py
+|   |   ├── fill_between_demo.py
+|   |   ├── fill_betweenx_demo.py
+|   |   ├── filled_step.py
+|   |   ├── gradient_bar.py
+|   |   ├── hat_graph.py
+|   |   ├── horizontal_barchart_distribution.py
+|   |   ├── joinstyle.py
+|   |   ├── line_demo_dash_control.py
+|   |   ├── lines_with_ticks_demo.py
+|   |   ├── linestyles.py
+|   |   ├── marker_reference.py
+|   |   ├── markevery_demo.py
+|   |   ├── masked_demo.py
+|   |   ├── multicolored_line.py
+|   |   ├── multivariate_marker_plot.py
+|   |   ├── psd_demo.py
+|   |   ├── scatter_custom_symbol.py
+|   |   ├── scatter_demo2.py
+|   |   ├── scatter_hist.py
+|   |   ├── scatter_masked.py
+|   |   ├── scatter_star_poly.py
+|   |   ├── scatter_with_legend.py
+|   |   ├── simple_plot.py
+|   |   ├── span_regions.py
+|   |   ├── spectrum_demo.py
+|   |   ├── stackplot_demo.py
+|   |   ├── stairs_demo.py
+|   |   ├── stem_plot.py
+|   |   ├── step_demo.py
+|   |   ├── timeline.py
+|   |   ├── vline_hline_demo.py
+|   |   └── xcorr_acorr_demo.py
+|   ├── misc
+|   |   ├── README.txt
+|   |   ├── anchored_artists.py
+|   |   ├── bbox_intersect.py
+|   |   ├── contour_manual.py
+|   |   ├── coords_report.py
+|   |   ├── custom_projection.py
+|   |   ├── customize_rc.py
+|   |   ├── demo_agg_filter.py
+|   |   ├── demo_ribbon_box.py
+|   |   ├── fig_x.py
+|   |   ├── fill_spiral.py
+|   |   ├── findobj_demo.py
+|   |   ├── font_indexing.py
+|   |   ├── ftface_props.py
+|   |   ├── histogram_path.py
+|   |   ├── hyperlinks_sgskip.py
+|   |   ├── image_thumbnail_sgskip.py
+|   |   ├── keyword_plotting.py
+|   |   ├── logos2.py
+|   |   ├── multipage_pdf.py
+|   |   ├── multiprocess_sgskip.py
+|   |   ├── packed_bubbles.py
+|   |   ├── patheffect_demo.py
+|   |   ├── print_stdout_sgskip.py
+|   |   ├── rasterization_demo.py
+|   |   ├── set_and_get.py
+|   |   ├── svg_filter_line.py
+|   |   ├── svg_filter_pie.py
+|   |   ├── table_demo.py
+|   |   ├── tickedstroke_demo.py
+|   |   ├── transoffset.py
+|   |   └── zorder_demo.py
+|   ├── mplot3d
+|   |   ├── 2dcollections3d.py
+|   |   ├── 3d_bars.py
+|   |   ├── README.txt
+|   |   ├── bars3d.py
+|   |   ├── box3d.py
+|   |   ├── contour3d.py
+|   |   ├── contour3d_2.py
+|   |   ├── contour3d_3.py
+|   |   ├── contourf3d.py
+|   |   ├── contourf3d_2.py
+|   |   ├── custom_shaded_3d_surface.py
+|   |   ├── errorbar3d.py
+|   |   ├── hist3d.py
+|   |   ├── lines3d.py
+|   |   ├── lorenz_attractor.py
+|   |   ├── mixed_subplots.py
+|   |   ├── offset.py
+|   |   ├── pathpatch3d.py
+|   |   ├── polys3d.py
+|   |   ├── projections.py
+|   |   ├── quiver3d.py
+|   |   ├── rotate_axes3d_sgskip.py
+|   |   ├── scatter3d.py
+|   |   ├── stem3d_demo.py
+|   |   ├── subplot3d.py
+|   |   ├── surface3d.py
+|   |   ├── surface3d_2.py
+|   |   ├── surface3d_3.py
+|   |   ├── surface3d_radial.py
+|   |   ├── text3d.py
+|   |   ├── tricontour3d.py
+|   |   ├── tricontourf3d.py
+|   |   ├── trisurf3d.py
+|   |   ├── trisurf3d_2.py
+|   |   ├── view_planes_3d.py
+|   |   ├── voxels.py
+|   |   ├── voxels_numpy_logo.py
+|   |   ├── voxels_rgb.py
+|   |   ├── voxels_torus.py
+|   |   ├── wire3d.py
+|   |   ├── wire3d_animation_sgskip.py
+|   |   └── wire3d_zero_stride.py
+|   ├── pie_and_polar_charts
+|   |   ├── README.txt
+|   |   ├── bar_of_pie.py
+|   |   ├── nested_pie.py
+|   |   ├── pie_and_donut_labels.py
+|   |   ├── pie_demo2.py
+|   |   ├── pie_features.py
+|   |   ├── polar_bar.py
+|   |   ├── polar_demo.py
+|   |   ├── polar_error_caps.py
+|   |   ├── polar_legend.py
+|   |   └── polar_scatter.py
+|   ├── pyplots
+|   |   ├── README.txt
+|   |   ├── axline.py
+|   |   ├── pyplot_simple.py
+|   |   ├── pyplot_text.py
+|   |   ├── pyplot_three.py
+|   |   └── pyplot_two_subplots.py
+|   ├── scales
+|   |   ├── README.txt
+|   |   ├── asinh_demo.py
+|   |   ├── aspect_loglog.py
+|   |   ├── custom_scale.py
+|   |   ├── log_bar.py
+|   |   ├── log_demo.py
+|   |   ├── logit_demo.py
+|   |   ├── power_norm.py
+|   |   ├── scales.py
+|   |   ├── semilogx_demo.py
+|   |   └── symlog_demo.py
+|   ├── shapes_and_collections
+|   |   ├── README.txt
+|   |   ├── arrow_guide.py
+|   |   ├── artist_reference.py
+|   |   ├── collections.py
+|   |   ├── compound_path.py
+|   |   ├── dolphin.py
+|   |   ├── donut.py
+|   |   ├── ellipse_collection.py
+|   |   ├── ellipse_demo.py
+|   |   ├── fancybox_demo.py
+|   |   ├── hatch_demo.py
+|   |   ├── hatch_style_reference.py
+|   |   ├── line_collection.py
+|   |   ├── patch_collection.py
+|   |   ├── path_patch.py
+|   |   ├── quad_bezier.py
+|   |   └── scatter.py
+|   ├── showcase
+|   |   ├── README.txt
+|   |   ├── anatomy.py
+|   |   ├── firefox.py
+|   |   ├── integral.py
+|   |   ├── mandelbrot.py
+|   |   ├── stock_prices.py
+|   |   └── xkcd.py
+|   ├── specialty_plots
+|   |   ├── README.txt
+|   |   ├── advanced_hillshading.py
+|   |   ├── anscombe.py
+|   |   ├── hinton_demo.py
+|   |   ├── leftventricle_bullseye.py
+|   |   ├── mri_demo.py
+|   |   ├── mri_with_eeg.py
+|   |   ├── radar_chart.py
+|   |   ├── sankey_basics.py
+|   |   ├── sankey_links.py
+|   |   ├── sankey_rankine.py
+|   |   ├── skewt.py
+|   |   └── topographic_hillshading.py
+|   ├── spines
+|   |   ├── README.txt
+|   |   ├── centered_spines_with_arrows.py
+|   |   ├── multiple_yaxis_with_spines.py
+|   |   ├── spine_placement_demo.py
+|   |   ├── spines.py
+|   |   └── spines_dropped.py
+|   ├── statistics
+|   |   ├── README.txt
+|   |   ├── barchart_demo.py
+|   |   ├── boxplot.py
+|   |   ├── boxplot_color.py
+|   |   ├── boxplot_demo.py
+|   |   ├── boxplot_vs_violin.py
+|   |   ├── bxp.py
+|   |   ├── confidence_ellipse.py
+|   |   ├── customized_violin.py
+|   |   ├── errorbar.py
+|   |   ├── errorbar_features.py
+|   |   ├── errorbar_limits.py
+|   |   ├── errorbars_and_boxes.py
+|   |   ├── hexbin_demo.py
+|   |   ├── hist.py
+|   |   ├── histogram_cumulative.py
+|   |   ├── histogram_features.py
+|   |   ├── histogram_histtypes.py
+|   |   ├── histogram_multihist.py
+|   |   ├── multiple_histograms_side_by_side.py
+|   |   ├── time_series_histogram.py
+|   |   └── violinplot.py
+|   ├── style_sheets
+|   |   ├── README.txt
+|   |   ├── bmh.py
+|   |   ├── dark_background.py
+|   |   ├── fivethirtyeight.py
+|   |   ├── ggplot.py
+|   |   ├── grayscale.py
+|   |   ├── plot_solarizedlight2.py
+|   |   └── style_sheets_reference.py
+|   ├── subplots_axes_and_figures
+|   |   ├── README.txt
+|   |   ├── align_labels_demo.py
+|   |   ├── auto_subplots_adjust.py
+|   |   ├── axes_box_aspect.py
+|   |   ├── axes_demo.py
+|   |   ├── axes_margins.py
+|   |   ├── axes_props.py
+|   |   ├── axes_zoom_effect.py
+|   |   ├── axhspan_demo.py
+|   |   ├── axis_equal_demo.py
+|   |   ├── axis_labels_demo.py
+|   |   ├── broken_axis.py
+|   |   ├── colorbar_placement.py
+|   |   ├── custom_figure_class.py
+|   |   ├── demo_constrained_layout.py
+|   |   ├── demo_tight_layout.py
+|   |   ├── fahrenheit_celsius_scales.py
+|   |   ├── figure_size_units.py
+|   |   ├── figure_title.py
+|   |   ├── ganged_plots.py
+|   |   ├── geo_demo.py
+|   |   ├── gridspec_and_subplots.py
+|   |   ├── gridspec_multicolumn.py
+|   |   ├── gridspec_nested.py
+|   |   ├── invert_axes.py
+|   |   ├── mosaic.py
+|   |   ├── multiple_figs_demo.py
+|   |   ├── secondary_axis.py
+|   |   ├── share_axis_lims_views.py
+|   |   ├── shared_axis_demo.py
+|   |   ├── subfigures.py
+|   |   ├── subplot.py
+|   |   ├── subplots_adjust.py
+|   |   ├── subplots_demo.py
+|   |   ├── two_scales.py
+|   |   └── zoom_inset_axes.py
+|   ├── text_labels_and_annotations
+|   |   ├── README.txt
+|   |   ├── accented_text.py
+|   |   ├── align_ylabels.py
+|   |   ├── angle_annotation.py
+|   |   ├── angles_on_bracket_arrows.py
+|   |   ├── annotate_transform.py
+|   |   ├── annotation_basic.py
+|   |   ├── annotation_demo.py
+|   |   ├── annotation_polar.py
+|   |   ├── arrow_demo.py
+|   |   ├── autowrap.py
+|   |   ├── custom_legends.py
+|   |   ├── date.py
+|   |   ├── demo_annotation_box.py
+|   |   ├── demo_text_path.py
+|   |   ├── demo_text_rotation_mode.py
+|   |   ├── dfrac_demo.py
+|   |   ├── engineering_formatter.py
+|   |   ├── fancyarrow_demo.py
+|   |   ├── fancytextbox_demo.py
+|   |   ├── figlegend_demo.py
+|   |   ├── font_family_rc.py
+|   |   ├── font_file.py
+|   |   ├── font_table.py
+|   |   ├── fonts_demo.py
+|   |   ├── fonts_demo_kw.py
+|   |   ├── label_subplots.py
+|   |   ├── legend.py
+|   |   ├── legend_demo.py
+|   |   ├── line_with_text.py
+|   |   ├── mathtext_asarray.py
+|   |   ├── mathtext_demo.py
+|   |   ├── mathtext_examples.py
+|   |   ├── mathtext_fontfamily_example.py
+|   |   ├── multiline.py
+|   |   ├── placing_text_boxes.py
+|   |   ├── rainbow_text.py
+|   |   ├── stix_fonts_demo.py
+|   |   ├── tex_demo.py
+|   |   ├── text_alignment.py
+|   |   ├── text_commands.py
+|   |   ├── text_fontdict.py
+|   |   ├── text_rotation_relative_to_line.py
+|   |   ├── titles_demo.py
+|   |   ├── unicode_minus.py
+|   |   ├── usetex_baseline_test.py
+|   |   ├── usetex_fonteffects.py
+|   |   └── watermark_text.py
+|   ├── ticks
+|   |   ├── README.txt
+|   |   ├── auto_ticks.py
+|   |   ├── centered_ticklabels.py
+|   |   ├── colorbar_tick_labelling_demo.py
+|   |   ├── custom_ticker1.py
+|   |   ├── date_concise_formatter.py
+|   |   ├── date_demo_convert.py
+|   |   ├── date_demo_rrule.py
+|   |   ├── date_formatters_locators.py
+|   |   ├── date_index_formatter.py
+|   |   ├── date_precision_and_epochs.py
+|   |   ├── dollar_ticks.py
+|   |   ├── fig_axes_customize_simple.py
+|   |   ├── major_minor_demo.py
+|   |   ├── scalarformatter.py
+|   |   ├── tick-formatters.py
+|   |   ├── tick-locators.py
+|   |   ├── tick_label_right.py
+|   |   ├── tick_labels_from_values.py
+|   |   ├── tick_xlabel_top.py
+|   |   ├── ticklabels_rotation.py
+|   |   └── ticks_too_many.py
+|   ├── units
+|   |   ├── README.txt
+|   |   ├── annotate_with_units.py
+|   |   ├── artist_tests.py
+|   |   ├── bar_demo2.py
+|   |   ├── bar_unit_demo.py
+|   |   ├── basic_units.py
+|   |   ├── ellipse_with_units.py
+|   |   ├── evans_test.py
+|   |   ├── radian_demo.py
+|   |   ├── units_sample.py
+|   |   └── units_scatter.py
+|   ├── user_interfaces
+|   |   ├── README.txt
+|   |   ├── canvasagg.py
+|   |   ├── embedding_in_gtk3_panzoom_sgskip.py
+|   |   ├── embedding_in_gtk3_sgskip.py
+|   |   ├── embedding_in_gtk4_panzoom_sgskip.py
+|   |   ├── embedding_in_gtk4_sgskip.py
+|   |   ├── embedding_in_qt_sgskip.py
+|   |   ├── embedding_in_tk_sgskip.py
+|   |   ├── embedding_in_wx2_sgskip.py
+|   |   ├── embedding_in_wx3_sgskip.py
+|   |   ├── embedding_in_wx4_sgskip.py
+|   |   ├── embedding_in_wx5_sgskip.py
+|   |   ├── embedding_webagg_sgskip.py
+|   |   ├── fourier_demo_wx_sgskip.py
+|   |   ├── gtk3_spreadsheet_sgskip.py
+|   |   ├── gtk4_spreadsheet_sgskip.py
+|   |   ├── images
+|   |   ├── mathtext_wx_sgskip.py
+|   |   ├── mpl_with_glade3_sgskip.py
+|   |   ├── mplcvd.py
+|   |   ├── pylab_with_gtk3_sgskip.py
+|   |   ├── pylab_with_gtk4_sgskip.py
+|   |   ├── svg_histogram_sgskip.py
+|   |   ├── svg_tooltip_sgskip.py
+|   |   ├── toolmanager_sgskip.py
+|   |   ├── web_application_server_sgskip.py
+|   |   └── wxcursor_demo_sgskip.py
+|   ├── userdemo
+|   |   ├── README.txt
+|   |   ├── anchored_box04.py
+|   |   ├── annotate_explain.py
+|   |   ├── annotate_simple01.py
+|   |   ├── annotate_simple02.py
+|   |   ├── annotate_simple03.py
+|   |   ├── annotate_simple04.py
+|   |   ├── annotate_simple_coord01.py
+|   |   ├── annotate_simple_coord02.py
+|   |   ├── annotate_simple_coord03.py
+|   |   ├── annotate_text_arrow.py
+|   |   ├── connect_simple01.py
+|   |   ├── connectionstyle_demo.py
+|   |   ├── custom_boxstyle01.py
+|   |   ├── demo_gridspec01.py
+|   |   ├── demo_gridspec03.py
+|   |   ├── demo_gridspec06.py
+|   |   ├── pgf_fonts.py
+|   |   ├── pgf_preamble_sgskip.py
+|   |   ├── pgf_texsystem.py
+|   |   ├── simple_annotate01.py
+|   |   ├── simple_legend01.py
+|   |   └── simple_legend02.py
+|   └── widgets
+|       ├── README.txt
+|       ├── annotated_cursor.py
+|       ├── buttons.py
+|       ├── check_buttons.py
+|       ├── cursor.py
+|       ├── lasso_selector_demo_sgskip.py
+|       ├── menu.py
+|       ├── mouse_cursor.py
+|       ├── multicursor.py
+|       ├── polygon_selector_demo.py
+|       ├── polygon_selector_simple.py
+|       ├── radio_buttons.py
+|       ├── range_slider.py
+|       ├── rectangle_selector.py
+|       ├── slider_demo.py
+|       ├── slider_snap_demo.py
+|       ├── span_selector.py
+|       └── textbox.py
+├── extern
+|   ├── agg24-svn
+|   |   ├── include
+|   |   |   ├── ctrl
+|   |   |   ├── platform
+|   |   |   |   ├── mac
+|   |   |   |   └── win32
+|   |   |   └── util
+|   |   └── src
+|   |       ├── agg_arc.cpp
+|   |       ├── agg_arrowhead.cpp
+|   |       ├── agg_bezier_arc.cpp
+|   |       ├── agg_bspline.cpp
+|   |       ├── agg_color_rgba.cpp
+|   |       ├── agg_curves.cpp
+|   |       ├── agg_embedded_raster_fonts.cpp
+|   |       ├── agg_gsv_text.cpp
+|   |       ├── agg_image_filters.cpp
+|   |       ├── agg_line_aa_basics.cpp
+|   |       ├── agg_line_profile_aa.cpp
+|   |       ├── agg_rounded_rect.cpp
+|   |       ├── agg_sqrt_tables.cpp
+|   |       ├── agg_trans_affine.cpp
+|   |       ├── agg_trans_double_path.cpp
+|   |       ├── agg_trans_single_path.cpp
+|   |       ├── agg_trans_warp_magnifier.cpp
+|   |       ├── agg_vcgen_bspline.cpp
+|   |       ├── agg_vcgen_contour.cpp
+|   |       ├── agg_vcgen_dash.cpp
+|   |       ├── agg_vcgen_markers_term.cpp
+|   |       ├── agg_vcgen_smooth_poly1.cpp
+|   |       ├── agg_vcgen_stroke.cpp
+|   |       ├── agg_vpgen_clip_polygon.cpp
+|   |       ├── agg_vpgen_clip_polyline.cpp
+|   |       ├── agg_vpgen_segmentator.cpp
+|   |       ├── ctrl
+|   |       |   ├── agg_bezier_ctrl.cpp
+|   |       |   ├── agg_cbox_ctrl.cpp
+|   |       |   ├── agg_gamma_ctrl.cpp
+|   |       |   ├── agg_gamma_spline.cpp
+|   |       |   ├── agg_polygon_ctrl.cpp
+|   |       |   ├── agg_rbox_ctrl.cpp
+|   |       |   ├── agg_scale_ctrl.cpp
+|   |       |   ├── agg_slider_ctrl.cpp
+|   |       |   └── agg_spline_ctrl.cpp
+|   |       └── platform
+|   |           ├── AmigaOS
+|   |           ├── BeOS
+|   |           ├── X11
+|   |           ├── mac
+|   |           ├── sdl
+|   |           └── win32
+|   └── ttconv
+|       ├── pprdrv_tt.cpp
+|       ├── pprdrv_tt2.cpp
+|       └── ttutil.cpp
+├── lib
+|   ├── matplotlib
+|   |   ├── __init__.py
+|   |   ├── _afm.py
+|   |   ├── _animation_data.py
+|   |   ├── _api
+|   |   |   ├── __init__.py
+|   |   |   └── deprecation.py
+|   |   ├── _blocking_input.py
+|   |   ├── _cm.py
+|   |   ├── _cm_listed.py
+|   |   ├── _color_data.py
+|   |   ├── _constrained_layout.py
+|   |   ├── _docstring.py
+|   |   ├── _enums.py
+|   |   ├── _fontconfig_pattern.py
+|   |   ├── _internal_utils.py
+|   |   ├── _layoutgrid.py
+|   |   ├── _mathtext.py
+|   |   ├── _mathtext_data.py
+|   |   ├── _pylab_helpers.py
+|   |   ├── _text_helpers.py
+|   |   ├── _tight_bbox.py
+|   |   ├── _tight_layout.py
+|   |   ├── _type1font.py
+|   |   ├── animation.py
+|   |   ├── artist.py
+|   |   ├── axes
+|   |   |   ├── __init__.py
+|   |   |   ├── _axes.py
+|   |   |   ├── _base.py
+|   |   |   └── _secondary_axes.py
+|   |   ├── axis.py
+|   |   ├── backend_bases.py
+|   |   ├── backend_managers.py
+|   |   ├── backend_tools.py
+|   |   ├── backends
+|   |   |   ├── __init__.py
+|   |   |   ├── _backend_gtk.py
+|   |   |   ├── _backend_pdf_ps.py
+|   |   |   ├── _backend_tk.py
+|   |   |   ├── backend_agg.py
+|   |   |   ├── backend_cairo.py
+|   |   |   ├── backend_gtk3.py
+|   |   |   ├── backend_gtk3agg.py
+|   |   |   ├── backend_gtk3cairo.py
+|   |   |   ├── backend_gtk4.py
+|   |   |   ├── backend_gtk4agg.py
+|   |   |   ├── backend_gtk4cairo.py
+|   |   |   ├── backend_macosx.py
+|   |   |   ├── backend_mixed.py
+|   |   |   ├── backend_nbagg.py
+|   |   |   ├── backend_pdf.py
+|   |   |   ├── backend_pgf.py
+|   |   |   ├── backend_ps.py
+|   |   |   ├── backend_qt.py
+|   |   |   ├── backend_qt5.py
+|   |   |   ├── backend_qt5agg.py
+|   |   |   ├── backend_qt5cairo.py
+|   |   |   ├── backend_qtagg.py
+|   |   |   ├── backend_qtcairo.py
+|   |   |   ├── backend_svg.py
+|   |   |   ├── backend_template.py
+|   |   |   ├── backend_tkagg.py
+|   |   |   ├── backend_tkcairo.py
+|   |   |   ├── backend_webagg.py
+|   |   |   ├── backend_webagg_core.py
+|   |   |   ├── backend_wx.py
+|   |   |   ├── backend_wxagg.py
+|   |   |   ├── backend_wxcairo.py
+|   |   |   ├── qt_compat.py
+|   |   |   ├── qt_editor
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── _formlayout.py
+|   |   |   |   └── figureoptions.py
+|   |   |   └── web_backend
+|   |   |       ├── .eslintrc.js
+|   |   |       ├── all_figures.html
+|   |   |       ├── css
+|   |   |       ├── ipython_inline_figure.html
+|   |   |       ├── js
+|   |   |       └── single_figure.html
+|   |   ├── bezier.py
+|   |   ├── category.py
+|   |   ├── cbook.py
+|   |   ├── cm.py
+|   |   ├── collections.py
+|   |   ├── colorbar.py
+|   |   ├── colors.py
+|   |   ├── container.py
+|   |   ├── contour.py
+|   |   ├── dates.py
+|   |   ├── dviread.py
+|   |   ├── figure.py
+|   |   ├── font_manager.py
+|   |   ├── gridspec.py
+|   |   ├── hatch.py
+|   |   ├── image.py
+|   |   ├── layout_engine.py
+|   |   ├── legend.py
+|   |   ├── legend_handler.py
+|   |   ├── lines.py
+|   |   ├── markers.py
+|   |   ├── mathtext.py
+|   |   ├── mlab.py
+|   |   ├── mpl-data
+|   |   |   ├── fonts
+|   |   |   |   ├── afm
+|   |   |   |   ├── pdfcorefonts
+|   |   |   |   └── ttf
+|   |   |   ├── images
+|   |   |   ├── plot_directive
+|   |   |   |   └── plot_directive.css
+|   |   |   ├── sample_data
+|   |   |   |   ├── README.txt
+|   |   |   |   └── axes_grid
+|   |   |   └── stylelib
+|   |   ├── offsetbox.py
+|   |   ├── patches.py
+|   |   ├── path.py
+|   |   ├── patheffects.py
+|   |   ├── projections
+|   |   |   ├── __init__.py
+|   |   |   ├── geo.py
+|   |   |   └── polar.py
+|   |   ├── pylab.py
+|   |   ├── pyplot.py
+|   |   ├── quiver.py
+|   |   ├── rcsetup.py
+|   |   ├── sankey.py
+|   |   ├── scale.py
+|   |   ├── sphinxext
+|   |   |   ├── __init__.py
+|   |   |   ├── mathmpl.py
+|   |   |   └── plot_directive.py
+|   |   ├── spines.py
+|   |   ├── stackplot.py
+|   |   ├── streamplot.py
+|   |   ├── style
+|   |   |   ├── __init__.py
+|   |   |   └── core.py
+|   |   ├── table.py
+|   |   ├── testing
+|   |   |   ├── __init__.py
+|   |   |   ├── _markers.py
+|   |   |   ├── compare.py
+|   |   |   ├── conftest.py
+|   |   |   ├── decorators.py
+|   |   |   ├── exceptions.py
+|   |   |   ├── jpl_units
+|   |   |   |   ├── Duration.py
+|   |   |   |   ├── Epoch.py
+|   |   |   |   ├── EpochConverter.py
+|   |   |   |   ├── StrConverter.py
+|   |   |   |   ├── UnitDbl.py
+|   |   |   |   ├── UnitDblConverter.py
+|   |   |   |   ├── UnitDblFormatter.py
+|   |   |   |   └── __init__.py
+|   |   |   └── widgets.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── baseline_images
+|   |   |   |   ├── dviread
+|   |   |   |   ├── pngsuite
+|   |   |   |   ├── test_agg
+|   |   |   |   ├── test_agg_filter
+|   |   |   |   ├── test_arrow_patches
+|   |   |   |   ├── test_artist
+|   |   |   |   ├── test_axes
+|   |   |   |   ├── test_backend_pdf
+|   |   |   |   ├── test_backend_pgf
+|   |   |   |   ├── test_backend_ps
+|   |   |   |   ├── test_backend_svg
+|   |   |   |   ├── test_bbox_tight
+|   |   |   |   ├── test_collections
+|   |   |   |   ├── test_colorbar
+|   |   |   |   ├── test_colors
+|   |   |   |   ├── test_compare_images
+|   |   |   |   ├── test_constrainedlayout
+|   |   |   |   ├── test_contour
+|   |   |   |   ├── test_dates
+|   |   |   |   ├── test_figure
+|   |   |   |   ├── test_image
+|   |   |   |   ├── test_legend
+|   |   |   |   ├── test_lines
+|   |   |   |   ├── test_mathtext
+|   |   |   |   ├── test_offsetbox
+|   |   |   |   ├── test_patches
+|   |   |   |   ├── test_path
+|   |   |   |   ├── test_patheffects
+|   |   |   |   ├── test_png
+|   |   |   |   ├── test_polar
+|   |   |   |   ├── test_quiver
+|   |   |   |   ├── test_scale
+|   |   |   |   ├── test_simplification
+|   |   |   |   ├── test_skew
+|   |   |   |   ├── test_spines
+|   |   |   |   ├── test_streamplot
+|   |   |   |   ├── test_subplots
+|   |   |   |   ├── test_table
+|   |   |   |   ├── test_text
+|   |   |   |   ├── test_tightlayout
+|   |   |   |   ├── test_transforms
+|   |   |   |   ├── test_triangulation
+|   |   |   |   ├── test_ttconv
+|   |   |   |   ├── test_units
+|   |   |   |   ├── test_usetex
+|   |   |   |   └── test_widgets
+|   |   |   ├── conftest.py
+|   |   |   ├── test_afm.py
+|   |   |   ├── test_agg.py
+|   |   |   ├── test_agg_filter.py
+|   |   |   ├── test_animation.py
+|   |   |   ├── test_api.py
+|   |   |   ├── test_arrow_patches.py
+|   |   |   ├── test_artist.py
+|   |   |   ├── test_axes.py
+|   |   |   ├── test_backend_bases.py
+|   |   |   ├── test_backend_cairo.py
+|   |   |   ├── test_backend_gtk3.py
+|   |   |   ├── test_backend_macosx.py
+|   |   |   ├── test_backend_nbagg.py
+|   |   |   ├── test_backend_pdf.py
+|   |   |   ├── test_backend_pgf.py
+|   |   |   ├── test_backend_ps.py
+|   |   |   ├── test_backend_qt.py
+|   |   |   ├── test_backend_svg.py
+|   |   |   ├── test_backend_template.py
+|   |   |   ├── test_backend_tk.py
+|   |   |   ├── test_backend_tools.py
+|   |   |   ├── test_backend_webagg.py
+|   |   |   ├── test_backends_interactive.py
+|   |   |   ├── test_basic.py
+|   |   |   ├── test_bbox_tight.py
+|   |   |   ├── test_category.py
+|   |   |   ├── test_cbook.py
+|   |   |   ├── test_collections.py
+|   |   |   ├── test_colorbar.py
+|   |   |   ├── test_colors.py
+|   |   |   ├── test_compare_images.py
+|   |   |   ├── test_constrainedlayout.py
+|   |   |   ├── test_container.py
+|   |   |   ├── test_contour.py
+|   |   |   ├── test_cycles.py
+|   |   |   ├── test_dates.py
+|   |   |   ├── test_determinism.py
+|   |   |   ├── test_doc.py
+|   |   |   ├── test_dviread.py
+|   |   |   ├── test_figure.py
+|   |   |   ├── test_font_manager.py
+|   |   |   ├── test_fontconfig_pattern.py
+|   |   |   ├── test_ft2font.py
+|   |   |   ├── test_getattr.py
+|   |   |   ├── test_gridspec.py
+|   |   |   ├── test_image.py
+|   |   |   ├── test_legend.py
+|   |   |   ├── test_lines.py
+|   |   |   ├── test_marker.py
+|   |   |   ├── test_mathtext.py
+|   |   |   ├── test_matplotlib.py
+|   |   |   ├── test_mlab.py
+|   |   |   ├── test_offsetbox.py
+|   |   |   ├── test_patches.py
+|   |   |   ├── test_path.py
+|   |   |   ├── test_patheffects.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_png.py
+|   |   |   ├── test_polar.py
+|   |   |   ├── test_preprocess_data.py
+|   |   |   ├── test_pyplot.py
+|   |   |   ├── test_quiver.py
+|   |   |   ├── test_rcparams.py
+|   |   |   ├── test_sankey.py
+|   |   |   ├── test_scale.py
+|   |   |   ├── test_simplification.py
+|   |   |   ├── test_skew.py
+|   |   |   ├── test_sphinxext.py
+|   |   |   ├── test_spines.py
+|   |   |   ├── test_streamplot.py
+|   |   |   ├── test_style.py
+|   |   |   ├── test_subplots.py
+|   |   |   ├── test_table.py
+|   |   |   ├── test_testing.py
+|   |   |   ├── test_texmanager.py
+|   |   |   ├── test_text.py
+|   |   |   ├── test_textpath.py
+|   |   |   ├── test_ticker.py
+|   |   |   ├── test_tightlayout.py
+|   |   |   ├── test_transforms.py
+|   |   |   ├── test_triangulation.py
+|   |   |   ├── test_ttconv.py
+|   |   |   ├── test_type1font.py
+|   |   |   ├── test_units.py
+|   |   |   ├── test_usetex.py
+|   |   |   ├── test_widgets.py
+|   |   |   └── tinypages
+|   |   |       ├── README.md
+|   |   |       ├── _static
+|   |   |       ├── conf.py
+|   |   |       ├── included_plot_21.rst
+|   |   |       ├── index.rst
+|   |   |       ├── range4.py
+|   |   |       ├── range6.py
+|   |   |       └── some_plots.rst
+|   |   ├── texmanager.py
+|   |   ├── text.py
+|   |   ├── textpath.py
+|   |   ├── ticker.py
+|   |   ├── transforms.py
+|   |   ├── tri
+|   |   |   ├── __init__.py
+|   |   |   ├── _triangulation.py
+|   |   |   ├── _tricontour.py
+|   |   |   ├── _trifinder.py
+|   |   |   ├── _triinterpolate.py
+|   |   |   ├── _tripcolor.py
+|   |   |   ├── _triplot.py
+|   |   |   ├── _trirefine.py
+|   |   |   ├── _tritools.py
+|   |   |   ├── triangulation.py
+|   |   |   ├── tricontour.py
+|   |   |   ├── trifinder.py
+|   |   |   ├── triinterpolate.py
+|   |   |   ├── tripcolor.py
+|   |   |   ├── triplot.py
+|   |   |   ├── trirefine.py
+|   |   |   └── tritools.py
+|   |   ├── units.py
+|   |   └── widgets.py
+|   ├── mpl_toolkits
+|   |   ├── __init__.py
+|   |   ├── axes_grid1
+|   |   |   ├── __init__.py
+|   |   |   ├── anchored_artists.py
+|   |   |   ├── axes_divider.py
+|   |   |   ├── axes_grid.py
+|   |   |   ├── axes_rgb.py
+|   |   |   ├── axes_size.py
+|   |   |   ├── inset_locator.py
+|   |   |   ├── mpl_axes.py
+|   |   |   ├── parasite_axes.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── baseline_images
+|   |   |       ├── conftest.py
+|   |   |       └── test_axes_grid1.py
+|   |   ├── axisartist
+|   |   |   ├── __init__.py
+|   |   |   ├── angle_helper.py
+|   |   |   ├── axes_divider.py
+|   |   |   ├── axes_grid.py
+|   |   |   ├── axes_rgb.py
+|   |   |   ├── axis_artist.py
+|   |   |   ├── axisline_style.py
+|   |   |   ├── axislines.py
+|   |   |   ├── floating_axes.py
+|   |   |   ├── grid_finder.py
+|   |   |   ├── grid_helper_curvelinear.py
+|   |   |   ├── parasite_axes.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── baseline_images
+|   |   |       ├── conftest.py
+|   |   |       ├── test_angle_helper.py
+|   |   |       ├── test_axis_artist.py
+|   |   |       ├── test_axislines.py
+|   |   |       ├── test_floating_axes.py
+|   |   |       ├── test_grid_finder.py
+|   |   |       └── test_grid_helper_curvelinear.py
+|   |   └── mplot3d
+|   |       ├── __init__.py
+|   |       ├── art3d.py
+|   |       ├── axes3d.py
+|   |       ├── axis3d.py
+|   |       ├── proj3d.py
+|   |       └── tests
+|   |           ├── __init__.py
+|   |           ├── baseline_images
+|   |           ├── conftest.py
+|   |           ├── test_art3d.py
+|   |           ├── test_axes3d.py
+|   |           └── test_legend3d.py
+|   └── pylab.py
+├── plot_types
+|   ├── 3D
+|   |   ├── README.rst
+|   |   ├── scatter3d_simple.py
+|   |   ├── surface3d_simple.py
+|   |   ├── trisurf3d_simple.py
+|   |   ├── voxels_simple.py
+|   |   └── wire3d_simple.py
+|   ├── README.rst
+|   ├── arrays
+|   |   ├── README.rst
+|   |   ├── barbs.py
+|   |   ├── contour.py
+|   |   ├── contourf.py
+|   |   ├── imshow.py
+|   |   ├── pcolormesh.py
+|   |   ├── quiver.py
+|   |   └── streamplot.py
+|   ├── basic
+|   |   ├── README.rst
+|   |   ├── bar.py
+|   |   ├── fill_between.py
+|   |   ├── plot.py
+|   |   ├── scatter_plot.py
+|   |   ├── stackplot.py
+|   |   ├── stem.py
+|   |   └── step.py
+|   ├── stats
+|   |   ├── README.rst
+|   |   ├── boxplot_plot.py
+|   |   ├── errorbar_plot.py
+|   |   ├── eventplot.py
+|   |   ├── hexbin.py
+|   |   ├── hist2d.py
+|   |   ├── hist_plot.py
+|   |   ├── pie.py
+|   |   └── violin.py
+|   └── unstructured
+|       ├── README.rst
+|       ├── tricontour.py
+|       ├── tricontourf.py
+|       ├── tripcolor.py
+|       └── triplot.py
+├── requirements
+|   ├── dev
+|   |   └── dev-requirements.txt
+|   ├── doc
+|   |   └── doc-requirements.txt
+|   └── testing
+|       ├── all.txt
+|       ├── extra.txt
+|       ├── flake8.txt
+|       └── minver.txt
+├── setup.py
+├── setupext.py
+├── src
+|   ├── _backend_agg.cpp
+|   ├── _backend_agg_wrapper.cpp
+|   ├── _c_internal_utils.c
+|   ├── _image_wrapper.cpp
+|   ├── _path_wrapper.cpp
+|   ├── _qhull_wrapper.cpp
+|   ├── _tkagg.cpp
+|   ├── _ttconv.cpp
+|   ├── checkdep_freetype2.c
+|   ├── doc
+|   ├── ft2font.cpp
+|   ├── ft2font_wrapper.cpp
+|   ├── py_converters.cpp
+|   └── tri
+|       ├── _tri.cpp
+|       └── _tri_wrapper.cpp
+├── tools
+|   ├── README.txt
+|   ├── boilerplate.py
+|   ├── cache_zenodo_svg.py
+|   ├── create_DejaVuDisplay.sh
+|   ├── embed_js.py
+|   ├── gh_api.py
+|   ├── github_stats.py
+|   ├── make_icons.py
+|   ├── memleak.py
+|   ├── run_examples.py
+|   ├── subset.py
+|   ├── triage_tests.py
+|   └── visualize_tests.py
+└── tutorials
+    ├── README.txt
+    ├── advanced
+    |   ├── README.txt
+    |   ├── blitting.py
+    |   ├── path_tutorial.py
+    |   ├── patheffects_guide.py
+    |   └── transforms_tutorial.py
+    ├── colors
+    |   ├── README.txt
+    |   ├── colorbar_only.py
+    |   ├── colormap-manipulation.py
+    |   ├── colormapnorms.py
+    |   ├── colormaps.py
+    |   └── colors.py
+    ├── intermediate
+    |   ├── README.txt
+    |   ├── arranging_axes.py
+    |   ├── artists.py
+    |   ├── autoscale.py
+    |   ├── color_cycle.py
+    |   ├── constrainedlayout_guide.py
+    |   ├── imshow_extent.py
+    |   ├── legend_guide.py
+    |   └── tight_layout_guide.py
+    ├── introductory
+    |   ├── README.txt
+    |   ├── animation_tutorial.py
+    |   ├── customizing.py
+    |   ├── images.py
+    |   ├── lifecycle.py
+    |   ├── pyplot.py
+    |   └── quick_start.py
+    ├── provisional
+    |   └── README.txt
+    ├── text
+    |   ├── README.txt
+    |   ├── annotations.py
+    |   ├── mathtext.py
+    |   ├── pgf.py
+    |   ├── text_intro.py
+    |   ├── text_props.py
+    |   └── usetex.py
+    └── toolkits
+        ├── README.txt
+        ├── axes_grid.py
+        ├── axisartist.py
+        └── mplot3d.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: [Bug]: Windows correction is not correct in `mlab._spectral_helper`
+
+Description: ### Bug summary
+
+Windows correction is not correct in `mlab._spectral_helper`:
+https://github.com/matplotlib/matplotlib/blob/3418bada1c1f44da1f73916c5603e3ae79fe58c1/lib/matplotlib/mlab.py#L423-L430
+
+The `np.abs` is not needed, and give wrong result for window with negative value, such as `flattop`.
+For reference, the implementation of scipy can be found here :
+https://github.com/scipy/scipy/blob/d9f75db82fdffef06187c9d8d2f0f5b36c7a791b/scipy/signal/_spectral_py.py#L1854-L1859
+
+### Code for reproduction
+
+```python
+import numpy as np
+from scipy import signal
+window = signal.windows.flattop(512)
+print(np.abs(window).sum()**2-window.sum()**2)
+```
+
+
+### Actual outcome
+
+4372.942556173262
+
+### Expected outcome
+
+0
+
+### Additional information
+
+_No response_
+
+### Operating system
+
+_No response_
+
+### Matplotlib Version
+
+latest
+
+### Matplotlib Backend
+
+_No response_
+
+### Python version
+
+_No response_
+
+### Jupyter version
+
+_No response_
+
+### Installation
+
+None
+
+Patch information:
+diff --git a/lib/matplotlib/mlab.py b/lib/matplotlib/mlab.py
+index 3552904c3d..efa2f84cae 100644
+--- a/lib/matplotlib/mlab.py
++++ b/lib/matplotlib/mlab.py
+@@ -395,12 +395,12 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+     elif mode == 'psd':
+         result = np.conj(result) * result
+     elif mode == 'magnitude':
+-        result = np.abs(result) / np.abs(window).sum()
++        result = np.abs(result) / window.sum()
+     elif mode == 'angle' or mode == 'phase':
+         # we unwrap the phase later to handle the onesided vs. twosided case
+         result = np.angle(result)
+     elif mode == 'complex':
+-        result /= np.abs(window).sum()
++        result /= window.sum()
+ 
+     if mode == 'psd':
+ 
+@@ -424,10 +424,10 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+             result /= Fs
+             # Scale the spectrum by the norm of the window to compensate for
+             # windowing loss; see Bendat & Piersol Sec 11.5.2.
+-            result /= (np.abs(window)**2).sum()
++            result /= (window**2).sum()
+         else:
+             # In this case, preserve power in the segment, not amplitude
+-            result /= np.abs(window).sum()**2
++            result /= window.sum()**2
+ 
+     t = np.arange(NFFT/2, len(x) - NFFT/2 + 1, NFFT - noverlap)/Fs
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 03:17:01,704 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to fix a bug in `mlab._spectral_helper`. To understand the bug and the proposed fix, I need to see the full implementation of the `_spectral_helper` function and how it is used by other functions in the `mlab` module. The provided patch only shows snippets of the changes. Getting the full file content is necessary to see the function in its entirety, as well as its callers like `psd`, `csd`, and `specgram`, and related windowing functions.' query='Please provide the full content of lib/matplotlib/mlab.py' extra_requirements='' purpose='I need the full source code of the `mlab` module to understand the context of the `_spectral_helper` function, its callers, and the windowing logic involved in the bug.'
+2025-12-21 03:17:01,705 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of lib/matplotlib/mlab.py
+2025-12-21 03:17:01,705 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 03:17:01,706 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 03:17:01,706 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 03:17:01,706 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of lib/matplotlib/mlab.py
+Purpose: I need the full source code of the `mlab` module to understand the context of the `_spectral_helper` function, its callers, and the windowing logic involved in the bug.
+2025-12-21 03:17:04,196 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of the file `lib/matplotlib/mlab.py` as you requested. This will give you a comprehensive view of the `mlab` module, including the `_spectral_helper` function, its surrounding code, and any related windowing logic.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "lib/matplotlib/mlab.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2142, 'candidates_token_count': 81, 'total_token_count': 2342, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2142}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 81}], 'thoughts_token_count': 119, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.13910476072334949, 'model_name': 'gemini-2.5-pro'} id='run--421f575c-6647-42cd-9388-c1da22486559-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'lib/matplotlib/mlab.py'}, 'id': '7dc26697-5f20-41cc-9bae-5b9509f00e11', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2142, 'output_tokens': 81, 'total_tokens': 2342, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 119}}
+2025-12-21 03:17:08,109 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have successfully retrieved the entire content of `lib/matplotlib/mlab.py`. This file contains the `_spectral_helper` function and its related logic, which should provide the necessary context for your investigation into the bug. I will now search for where the `_spectral_helper` function is used within this file to help you understand its callers.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"text": "_spectral_helper", "relative_path": "lib/matplotlib/mlab.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 9358, 'candidates_token_count': 108, 'total_token_count': 9648, 'cached_content_token_count': 1842, 'prompt_tokens_details': [{'modality': 1, 'token_count': 9358}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1842}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 108}], 'thoughts_token_count': 182}, 'finish_reason': 'STOP', 'avg_logprobs': -0.18041836773907696, 'model_name': 'gemini-2.5-pro'} id='run--a775609a-db6c-44bc-b3b1-7e9db89cb759-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'text': '_spectral_helper', 'relative_path': 'lib/matplotlib/mlab.py'}, 'id': 'e928942b-e6f7-40b6-b50b-a3edd13d232b', 'type': 'tool_call'}] usage_metadata={'input_tokens': 9358, 'output_tokens': 108, 'total_tokens': 9648, 'input_token_details': {'cache_read': 1842}, 'output_token_details': {'reasoning': 182}}
+2025-12-21 03:17:11,179 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have analyzed the `mlab.py` file and found that the `_spectral_helper` function is called by `csd`, `specgram`, and `_single_spectrum_helper`. I will now take a closer look at the `csd` function to understand how it utilizes `_spectral_helper` and to help diagnose the bug.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_type_in_file_with_relative_path', 'arguments': '{"type": "decorated_definition", "relative_path": "lib/matplotlib/mlab.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 13468, 'candidates_token_count': 108, 'total_token_count': 13686, 'cached_content_token_count': 9375, 'prompt_tokens_details': [{'modality': 1, 'token_count': 13468}], 'cache_tokens_details': [{'modality': 1, 'token_count': 9375}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 108}], 'thoughts_token_count': 110}, 'finish_reason': 'STOP', 'avg_logprobs': -0.12669657777856896, 'model_name': 'gemini-2.5-pro'} id='run--6eb7e4d6-8185-4030-89a2-c0d42915ec8d-0' tool_calls=[{'name': 'find_ast_node_with_type_in_file_with_relative_path', 'args': {'type': 'decorated_definition', 'relative_path': 'lib/matplotlib/mlab.py'}, 'id': 'fceff62a-e97a-4ed0-a3af-ca29057e5aca', 'type': 'tool_call'}] usage_metadata={'input_tokens': 13468, 'output_tokens': 108, 'total_tokens': 13686, 'input_token_details': {'cache_read': 9375}, 'output_token_details': {'reasoning': 110}}
+2025-12-21 03:17:17,613 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content="I have gathered the full source code of `lib/matplotlib/mlab.py` and identified the functions that call `_spectral_helper`. I've examined the `csd` function and will now provide the source code for the other callers, `specgram` and `_single_spectrum_helper`, as well as the windowing functions to give you a complete picture." additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"text": "window_none", "relative_path": "lib/matplotlib/mlab.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 17036, 'candidates_token_count': 204, 'total_token_count': 17575, 'cached_content_token_count': 13230, 'prompt_tokens_details': [{'modality': 1, 'token_count': 17036}], 'cache_tokens_details': [{'modality': 1, 'token_count': 13230}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 204}], 'thoughts_token_count': 335}, 'finish_reason': 'STOP', 'avg_logprobs': -0.1762546464508655, 'model_name': 'gemini-2.5-pro'} id='run--adfc5403-c4a3-4daf-89c4-2d2b9cc05ccc-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'relative_path': 'lib/matplotlib/mlab.py', 'end_line': 791.0, 'start_line': 710.0}, 'id': 'f24d9365-8db5-47c1-8d22-a5ad54f5b39a', 'type': 'tool_call'}, {'name': 'read_code_with_relative_path', 'args': {'relative_path': 'lib/matplotlib/mlab.py', 'end_line': 473.0, 'start_line': 449.0}, 'id': '2c7daa63-ab17-4623-a546-56df3842bfdf', 'type': 'tool_call'}, {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'text': 'window_hanning', 'relative_path': 'lib/matplotlib/mlab.py'}, 'id': 'b2807535-b93c-44a7-af0d-4c78b2bc2190', 'type': 'tool_call'}, {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'text': 'window_none', 'relative_path': 'lib/matplotlib/mlab.py'}, 'id': '09550af9-0b87-44bd-bf1f-537be3efac8a', 'type': 'tool_call'}] usage_metadata={'input_tokens': 17036, 'output_tokens': 204, 'total_tokens': 17575, 'input_token_details': {'cache_read': 13230}, 'output_token_details': {'reasoning': 335}}
+2025-12-21 03:17:20,903 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have provided the full source code for `lib/matplotlib/mlab.py`, as well as the specific code for the `specgram` and `_single_spectrum_helper` functions, which both call the `_spectral_helper` function. I also included the `window_hanning` and `window_none` functions to give you a complete understanding of the windowing logic. This should give you all the information you need to investigate the bug.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 24117, 'candidates_token_count': 96, 'total_token_count': 24364, 'cached_content_token_count': 17094, 'prompt_tokens_details': [{'modality': 1, 'token_count': 24117}], 'cache_tokens_details': [{'modality': 1, 'token_count': 17094}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 96}], 'thoughts_token_count': 151}, 'finish_reason': 'STOP', 'avg_logprobs': -0.1418242851893107, 'model_name': 'gemini-2.5-pro'} id='run--2649d926-be54-4d88-87d9-a5daf9bdd4f2-0' usage_metadata={'input_tokens': 24117, 'output_tokens': 96, 'total_tokens': 24364, 'input_token_details': {'cache_read': 17094}, 'output_token_details': {'reasoning': 151}}
+2025-12-21 03:17:20,906 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of lib/matplotlib/mlab.py
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need the full source code of the `mlab` module to understand the context of the `_spectral_helper` function, its callers, and the windowing logic involved in the bug.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: lib/matplotlib/mlab.py
+Line number range: 1 - 500
+Content:
+1. """
+2. Numerical Python functions written for compatibility with MATLAB
+3. commands with the same names. Most numerical Python functions can be found in
+4. the `NumPy`_ and `SciPy`_ libraries. What remains here is code for performing
+5. spectral computations and kernel density estimations.
+6. 
+7. .. _NumPy: https://numpy.org
+8. .. _SciPy: https://www.scipy.org
+9. 
+10. Spectral functions
+11. ------------------
+12. 
+13. `cohere`
+14.     Coherence (normalized cross spectral density)
+15. 
+16. `csd`
+17.     Cross spectral density using Welch's average periodogram
+18. 
+19. `detrend`
+20.     Remove the mean or best fit line from an array
+21. 
+22. `psd`
+23.     Power spectral density using Welch's average periodogram
+24. 
+25. `specgram`
+26.     Spectrogram (spectrum over segments of time)
+27. 
+28. `complex_spectrum`
+29.     Return the complex-valued frequency spectrum of a signal
+30. 
+31. `magnitude_spectrum`
+32.     Return the magnitude of the frequency spectrum of a signal
+33. 
+34. `angle_spectrum`
+35.     Return the angle (wrapped phase) of the frequency spectrum of a signal
+36. 
+37. `phase_spectrum`
+38.     Return the phase (unwrapped angle) of the frequency spectrum of a signal
+39. 
+40. `detrend_mean`
+41.     Remove the mean from a line.
+42. 
+43. `detrend_linear`
+44.     Remove the best fit line from a line.
+45. 
+46. `detrend_none`
+47.     Return the original line.
+48. 
+49. `stride_windows`
+50.     Get all windows in an array in a memory-efficient manner
+51. """
+52. 
+53. import functools
+54. from numbers import Number
+55. 
+56. import numpy as np
+57. 
+58. from matplotlib import _api, _docstring, cbook
+59. 
+60. 
+61. def window_hanning(x):
+62.     """
+63.     Return *x* times the Hanning (or Hann) window of len(*x*).
+64. 
+65.     See Also
+66.     --------
+67.     window_none : Another window algorithm.
+68.     """
+69.     return np.hanning(len(x))*x
+70. 
+71. 
+72. def window_none(x):
+73.     """
+74.     No window function; simply return *x*.
+75. 
+76.     See Also
+77.     --------
+78.     window_hanning : Another window algorithm.
+79.     """
+80.     return x
+81. 
+82. 
+83. def detrend(x, key=None, axis=None):
+84.     """
+85.     Return *x* with its trend removed.
+86. 
+87.     Parameters
+88.     ----------
+89.     x : array or sequence
+90.         Array or sequence containing the data.
+91. 
+92.     key : {'default', 'constant', 'mean', 'linear', 'none'} or function
+93.         The detrending algorithm to use. 'default', 'mean', and 'constant' are
+94.         the same as `detrend_mean`. 'linear' is the same as `detrend_linear`.
+95.         'none' is the same as `detrend_none`. The default is 'mean'. See the
+96.         corresponding functions for more details regarding the algorithms. Can
+97.         also be a function that carries out the detrend operation.
+98. 
+99.     axis : int
+100.         The axis along which to do the detrending.
+101. 
+102.     See Also
+103.     --------
+104.     detrend_mean : Implementation of the 'mean' algorithm.
+105.     detrend_linear : Implementation of the 'linear' algorithm.
+106.     detrend_none : Implementation of the 'none' algorithm.
+107.     """
+108.     if key is None or key in ['constant', 'mean', 'default']:
+109.         return detrend(x, key=detrend_mean, axis=axis)
+110.     elif key == 'linear':
+111.         return detrend(x, key=detrend_linear, axis=axis)
+112.     elif key == 'none':
+113.         return detrend(x, key=detrend_none, axis=axis)
+114.     elif callable(key):
+115.         x = np.asarray(x)
+116.         if axis is not None and axis + 1 > x.ndim:
+117.             raise ValueError(f'axis(={axis}) out of bounds')
+118.         if (axis is None and x.ndim == 0) or (not axis and x.ndim == 1):
+119.             return key(x)
+120.         # try to use the 'axis' argument if the function supports it,
+121.         # otherwise use apply_along_axis to do it
+122.         try:
+123.             return key(x, axis=axis)
+124.         except TypeError:
+125.             return np.apply_along_axis(key, axis=axis, arr=x)
+126.     else:
+127.         raise ValueError(
+128.             f"Unknown value for key: {key!r}, must be one of: 'default', "
+129.             f"'constant', 'mean', 'linear', or a function")
+130. 
+131. 
+132. def detrend_mean(x, axis=None):
+133.     """
+134.     Return *x* minus the mean(*x*).
+135. 
+136.     Parameters
+137.     ----------
+138.     x : array or sequence
+139.         Array or sequence containing the data
+140.         Can have any dimensionality
+141. 
+142.     axis : int
+143.         The axis along which to take the mean.  See `numpy.mean` for a
+144.         description of this argument.
+145. 
+146.     See Also
+147.     --------
+148.     detrend_linear : Another detrend algorithm.
+149.     detrend_none : Another detrend algorithm.
+150.     detrend : A wrapper around all the detrend algorithms.
+151.     """
+152.     x = np.asarray(x)
+153. 
+154.     if axis is not None and axis+1 > x.ndim:
+155.         raise ValueError('axis(=%s) out of bounds' % axis)
+156. 
+157.     return x - x.mean(axis, keepdims=True)
+158. 
+159. 
+160. def detrend_none(x, axis=None):
+161.     """
+162.     Return *x*: no detrending.
+163. 
+164.     Parameters
+165.     ----------
+166.     x : any object
+167.         An object containing the data
+168. 
+169.     axis : int
+170.         This parameter is ignored.
+171.         It is included for compatibility with detrend_mean
+172. 
+173.     See Also
+174.     --------
+175.     detrend_mean : Another detrend algorithm.
+176.     detrend_linear : Another detrend algorithm.
+177.     detrend : A wrapper around all the detrend algorithms.
+178.     """
+179.     return x
+180. 
+181. 
+182. def detrend_linear(y):
+183.     """
+184.     Return *x* minus best fit line; 'linear' detrending.
+185. 
+186.     Parameters
+187.     ----------
+188.     y : 0-D or 1-D array or sequence
+189.         Array or sequence containing the data
+190. 
+191.     See Also
+192.     --------
+193.     detrend_mean : Another detrend algorithm.
+194.     detrend_none : Another detrend algorithm.
+195.     detrend : A wrapper around all the detrend algorithms.
+196.     """
+197.     # This is faster than an algorithm based on linalg.lstsq.
+198.     y = np.asarray(y)
+199. 
+200.     if y.ndim > 1:
+201.         raise ValueError('y cannot have ndim > 1')
+202. 
+203.     # short-circuit 0-D array.
+204.     if not y.ndim:
+205.         return np.array(0., dtype=y.dtype)
+206. 
+207.     x = np.arange(y.size, dtype=float)
+208. 
+209.     C = np.cov(x, y, bias=1)
+210.     b = C[0, 1]/C[0, 0]
+211. 
+212.     a = y.mean() - b*x.mean()
+213.     return y - (b*x + a)
+214. 
+215. 
+216. @_api.deprecated("3.6")
+217. def stride_windows(x, n, noverlap=None, axis=0):
+218.     """
+219.     Get all windows of *x* with length *n* as a single array,
+220.     using strides to avoid data duplication.
+221. 
+222.     .. warning::
+223. 
+224.         It is not safe to write to the output array.  Multiple
+225.         elements may point to the same piece of memory,
+226.         so modifying one value may change others.
+227. 
+228.     Parameters
+229.     ----------
+230.     x : 1D array or sequence
+231.         Array or sequence containing the data.
+232.     n : int
+233.         The number of data points in each window.
+234.     noverlap : int, default: 0 (no overlap)
+235.         The overlap between adjacent windows.
+236.     axis : int
+237.         The axis along which the windows will run.
+238. 
+239.     References
+240.     ----------
+241.     `stackoverflow: Rolling window for 1D arrays in Numpy?
+242.     <https://stackoverflow.com/a/6811241>`_
+243.     `stackoverflow: Using strides for an efficient moving average filter
+244.     <https://stackoverflow.com/a/4947453>`_
+245.     """
+246.     if noverlap is None:
+247.         noverlap = 0
+248.     if np.ndim(x) != 1:
+249.         raise ValueError('only 1-dimensional arrays can be used')
+250.     return _stride_windows(x, n, noverlap, axis)
+251. 
+252. 
+253. def _stride_windows(x, n, noverlap=0, axis=0):
+254.     # np>=1.20 provides sliding_window_view, and we only ever use axis=0.
+255.     if hasattr(np.lib.stride_tricks, "sliding_window_view") and axis == 0:
+256.         if noverlap >= n:
+257.             raise ValueError('noverlap must be less than n')
+258.         return np.lib.stride_tricks.sliding_window_view(
+259.             x, n, axis=0)[::n - noverlap].T
+260. 
+261.     if noverlap >= n:
+262.         raise ValueError('noverlap must be less than n')
+263.     if n < 1:
+264.         raise ValueError('n cannot be less than 1')
+265. 
+266.     x = np.asarray(x)
+267. 
+268.     if n == 1 and noverlap == 0:
+269.         if axis == 0:
+270.             return x[np.newaxis]
+271.         else:
+272.             return x[np.newaxis].T
+273.     if n > x.size:
+274.         raise ValueError('n cannot be greater than the length of x')
+275. 
+276.     # np.lib.stride_tricks.as_strided easily leads to memory corruption for
+277.     # non integer shape and strides, i.e. noverlap or n. See #3845.
+278.     noverlap = int(noverlap)
+279.     n = int(n)
+280. 
+281.     step = n - noverlap
+282.     if axis == 0:
+283.         shape = (n, (x.shape[-1]-noverlap)//step)
+284.         strides = (x.strides[0], step*x.strides[0])
+285.     else:
+286.         shape = ((x.shape[-1]-noverlap)//step, n)
+287.         strides = (step*x.strides[0], x.strides[0])
+288.     return np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+289. 
+290. 
+291. def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+292.                      window=None, noverlap=None, pad_to=None,
+293.                      sides=None, scale_by_freq=None, mode=None):
+294.     """
+295.     Private helper implementing the common parts between the psd, csd,
+296.     spectrogram and complex, magnitude, angle, and phase spectrums.
+297.     """
+298.     if y is None:
+299.         # if y is None use x for y
+300.         same_data = True
+301.     else:
+302.         # The checks for if y is x are so that we can use the same function to
+303.         # implement the core of psd(), csd(), and spectrogram() without doing
+304.         # extra calculations.  We return the unaveraged Pxy, freqs, and t.
+305.         same_data = y is x
+306. 
+307.     if Fs is None:
+308.         Fs = 2
+309.     if noverlap is None:
+310.         noverlap = 0
+311.     if detrend_func is None:
+312.         detrend_func = detrend_none
+313.     if window is None:
+314.         window = window_hanning
+315. 
+316.     # if NFFT is set to None use the whole signal
+317.     if NFFT is None:
+318.         NFFT = 256
+319. 
+320.     if mode is None or mode == 'default':
+321.         mode = 'psd'
+322.     _api.check_in_list(
+323.         ['default', 'psd', 'complex', 'magnitude', 'angle', 'phase'],
+324.         mode=mode)
+325. 
+326.     if not same_data and mode != 'psd':
+327.         raise ValueError("x and y must be equal if mode is not 'psd'")
+328. 
+329.     # Make sure we're dealing with a numpy array. If y and x were the same
+330.     # object to start with, keep them that way
+331.     x = np.asarray(x)
+332.     if not same_data:
+333.         y = np.asarray(y)
+334. 
+335.     if sides is None or sides == 'default':
+336.         if np.iscomplexobj(x):
+337.             sides = 'twosided'
+338.         else:
+339.             sides = 'onesided'
+340.     _api.check_in_list(['default', 'onesided', 'twosided'], sides=sides)
+341. 
+342.     # zero pad x and y up to NFFT if they are shorter than NFFT
+343.     if len(x) < NFFT:
+344.         n = len(x)
+345.         x = np.resize(x, NFFT)
+346.         x[n:] = 0
+347. 
+348.     if not same_data and len(y) < NFFT:
+349.         n = len(y)
+350.         y = np.resize(y, NFFT)
+351.         y[n:] = 0
+352. 
+353.     if pad_to is None:
+354.         pad_to = NFFT
+355. 
+356.     if mode != 'psd':
+357.         scale_by_freq = False
+358.     elif scale_by_freq is None:
+359.         scale_by_freq = True
+360. 
+361.     # For real x, ignore the negative frequencies unless told otherwise
+362.     if sides == 'twosided':
+363.         numFreqs = pad_to
+364.         if pad_to % 2:
+365.             freqcenter = (pad_to - 1)//2 + 1
+366.         else:
+367.             freqcenter = pad_to//2
+368.         scaling_factor = 1.
+369.     elif sides == 'onesided':
+370.         if pad_to % 2:
+371.             numFreqs = (pad_to + 1)//2
+372.         else:
+373.             numFreqs = pad_to//2 + 1
+374.         scaling_factor = 2.
+375. 
+376.     if not np.iterable(window):
+377.         window = window(np.ones(NFFT, x.dtype))
+378.     if len(window) != NFFT:
+379.         raise ValueError(
+380.             "The window length must match the data's first dimension")
+381. 
+382.     result = _stride_windows(x, NFFT, noverlap)
+383.     result = detrend(result, detrend_func, axis=0)
+384.     result = result * window.reshape((-1, 1))
+385.     result = np.fft.fft(result, n=pad_to, axis=0)[:numFreqs, :]
+386.     freqs = np.fft.fftfreq(pad_to, 1/Fs)[:numFreqs]
+387. 
+388.     if not same_data:
+389.         # if same_data is False, mode must be 'psd'
+390.         resultY = _stride_windows(y, NFFT, noverlap)
+391.         resultY = detrend(resultY, detrend_func, axis=0)
+392.         resultY = resultY * window.reshape((-1, 1))
+393.         resultY = np.fft.fft(resultY, n=pad_to, axis=0)[:numFreqs, :]
+394.         result = np.conj(result) * resultY
+395.     elif mode == 'psd':
+396.         result = np.conj(result) * result
+397.     elif mode == 'magnitude':
+398.         result = np.abs(result) / np.abs(window).sum()
+399.     elif mode == 'angle' or mode == 'phase':
+400.         # we unwrap the phase later to handle the onesided vs. twosided case
+401.         result = np.angle(result)
+402.     elif mode == 'complex':
+403.         result /= np.abs(window).sum()
+404. 
+405.     if mode == 'psd':
+406. 
+407.         # Also include scaling factors for one-sided densities and dividing by
+408.         # the sampling frequency, if desired. Scale everything, except the DC
+409.         # component and the NFFT/2 component:
+410. 
+411.         # if we have a even number of frequencies, don't scale NFFT/2
+412.         if not NFFT % 2:
+413.             slc = slice(1, -1, None)
+414.         # if we have an odd number, just don't scale DC
+415.         else:
+416.             slc = slice(1, None, None)
+417. 
+418.         result[slc] *= scaling_factor
+419. 
+420.         # MATLAB divides by the sampling frequency so that density function
+421.         # has units of dB/Hz and can be integrated by the plotted frequency
+422.         # values. Perform the same scaling here.
+423.         if scale_by_freq:
+424.             result /= Fs
+425.             # Scale the spectrum by the norm of the window to compensate for
+426.             # windowing loss; see Bendat & Piersol Sec 11.5.2.
+427.             result /= (np.abs(window)**2).sum()
+428.         else:
+429.             # In this case, preserve power in the segment, not amplitude
+430.             result /= np.abs(window).sum()**2
+431. 
+432.     t = np.arange(NFFT/2, len(x) - NFFT/2 + 1, NFFT - noverlap)/Fs
+433. 
+434.     if sides == 'twosided':
+435.         # center the frequency range at zero
+436.         freqs = np.roll(freqs, -freqcenter, axis=0)
+437.         result = np.roll(result, -freqcenter, axis=0)
+438.     elif not pad_to % 2:
+439.         # get the last value correctly, it is negative otherwise
+440.         freqs[-1] *= -1
+441. 
+442.     # we unwrap the phase here to handle the onesided vs. twosided case
+443.     if mode == 'phase':
+444.         result = np.unwrap(result, axis=0)
+445. 
+446.     return result, freqs, t
+447. 
+448. 
+449. def _single_spectrum_helper(
+450.         mode, x, Fs=None, window=None, pad_to=None, sides=None):
+451.     """
+452.     Private helper implementing the commonality between the complex, magnitude,
+453.     angle, and phase spectrums.
+454.     """
+455.     _api.check_in_list(['complex', 'magnitude', 'angle', 'phase'], mode=mode)
+456. 
+457.     if pad_to is None:
+458.         pad_to = len(x)
+459. 
+460.     spec, freqs, _ = _spectral_helper(x=x, y=None, NFFT=len(x), Fs=Fs,
+461.                                       detrend_func=detrend_none, window=window,
+462.                                       noverlap=0, pad_to=pad_to,
+463.                                       sides=sides,
+464.                                       scale_by_freq=False,
+465.                                       mode=mode)
+466.     if mode != 'complex':
+467.         spec = spec.real
+468. 
+469.     if spec.ndim == 2 and spec.shape[1] == 1:
+470.         spec = spec[:, 0]
+471. 
+472.     return spec, freqs
+473. 
+474. 
+475. # Split out these keyword docs so that they can be used elsewhere
+476. _docstring.interpd.update(
+477.     Spectral="""\
+478. Fs : float, default: 2
+479.     The sampling frequency (samples per time unit).  It is used to calculate
+480.     the Fourier frequencies, *freqs*, in cycles per time unit.
+481. 
+482. window : callable or ndarray, default: `.window_hanning`
+483.     A function or a vector of length *NFFT*.  To create window vectors see
+484.     `.window_hanning`, `.window_none`, `numpy.blackman`, `numpy.hamming`,
+485.     `numpy.bartlett`, `scipy.signal`, `scipy.signal.get_window`, etc.  If a
+486.     function is passed as the argument, it must take a data segment as an
+487.     argument and return the windowed version of the segment.
+488. 
+489. sides : {'default', 'onesided', 'twosided'}, optional
+490.     Which sides of the spectrum to return. 'default' is one-sided for real
+491.     data and two-sided for complex data. 'onesided' forces the return of a
+492.     one-sided spectrum, while 'twosided' forces two-sided.""",
+493. 
+494.     Single_Spectrum="""\
+495. pad_to : int, optional
+496.     The number of points to which the data segment is padded when performing
+497.     the FFT.  While not increasing the actual resolution of the spectrum (the
+498.     minimum distance between resolvable peaks), this can give more points in
+499.     the plot, allowing for more detail. This corresponds to the *n* parameter
+500.     in the call to `~numpy.fft.fft`.  The default is None, which sets *pad_to*
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 476 - 531
+Content:
+_docstring.interpd.update(
+    Spectral="""\
+Fs : float, default: 2
+    The sampling frequency (samples per time unit).  It is used to calculate
+    the Fourier frequencies, *freqs*, in cycles per time unit.
+
+window : callable or ndarray, default: `.window_hanning`
+    A function or a vector of length *NFFT*.  To create window vectors see
+    `.window_hanning`, `.window_none`, `numpy.blackman`, `numpy.hamming`,
+    `numpy.bartlett`, `scipy.signal`, `scipy.signal.get_window`, etc.  If a
+    function is passed as the argument, it must take a data segment as an
+    argument and return the windowed version of the segment.
+
+sides : {'default', 'onesided', 'twosided'}, optional
+    Which sides of the spectrum to return. 'default' is one-sided for real
+    data and two-sided for complex data. 'onesided' forces the return of a
+    one-sided spectrum, while 'twosided' forces two-sided.""",
+
+    Single_Spectrum="""\
+pad_to : int, optional
+    The number of points to which the data segment is padded when performing
+    the FFT.  While not increasing the actual resolution of the spectrum (the
+    minimum distance between resolvable peaks), this can give more points in
+    the plot, allowing for more detail. This corresponds to the *n* parameter
+    in the call to `~numpy.fft.fft`.  The default is None, which sets *pad_to*
+    equal to the length of the input signal (i.e. no padding).""",
+
+    PSD="""\
+pad_to : int, optional
+    The number of points to which the data segment is padded when performing
+    the FFT.  This can be different from *NFFT*, which specifies the number
+    of data points used.  While not increasing the actual resolution of the
+    spectrum (the minimum distance between resolvable peaks), this can give
+    more points in the plot, allowing for more detail. This corresponds to
+    the *n* parameter in the call to `~numpy.fft.fft`. The default is None,
+    which sets *pad_to* equal to *NFFT*
+
+NFFT : int, default: 256
+    The number of data points used in each block for the FFT.  A power 2 is
+    most efficient.  This should *NOT* be used to get zero padding, or the
+    scaling of the result will be incorrect; use *pad_to* for this instead.
+
+detrend : {'none', 'mean', 'linear'} or callable, default: 'none'
+    The function applied to each segment before fft-ing, designed to remove
+    the mean or linear trend.  Unlike in MATLAB, where the *detrend* parameter
+    is a vector, in Matplotlib it is a function.  The :mod:`~matplotlib.mlab`
+    module defines `.detrend_none`, `.detrend_mean`, and `.detrend_linear`,
+    but you can use a custom function as well.  You can also use a string to
+    choose one of the functions: 'none' calls `.detrend_none`. 'mean' calls
+    `.detrend_mean`. 'linear' calls `.detrend_linear`.
+
+scale_by_freq : bool, default: True
+    Whether the resulting density values should be scaled by the scaling
+    frequency, which gives density in units of 1/Hz.  This allows for
+    integration over the returned frequency values.  The default is True for
+    MATLAB compatibility.""")
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 534 - 587
+Content:
+@_docstring.dedent_interpd
+def psd(x, NFFT=None, Fs=None, detrend=None, window=None,
+        noverlap=None, pad_to=None, sides=None, scale_by_freq=None):
+    r"""
+    Compute the power spectral density.
+
+    The power spectral density :math:`P_{xx}` by Welch's average
+    periodogram method.  The vector *x* is divided into *NFFT* length
+    segments.  Each segment is detrended by function *detrend* and
+    windowed by function *window*.  *noverlap* gives the length of
+    the overlap between segments.  The :math:`|\mathrm{fft}(i)|^2`
+    of each segment :math:`i` are averaged to compute :math:`P_{xx}`.
+
+    If len(*x*) < *NFFT*, it will be zero padded to *NFFT*.
+
+    Parameters
+    ----------
+    x : 1-D array or sequence
+        Array or sequence containing the data
+
+    %(Spectral)s
+
+    %(PSD)s
+
+    noverlap : int, default: 0 (no overlap)
+        The number of points of overlap between segments.
+
+    Returns
+    -------
+    Pxx : 1-D array
+        The values for the power spectrum :math:`P_{xx}` (real valued)
+
+    freqs : 1-D array
+        The frequencies corresponding to the elements in *Pxx*
+
+    References
+    ----------
+    Bendat & Piersol -- Random Data: Analysis and Measurement Procedures, John
+    Wiley & Sons (1986)
+
+    See Also
+    --------
+    specgram
+        `specgram` differs in the default overlap; in not returning the mean of
+        the segment periodograms; and in returning the times of the segments.
+
+    magnitude_spectrum : returns the magnitude spectrum.
+
+    csd : returns the spectral density between two signals.
+    """
+    Pxx, freqs = csd(x=x, y=None, NFFT=NFFT, Fs=Fs, detrend=detrend,
+                     window=window, noverlap=noverlap, pad_to=pad_to,
+                     sides=sides, scale_by_freq=scale_by_freq)
+    return Pxx.real, freqs
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 590 - 651
+Content:
+@_docstring.dedent_interpd
+def csd(x, y, NFFT=None, Fs=None, detrend=None, window=None,
+        noverlap=None, pad_to=None, sides=None, scale_by_freq=None):
+    """
+    Compute the cross-spectral density.
+
+    The cross spectral density :math:`P_{xy}` by Welch's average
+    periodogram method.  The vectors *x* and *y* are divided into
+    *NFFT* length segments.  Each segment is detrended by function
+    *detrend* and windowed by function *window*.  *noverlap* gives
+    the length of the overlap between segments.  The product of
+    the direct FFTs of *x* and *y* are averaged over each segment
+    to compute :math:`P_{xy}`, with a scaling to correct for power
+    loss due to windowing.
+
+    If len(*x*) < *NFFT* or len(*y*) < *NFFT*, they will be zero
+    padded to *NFFT*.
+
+    Parameters
+    ----------
+    x, y : 1-D arrays or sequences
+        Arrays or sequences containing the data
+
+    %(Spectral)s
+
+    %(PSD)s
+
+    noverlap : int, default: 0 (no overlap)
+        The number of points of overlap between segments.
+
+    Returns
+    -------
+    Pxy : 1-D array
+        The values for the cross spectrum :math:`P_{xy}` before scaling (real
+        valued)
+
+    freqs : 1-D array
+        The frequencies corresponding to the elements in *Pxy*
+
+    References
+    ----------
+    Bendat & Piersol -- Random Data: Analysis and Measurement Procedures, John
+    Wiley & Sons (1986)
+
+    See Also
+    --------
+    psd : equivalent to setting ``y = x``.
+    """
+    if NFFT is None:
+        NFFT = 256
+    Pxy, freqs, _ = _spectral_helper(x=x, y=y, NFFT=NFFT, Fs=Fs,
+                                     detrend_func=detrend, window=window,
+                                     noverlap=noverlap, pad_to=pad_to,
+                                     sides=sides, scale_by_freq=scale_by_freq,
+                                     mode='psd')
+
+    if Pxy.ndim == 2:
+        if Pxy.shape[1] > 1:
+            Pxy = Pxy.mean(axis=1)
+        else:
+            Pxy = Pxy[:, 0]
+    return Pxy, freqs
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 710 - 791
+Content:
+710. @_docstring.dedent_interpd
+711. def specgram(x, NFFT=None, Fs=None, detrend=None, window=None,
+712.              noverlap=None, pad_to=None, sides=None, scale_by_freq=None,
+713.              mode=None):
+714.     """
+715.     Compute a spectrogram.
+716. 
+717.     Compute and plot a spectrogram of data in *x*.  Data are split into
+718.     *NFFT* length segments and the spectrum of each section is
+719.     computed.  The windowing function *window* is applied to each
+720.     segment, and the amount of overlap of each segment is
+721.     specified with *noverlap*.
+722. 
+723.     Parameters
+724.     ----------
+725.     x : array-like
+726.         1-D array or sequence.
+727. 
+728.     %(Spectral)s
+729. 
+730.     %(PSD)s
+731. 
+732.     noverlap : int, default: 128
+733.         The number of points of overlap between blocks.
+734.     mode : str, default: 'psd'
+735.         What sort of spectrum to use:
+736.             'psd'
+737.                 Returns the power spectral density.
+738.             'complex'
+739.                 Returns the complex-valued frequency spectrum.
+740.             'magnitude'
+741.                 Returns the magnitude spectrum.
+742.             'angle'
+743.                 Returns the phase spectrum without unwrapping.
+744.             'phase'
+745.                 Returns the phase spectrum with unwrapping.
+746. 
+747.     Returns
+748.     -------
+749.     spectrum : array-like
+750.         2D array, columns are the periodograms of successive segments.
+751. 
+752.     freqs : array-like
+753.         1-D array, frequencies corresponding to the rows in *spectrum*.
+754. 
+755.     t : array-like
+756.         1-D array, the times corresponding to midpoints of segments
+757.         (i.e the columns in *spectrum*).
+758. 
+759.     See Also
+760.     --------
+761.     psd : differs in the overlap and in the return values.
+762.     complex_spectrum : similar, but with complex valued frequencies.
+763.     magnitude_spectrum : similar single segment when *mode* is 'magnitude'.
+764.     angle_spectrum : similar to single segment when *mode* is 'angle'.
+765.     phase_spectrum : similar to single segment when *mode* is 'phase'.
+766. 
+767.     Notes
+768.     -----
+769.     *detrend* and *scale_by_freq* only apply when *mode* is set to 'psd'.
+770. 
+771.     """
+772.     if noverlap is None:
+773.         noverlap = 128  # default in _spectral_helper() is noverlap = 0
+774.     if NFFT is None:
+775.         NFFT = 256  # same default as in _spectral_helper()
+776.     if len(x) <= NFFT:
+777.         _api.warn_external("Only one segment is calculated since parameter "
+778.                            f"NFFT (={NFFT}) >= signal length (={len(x)}).")
+779. 
+780.     spec, freqs, t = _spectral_helper(x=x, y=None, NFFT=NFFT, Fs=Fs,
+781.                                       detrend_func=detrend, window=window,
+782.                                       noverlap=noverlap, pad_to=pad_to,
+783.                                       sides=sides,
+784.                                       scale_by_freq=scale_by_freq,
+785.                                       mode=mode)
+786. 
+787.     if mode != 'complex':
+788.         spec = spec.real  # Needed since helper implements generically
+789. 
+790.     return spec, freqs, t
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 793 - 840
+Content:
+@_docstring.dedent_interpd
+def cohere(x, y, NFFT=256, Fs=2, detrend=detrend_none, window=window_hanning,
+           noverlap=0, pad_to=None, sides='default', scale_by_freq=None):
+    r"""
+    The coherence between *x* and *y*.  Coherence is the normalized
+    cross spectral density:
+
+    .. math::
+
+        C_{xy} = \frac{|P_{xy}|^2}{P_{xx}P_{yy}}
+
+    Parameters
+    ----------
+    x, y
+        Array or sequence containing the data
+
+    %(Spectral)s
+
+    %(PSD)s
+
+    noverlap : int, default: 0 (no overlap)
+        The number of points of overlap between segments.
+
+    Returns
+    -------
+    Cxy : 1-D array
+        The coherence vector.
+    freqs : 1-D array
+            The frequencies for the elements in *Cxy*.
+
+    See Also
+    --------
+    :func:`psd`, :func:`csd` :
+        For information about the methods used to compute :math:`P_{xy}`,
+        :math:`P_{xx}` and :math:`P_{yy}`.
+    """
+    if len(x) < 2 * NFFT:
+        raise ValueError(
+            "Coherence is calculated by averaging over *NFFT* length "
+            "segments.  Your signal is too short for your choice of *NFFT*.")
+    Pxx, f = psd(x, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
+                 scale_by_freq)
+    Pyy, f = psd(y, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
+                 scale_by_freq)
+    Pxy, f = csd(x, y, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
+                 scale_by_freq)
+    Cxy = np.abs(Pxy) ** 2 / (Pxx * Pyy)
+    return Cxy, f
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 03:18:11,644 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user requested the full content of `lib/matplotlib/mlab.py`.\n   - This context contains the first 500 lines of the file.\n2. Extended relevance:\n   - This section defines the core `_spectral_helper` function, which is central to the user's query.\n   - It also includes helper functions for windowing (`window_hanning`, `window_none`), detrending (`detrend`, `detrend_mean`, etc.), and data manipulation (`_stride_windows`), which are crucial for understanding the spectral analysis logic.", relative_path='lib/matplotlib/mlab.py', start_line=1, end_line=500), ContextOutput(reasoning='1. Query requirement analysis:\n   - The user requested the full content of `lib/matplotlib/mlab.py`.\n   - This context contains shared docstrings.\n2. Extended relevance:\n   - This context provides the definitions for shared docstrings (`Spectral`, `Single_Spectrum`, `PSD`) used across the spectral analysis functions.\n   - These docstrings explain key parameters like `Fs`, `window`, `sides`, `pad_to`, `NFFT`, `detrend`, and `scale_by_freq`, which are essential for understanding the function signatures and behavior of `psd`, `csd`, and `specgram`.', relative_path='lib/matplotlib/mlab.py', start_line=476, end_line=531), ContextOutput(reasoning='1. Query requirement analysis:\n   - The user requested the full content of `lib/matplotlib/mlab.py`.\n   - This context contains the `psd` function.\n2. Extended relevance:\n   - The `psd` function is a public API function that computes the power spectral density.\n   - It is a caller of `csd`, which calls `_spectral_helper`, making it an important part of the call stack to analyze.', relative_path='lib/matplotlib/mlab.py', start_line=534, end_line=587), ContextOutput(reasoning='1. Query requirement analysis:\n   - The user requested the full content of `lib/matplotlib/mlab.py`.\n   - This context contains the `csd` function.\n2. Extended relevance:\n   - The `csd` function is a direct caller of the `_spectral_helper` function.\n   - Understanding its implementation is critical to understanding how `_spectral_helper` is used to calculate cross-spectral density.', relative_path='lib/matplotlib/mlab.py', start_line=590, end_line=651), ContextOutput(reasoning='1. Query requirement analysis:\n   - The user requested the full content of `lib/matplotlib/mlab.py`.\n   - This context contains the `specgram` function.\n2. Extended relevance:\n   - The `specgram` function is another direct caller of the `_spectral_helper` function.\n   - It shows a different usage pattern of `_spectral_helper` for creating spectrograms.', relative_path='lib/matplotlib/mlab.py', start_line=710, end_line=791), ContextOutput(reasoning='1. Query requirement analysis:\n   - The user requested the full content of `lib/matplotlib/mlab.py`.\n   - This context contains the `cohere` function.\n2. Extended relevance:\n   - The `cohere` function calculates coherence by using `psd` and `csd`.\n   - This makes it an indirect user of `_spectral_helper` and helps complete the understanding of the spectral analysis suite in this file.', relative_path='lib/matplotlib/mlab.py', start_line=793, end_line=840)]
+2025-12-21 03:18:11,647 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 6 contexts to memory for query: Please provide the full content of lib/matplotlib/mlab.py
+2025-12-21 03:18:11,647 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 03:18:11,648 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 03:18:11,648 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 6 new contexts to 0 existing contexts
+2025-12-21 03:18:11,648 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 6 total contexts (removed 0 duplicates)
+2025-12-21 03:18:11,649 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+matplotlib
+├── .appveyor.yml
+├── .circleci
+|   ├── config.yml
+|   ├── deploy-docs.sh
+|   └── fetch_doc_logs.py
+├── .git_archival.txt
+├── .github
+|   ├── CONTRIBUTING.md
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── bug_report.yml
+|   |   ├── config.yml
+|   |   ├── documentation.yml
+|   |   ├── feature_request.yml
+|   |   └── maintenance.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── codecov.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── cibuildsdist.yml
+|       ├── cibuildwheel.yml
+|       ├── circleci.yml
+|       ├── clean_pr.yml
+|       ├── codeql-analysis.yml
+|       ├── conflictcheck.yml
+|       ├── cygwin.yml
+|       ├── nightlies.yml
+|       ├── pr_welcome.yml
+|       ├── reviewdog.yml
+|       └── tests.yml
+├── .lgtm.yml
+├── .meeseeksdev.yml
+├── .pre-commit-config.yaml
+├── CODE_OF_CONDUCT.md
+├── INSTALL.rst
+├── LICENSE
+├── README.md
+├── SECURITY.md
+├── azure-pipelines.yml
+├── ci
+|   ├── check_version_number.py
+|   ├── check_wheel_licenses.py
+|   └── codespell-ignore-words.txt
+├── doc
+|   ├── README.txt
+|   ├── _static
+|   |   ├── fa
+|   |   ├── markers
+|   |   ├── mpl.css
+|   |   └── zenodo_cache
+|   ├── _templates
+|   |   ├── autofunctions.rst
+|   |   ├── automodule.rst
+|   |   ├── autosummary.rst
+|   |   ├── autosummary_class_only.rst
+|   |   ├── cheatsheet_sidebar.html
+|   |   ├── donate_sidebar.html
+|   |   ├── function.rst
+|   |   ├── pagesource.html
+|   |   ├── search.html
+|   |   ├── sidebar_announcement.html
+|   |   └── sidebar_versions.html
+|   ├── api
+|   |   ├── _api_api.rst
+|   |   ├── _enums_api.rst
+|   |   ├── afm_api.rst
+|   |   ├── animation_api.rst
+|   |   ├── artist_api.rst
+|   |   ├── axes_api.rst
+|   |   ├── axis_api.rst
+|   |   ├── backend_agg_api.rst
+|   |   ├── backend_bases_api.rst
+|   |   ├── backend_cairo_api.rst
+|   |   ├── backend_gtk3_api.rst
+|   |   ├── backend_gtk4_api.rst
+|   |   ├── backend_managers_api.rst
+|   |   ├── backend_mixed_api.rst
+|   |   ├── backend_nbagg_api.rst
+|   |   ├── backend_pdf_api.rst
+|   |   ├── backend_pgf_api.rst
+|   |   ├── backend_ps_api.rst
+|   |   ├── backend_qt_api.rst
+|   |   ├── backend_svg_api.rst
+|   |   ├── backend_template_api.rst
+|   |   ├── backend_tk_api.rst
+|   |   ├── backend_tools_api.rst
+|   |   ├── backend_webagg_api.rst
+|   |   ├── backend_wx_api.rst
+|   |   ├── bezier_api.rst
+|   |   ├── category_api.rst
+|   |   ├── cbook_api.rst
+|   |   ├── cm_api.rst
+|   |   ├── collections_api.rst
+|   |   ├── colorbar_api.rst
+|   |   ├── colors_api.rst
+|   |   ├── container_api.rst
+|   |   ├── contour_api.rst
+|   |   ├── dates_api.rst
+|   |   ├── docstring_api.rst
+|   |   ├── dviread.rst
+|   |   ├── figure_api.rst
+|   |   ├── font_manager_api.rst
+|   |   ├── ft2font.rst
+|   |   ├── gridspec_api.rst
+|   |   ├── hatch_api.rst
+|   |   ├── image_api.rst
+|   |   ├── index.rst
+|   |   ├── index_backend_api.rst
+|   |   ├── layout_engine_api.rst
+|   |   ├── legend_api.rst
+|   |   ├── legend_handler_api.rst
+|   |   ├── lines_api.rst
+|   |   ├── markers_api.rst
+|   |   ├── mathtext_api.rst
+|   |   ├── matplotlib_configuration_api.rst
+|   |   ├── mlab_api.rst
+|   |   ├── next_api_changes
+|   |   |   ├── README.rst
+|   |   |   ├── behavior
+|   |   |   |   ├── 00001-ABC.rst
+|   |   |   |   ├── 23573-AL.rst
+|   |   |   |   ├── 23579-AL.rst
+|   |   |   |   ├── 23710-ES.rst
+|   |   |   |   ├── 24062-tb.rst
+|   |   |   |   ├── 24131-OG.rst
+|   |   |   |   ├── 24132-GL.rst
+|   |   |   |   ├── 24189-JB.rst
+|   |   |   |   ├── 24570-GL.rst
+|   |   |   |   ├── 24655-AK.rst
+|   |   |   |   ├── 24829-AL.rst
+|   |   |   |   ├── 24870-AL.rst
+|   |   |   |   ├── 24889-AL.rst
+|   |   |   |   ├── 24912-AL.rst
+|   |   |   |   ├── 25061-DS.rst
+|   |   |   |   └── 9598-AFV.rst
+|   |   |   ├── deprecations
+|   |   |   |   ├── 00001-ABC.rst
+|   |   |   |   ├── 19763-ES.rst
+|   |   |   |   ├── 22314-AL.rst
+|   |   |   |   ├── 23449-SS.rst
+|   |   |   |   ├── 23720-RS.rst
+|   |   |   |   ├── 23735-ES.rst
+|   |   |   |   ├── 23824-OG.rst
+|   |   |   |   ├── 24000-TH.rst
+|   |   |   |   ├── 24013-TH.rst
+|   |   |   |   ├── 24071-OG.rst
+|   |   |   |   ├── 24088-JMK.rst
+|   |   |   |   ├── 24131-OG.rst
+|   |   |   |   ├── 24140-AL.rst
+|   |   |   |   ├── 24144-AL.rst
+|   |   |   |   ├── 24198-AL.rst
+|   |   |   |   ├── 24208-AL.rst
+|   |   |   |   ├── 24220-AL.rst
+|   |   |   |   ├── 24221-AL.rst
+|   |   |   |   ├── 24224-OG.rst
+|   |   |   |   ├── 24240-OG.rst
+|   |   |   |   ├── 24254-OG.rst
+|   |   |   |   ├── 24305-AL.rst
+|   |   |   |   ├── 24455-AL.rst
+|   |   |   |   ├── 24465-AL.rst
+|   |   |   |   ├── 24474_CM.rst
+|   |   |   |   ├── 24538-OG.rst
+|   |   |   |   ├── 24577-AL.rst
+|   |   |   |   ├── 24664-OG.rst
+|   |   |   |   ├── 24688-OG.rst
+|   |   |   |   ├── 24730-TH.rst
+|   |   |   |   ├── 24806-KS.rst
+|   |   |   |   ├── 24846-ES.rst
+|   |   |   |   ├── 24864-AL.rst
+|   |   |   |   ├── 24904-AL.rst
+|   |   |   |   ├── 24913-AL.rst
+|   |   |   |   ├── 24985-OG.rst
+|   |   |   |   └── 24990-OG.rst
+|   |   |   ├── development
+|   |   |   |   ├── 00001-ABC.rst
+|   |   |   |   ├── 23683-AL.rst
+|   |   |   |   ├── 24257-AL.rst
+|   |   |   |   ├── 24710-AL.rst
+|   |   |   |   ├── 24724-ES.rst
+|   |   |   |   ├── 24887-OG.rst
+|   |   |   |   ├── 24893-KS.rst
+|   |   |   |   └── 24919-KS.rst
+|   |   |   └── removals
+|   |   |       ├── 00001-ABC.rst
+|   |   |       ├── 21661-TAC.rst
+|   |   |       ├── 24125-OG.rst
+|   |   |       ├── 24128-OG.rst
+|   |   |       ├── 24129-OG.rst
+|   |   |       ├── 24251-OG.rst
+|   |   |       ├── 24253-OG.rst
+|   |   |       ├── 24254-OG.rst
+|   |   |       ├── 24257-AL.rst
+|   |   |       ├── 24355-OG.rst
+|   |   |       ├── 24356-OG.rst
+|   |   |       ├── 24624-AL.rst
+|   |   |       ├── 24923-ES.rst
+|   |   |       ├── 24948-ES.rst
+|   |   |       ├── 24965-ES.rst
+|   |   |       └── 24XXX-OG.rst
+|   |   ├── next_api_changes.rst
+|   |   ├── offsetbox_api.rst
+|   |   ├── patches_api.rst
+|   |   ├── path_api.rst
+|   |   ├── patheffects_api.rst
+|   |   ├── prev_api_changes
+|   |   |   ├── api_changes_0.40.rst
+|   |   |   ├── api_changes_0.42.rst
+|   |   |   ├── api_changes_0.50.rst
+|   |   |   ├── api_changes_0.54.3.rst
+|   |   |   ├── api_changes_0.54.rst
+|   |   |   ├── api_changes_0.60.rst
+|   |   |   ├── api_changes_0.61.rst
+|   |   |   ├── api_changes_0.63.rst
+|   |   |   ├── api_changes_0.65.1.rst
+|   |   |   ├── api_changes_0.65.rst
+|   |   |   ├── api_changes_0.70.rst
+|   |   |   ├── api_changes_0.71.rst
+|   |   |   ├── api_changes_0.72.rst
+|   |   |   ├── api_changes_0.73.rst
+|   |   |   ├── api_changes_0.80.rst
+|   |   |   ├── api_changes_0.81.rst
+|   |   |   ├── api_changes_0.82.rst
+|   |   |   ├── api_changes_0.83.rst
+|   |   |   ├── api_changes_0.84.rst
+|   |   |   ├── api_changes_0.85.rst
+|   |   |   ├── api_changes_0.86.rst
+|   |   |   ├── api_changes_0.87.7.rst
+|   |   |   ├── api_changes_0.90.0.rst
+|   |   |   ├── api_changes_0.90.1.rst
+|   |   |   ├── api_changes_0.91.0.rst
+|   |   |   ├── api_changes_0.91.2.rst
+|   |   |   ├── api_changes_0.98.0.rst
+|   |   |   ├── api_changes_0.98.1.rst
+|   |   |   ├── api_changes_0.98.x.rst
+|   |   |   ├── api_changes_0.99.rst
+|   |   |   ├── api_changes_0.99.x.rst
+|   |   |   ├── api_changes_1.1.x.rst
+|   |   |   ├── api_changes_1.2.x.rst
+|   |   |   ├── api_changes_1.3.x.rst
+|   |   |   ├── api_changes_1.4.x.rst
+|   |   |   ├── api_changes_1.5.0.rst
+|   |   |   ├── api_changes_1.5.2.rst
+|   |   |   ├── api_changes_1.5.3.rst
+|   |   |   ├── api_changes_2.0.0.rst
+|   |   |   ├── api_changes_2.0.1.rst
+|   |   |   ├── api_changes_2.1.0.rst
+|   |   |   ├── api_changes_2.1.1.rst
+|   |   |   ├── api_changes_2.1.2.rst
+|   |   |   ├── api_changes_2.2.0.rst
+|   |   |   ├── api_changes_3.0.0.rst
+|   |   |   ├── api_changes_3.0.1.rst
+|   |   |   ├── api_changes_3.1.0.rst
+|   |   |   ├── api_changes_3.1.1.rst
+|   |   |   ├── api_changes_3.2.0
+|   |   |   |   ├── behavior.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.2.0.rst
+|   |   |   ├── api_changes_3.3.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.3.0.rst
+|   |   |   ├── api_changes_3.3.1.rst
+|   |   |   ├── api_changes_3.4.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.4.0.rst
+|   |   |   ├── api_changes_3.4.2.rst
+|   |   |   ├── api_changes_3.5.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   ├── api_changes_3.5.0.rst
+|   |   |   ├── api_changes_3.5.2.rst
+|   |   |   ├── api_changes_3.5.3.rst
+|   |   |   ├── api_changes_3.6.0
+|   |   |   |   ├── behaviour.rst
+|   |   |   |   ├── deprecations.rst
+|   |   |   |   ├── development.rst
+|   |   |   |   └── removals.rst
+|   |   |   └── api_changes_3.6.0.rst
+|   |   ├── projections
+|   |   |   ├── geo.rst
+|   |   |   └── polar.rst
+|   |   ├── projections_api.rst
+|   |   ├── pyplot_summary.rst
+|   |   ├── quiver_api.rst
+|   |   ├── rcsetup_api.rst
+|   |   ├── sankey_api.rst
+|   |   ├── scale_api.rst
+|   |   ├── sphinxext_mathmpl_api.rst
+|   |   ├── sphinxext_plot_directive_api.rst
+|   |   ├── spines_api.rst
+|   |   ├── style_api.rst
+|   |   ├── table_api.rst
+|   |   ├── testing_api.rst
+|   |   ├── texmanager_api.rst
+|   |   ├── text_api.rst
+|   |   ├── ticker_api.rst
+|   |   ├── tight_bbox_api.rst
+|   |   ├── tight_layout_api.rst
+|   |   ├── toolkits
+|   |   |   ├── axes_grid1.rst
+|   |   |   ├── axisartist.rst
+|   |   |   ├── mplot3d
+|   |   |   |   ├── axes3d.rst
+|   |   |   |   ├── faq.rst
+|   |   |   |   └── view_angles.rst
+|   |   |   └── mplot3d.rst
+|   |   ├── transformations.rst
+|   |   ├── tri_api.rst
+|   |   ├── type1font.rst
+|   |   ├── units_api.rst
+|   |   └── widgets_api.rst
+|   ├── conf.py
+|   ├── devel
+|   |   ├── MEP
+|   |   |   ├── MEP08.rst
+|   |   |   ├── MEP09.rst
+|   |   |   ├── MEP10.rst
+|   |   |   ├── MEP11.rst
+|   |   |   ├── MEP12.rst
+|   |   |   ├── MEP13.rst
+|   |   |   ├── MEP14.rst
+|   |   |   ├── MEP15.rst
+|   |   |   ├── MEP19.rst
+|   |   |   ├── MEP21.rst
+|   |   |   ├── MEP22.rst
+|   |   |   ├── MEP23.rst
+|   |   |   ├── MEP24.rst
+|   |   |   ├── MEP25.rst
+|   |   |   ├── MEP26.rst
+|   |   |   ├── MEP27.rst
+|   |   |   ├── MEP28.rst
+|   |   |   ├── MEP29.rst
+|   |   |   ├── README.rst
+|   |   |   ├── index.rst
+|   |   |   └── template.rst
+|   |   ├── README.txt
+|   |   ├── coding_guide.rst
+|   |   ├── color_changes.rst
+|   |   ├── contributing.rst
+|   |   ├── dependencies.rst
+|   |   ├── development_setup.rst
+|   |   ├── development_workflow.rst
+|   |   ├── documenting_mpl.rst
+|   |   ├── index.rst
+|   |   ├── license.rst
+|   |   ├── maintainer_workflow.rst
+|   |   ├── min_dep_policy.rst
+|   |   ├── release_guide.rst
+|   |   ├── style_guide.rst
+|   |   ├── testing.rst
+|   |   └── triage.rst
+|   ├── index.rst
+|   ├── sphinxext
+|   |   ├── __init__.py
+|   |   ├── custom_roles.py
+|   |   ├── gallery_order.py
+|   |   ├── github.py
+|   |   ├── math_symbol_table.py
+|   |   ├── missing_references.py
+|   |   ├── mock_gui_toolkits.py
+|   |   ├── redirect_from.py
+|   |   └── skip_deprecated.py
+|   ├── thirdpartypackages
+|   |   └── index.rst
+|   └── users
+|       ├── explain
+|       |   ├── api_interfaces.rst
+|       |   ├── backends.rst
+|       |   ├── event_handling.rst
+|       |   ├── figures.rst
+|       |   ├── fonts.rst
+|       |   ├── index.rst
+|       |   ├── interactive.rst
+|       |   ├── interactive_guide.rst
+|       |   ├── performance.rst
+|       |   └── writing_a_backend_pyplot_interface.rst
+|       ├── faq
+|       |   ├── environment_variables_faq.rst
+|       |   ├── howto_faq.rst
+|       |   ├── index.rst
+|       |   └── troubleshooting_faq.rst
+|       ├── generate_credits.py
+|       ├── getting_started
+|       |   └── index.rst
+|       ├── github_stats.rst
+|       ├── index.rst
+|       ├── installing
+|       |   └── index.rst
+|       ├── next_whats_new
+|       |   ├── 3d_pane_color_rcparams.rst
+|       |   ├── 3d_plot_aspects_adjustable_keyword.rst
+|       |   ├── 3d_plot_pan_zoom.rst
+|       |   ├── README.rst
+|       |   ├── bar_label_formatting.rst
+|       |   ├── colorbar_has_location_argument.rst
+|       |   ├── documentation.rst
+|       |   ├── ellipse_annotation.rst
+|       |   ├── figure_hooks.rst
+|       |   ├── imshow_extent_units.rst
+|       |   ├── legend-figure-outside.rst
+|       |   ├── per_subplot_mosaic.rst
+|       |   ├── pie_hatch.rst
+|       |   ├── polar_errorbar_caps.rst
+|       |   ├── reverse_legend.rst
+|       |   ├── rgba_pcolormesh.rst
+|       |   ├── savefig_bbox_layout.rst
+|       |   ├── shade_poly3dcollection.rst
+|       |   ├── show_source_links_directive_option.rst
+|       |   ├── styles_from_packages.rst
+|       |   ├── view_current_axis_format.rst
+|       |   ├── widget_blitting.rst
+|       |   └── widget_button_styling.rst
+|       ├── next_whats_new.rst
+|       ├── prev_whats_new
+|       |   ├── changelog.rst
+|       |   ├── dflt_style_changes.rst
+|       |   ├── github_stats_3.0.0.rst
+|       |   ├── github_stats_3.0.1.rst
+|       |   ├── github_stats_3.0.2.rst
+|       |   ├── github_stats_3.0.3.rst
+|       |   ├── github_stats_3.1.0.rst
+|       |   ├── github_stats_3.1.1.rst
+|       |   ├── github_stats_3.1.2.rst
+|       |   ├── github_stats_3.1.3.rst
+|       |   ├── github_stats_3.2.0.rst
+|       |   ├── github_stats_3.2.1.rst
+|       |   ├── github_stats_3.2.2.rst
+|       |   ├── github_stats_3.3.0.rst
+|       |   ├── github_stats_3.3.1.rst
+|       |   ├── github_stats_3.3.2.rst
+|       |   ├── github_stats_3.3.3.rst
+|       |   ├── github_stats_3.3.4.rst
+|       |   ├── github_stats_3.4.0.rst
+|       |   ├── github_stats_3.4.1.rst
+|       |   ├── github_stats_3.4.2.rst
+|       |   ├── github_stats_3.4.3.rst
+|       |   ├── github_stats_3.5.0.rst
+|       |   ├── github_stats_3.5.1.rst
+|       |   ├── github_stats_3.5.2.rst
+|       |   ├── github_stats_3.5.3.rst
+|       |   ├── whats_new_0.98.4.rst
+|       |   ├── whats_new_0.99.rst
+|       |   ├── whats_new_1.0.rst
+|       |   ├── whats_new_1.1.rst
+|       |   ├── whats_new_1.2.2.rst
+|       |   ├── whats_new_1.2.rst
+|       |   ├── whats_new_1.3.rst
+|       |   ├── whats_new_1.4.rst
+|       |   ├── whats_new_1.5.rst
+|       |   ├── whats_new_2.0.0.rst
+|       |   ├── whats_new_2.1.0.rst
+|       |   ├── whats_new_2.2.rst
+|       |   ├── whats_new_3.0.rst
+|       |   ├── whats_new_3.1.0.rst
+|       |   ├── whats_new_3.2.0.rst
+|       |   ├── whats_new_3.3.0.rst
+|       |   ├── whats_new_3.4.0.rst
+|       |   ├── whats_new_3.5.0.rst
+|       |   ├── whats_new_3.5.2.rst
+|       |   └── whats_new_3.6.0.rst
+|       ├── project
+|       |   ├── citing.rst
+|       |   ├── credits.rst
+|       |   ├── history.rst
+|       |   ├── index.rst
+|       |   ├── license.rst
+|       |   └── mission.rst
+|       ├── release_notes.rst
+|       ├── release_notes_next.rst
+|       └── resources
+|           └── index.rst
+├── environment.yml
+├── examples
+|   ├── README.txt
+|   ├── animation
+|   |   ├── README.txt
+|   |   ├── animate_decay.py
+|   |   ├── animated_histogram.py
+|   |   ├── animation_demo.py
+|   |   ├── bayes_update.py
+|   |   ├── double_pendulum.py
+|   |   ├── dynamic_image.py
+|   |   ├── frame_grabbing_sgskip.py
+|   |   ├── multiple_axes.py
+|   |   ├── pause_resume.py
+|   |   ├── rain.py
+|   |   ├── random_walk.py
+|   |   ├── simple_anim.py
+|   |   ├── simple_scatter.py
+|   |   ├── strip_chart.py
+|   |   └── unchained.py
+|   ├── axes_grid1
+|   |   ├── README.txt
+|   |   ├── demo_anchored_direction_arrows.py
+|   |   ├── demo_axes_divider.py
+|   |   ├── demo_axes_grid.py
+|   |   ├── demo_axes_grid2.py
+|   |   ├── demo_axes_hbox_divider.py
+|   |   ├── demo_axes_rgb.py
+|   |   ├── demo_colorbar_of_inset_axes.py
+|   |   ├── demo_colorbar_with_axes_divider.py
+|   |   ├── demo_colorbar_with_inset_locator.py
+|   |   ├── demo_edge_colorbar.py
+|   |   ├── demo_fixed_size_axes.py
+|   |   ├── demo_imagegrid_aspect.py
+|   |   ├── inset_locator_demo.py
+|   |   ├── inset_locator_demo2.py
+|   |   ├── make_room_for_ylabel_using_axesgrid.py
+|   |   ├── parasite_simple.py
+|   |   ├── parasite_simple2.py
+|   |   ├── scatter_hist_locatable_axes.py
+|   |   ├── simple_anchored_artists.py
+|   |   ├── simple_axes_divider1.py
+|   |   ├── simple_axes_divider3.py
+|   |   ├── simple_axesgrid.py
+|   |   ├── simple_axesgrid2.py
+|   |   ├── simple_axisline4.py
+|   |   └── simple_colorbar.py
+|   ├── axisartist
+|   |   ├── README.txt
+|   |   ├── axis_direction.py
+|   |   ├── demo_axis_direction.py
+|   |   ├── demo_axisline_style.py
+|   |   ├── demo_curvelinear_grid.py
+|   |   ├── demo_curvelinear_grid2.py
+|   |   ├── demo_floating_axes.py
+|   |   ├── demo_floating_axis.py
+|   |   ├── demo_parasite_axes.py
+|   |   ├── demo_parasite_axes2.py
+|   |   ├── demo_ticklabel_alignment.py
+|   |   ├── demo_ticklabel_direction.py
+|   |   ├── simple_axis_direction01.py
+|   |   ├── simple_axis_direction03.py
+|   |   ├── simple_axis_pad.py
+|   |   ├── simple_axisartist1.py
+|   |   ├── simple_axisline.py
+|   |   └── simple_axisline3.py
+|   ├── color
+|   |   ├── README.txt
+|   |   ├── color_by_yvalue.py
+|   |   ├── color_cycle_default.py
+|   |   ├── color_demo.py
+|   |   ├── colorbar_basics.py
+|   |   ├── colormap_reference.py
+|   |   ├── custom_cmap.py
+|   |   └── named_colors.py
+|   ├── event_handling
+|   |   ├── README.txt
+|   |   ├── close_event.py
+|   |   ├── coords_demo.py
+|   |   ├── cursor_demo.py
+|   |   ├── data_browser.py
+|   |   ├── figure_axes_enter_leave.py
+|   |   ├── ginput_manual_clabel_sgskip.py
+|   |   ├── image_slices_viewer.py
+|   |   ├── keypress_demo.py
+|   |   ├── lasso_demo.py
+|   |   ├── legend_picking.py
+|   |   ├── looking_glass.py
+|   |   ├── path_editor.py
+|   |   ├── pick_event_demo.py
+|   |   ├── pick_event_demo2.py
+|   |   ├── poly_editor.py
+|   |   ├── pong_sgskip.py
+|   |   ├── resample.py
+|   |   ├── timers.py
+|   |   ├── trifinder_event_demo.py
+|   |   ├── viewlims.py
+|   |   └── zoom_window.py
+|   ├── images_contours_and_fields
+|   |   ├── README.txt
+|   |   ├── affine_image.py
+|   |   ├── barb_demo.py
+|   |   ├── barcode_demo.py
+|   |   ├── colormap_interactive_adjustment.py
+|   |   ├── colormap_normalizations.py
+|   |   ├── colormap_normalizations_symlognorm.py
+|   |   ├── contour_corner_mask.py
+|   |   ├── contour_demo.py
+|   |   ├── contour_image.py
+|   |   ├── contour_label_demo.py
+|   |   ├── contourf_demo.py
+|   |   ├── contourf_hatching.py
+|   |   ├── contourf_log.py
+|   |   ├── contours_in_optimization_demo.py
+|   |   ├── demo_bboximage.py
+|   |   ├── figimage_demo.py
+|   |   ├── image_annotated_heatmap.py
+|   |   ├── image_antialiasing.py
+|   |   ├── image_clip_path.py
+|   |   ├── image_demo.py
+|   |   ├── image_masked.py
+|   |   ├── image_nonuniform.py
+|   |   ├── image_transparency_blend.py
+|   |   ├── image_zcoord.py
+|   |   ├── interpolation_methods.py
+|   |   ├── irregulardatagrid.py
+|   |   ├── layer_images.py
+|   |   ├── matshow.py
+|   |   ├── multi_image.py
+|   |   ├── pcolor_demo.py
+|   |   ├── pcolormesh_grids.py
+|   |   ├── pcolormesh_levels.py
+|   |   ├── plot_streamplot.py
+|   |   ├── quadmesh_demo.py
+|   |   ├── quiver_demo.py
+|   |   ├── quiver_simple_demo.py
+|   |   ├── shading_example.py
+|   |   ├── specgram_demo.py
+|   |   ├── spy_demos.py
+|   |   ├── tricontour_demo.py
+|   |   ├── tricontour_smooth_delaunay.py
+|   |   ├── tricontour_smooth_user.py
+|   |   ├── trigradient_demo.py
+|   |   ├── triinterp_demo.py
+|   |   ├── tripcolor_demo.py
+|   |   ├── triplot_demo.py
+|   |   └── watermark_image.py
+|   ├── lines_bars_and_markers
+|   |   ├── README.txt
+|   |   ├── bar_colors.py
+|   |   ├── bar_label_demo.py
+|   |   ├── bar_stacked.py
+|   |   ├── barchart.py
+|   |   ├── barh.py
+|   |   ├── broken_barh.py
+|   |   ├── capstyle.py
+|   |   ├── categorical_variables.py
+|   |   ├── cohere.py
+|   |   ├── csd_demo.py
+|   |   ├── curve_error_band.py
+|   |   ├── errorbar_limits_simple.py
+|   |   ├── errorbar_subsample.py
+|   |   ├── eventcollection_demo.py
+|   |   ├── eventplot_demo.py
+|   |   ├── fill.py
+|   |   ├── fill_between_alpha.py
+|   |   ├── fill_between_demo.py
+|   |   ├── fill_betweenx_demo.py
+|   |   ├── filled_step.py
+|   |   ├── gradient_bar.py
+|   |   ├── hat_graph.py
+|   |   ├── horizontal_barchart_distribution.py
+|   |   ├── joinstyle.py
+|   |   ├── line_demo_dash_control.py
+|   |   ├── lines_with_ticks_demo.py
+|   |   ├── linestyles.py
+|   |   ├── marker_reference.py
+|   |   ├── markevery_demo.py
+|   |   ├── masked_demo.py
+|   |   ├── multicolored_line.py
+|   |   ├── multivariate_marker_plot.py
+|   |   ├── psd_demo.py
+|   |   ├── scatter_custom_symbol.py
+|   |   ├── scatter_demo2.py
+|   |   ├── scatter_hist.py
+|   |   ├── scatter_masked.py
+|   |   ├── scatter_star_poly.py
+|   |   ├── scatter_with_legend.py
+|   |   ├── simple_plot.py
+|   |   ├── span_regions.py
+|   |   ├── spectrum_demo.py
+|   |   ├── stackplot_demo.py
+|   |   ├── stairs_demo.py
+|   |   ├── stem_plot.py
+|   |   ├── step_demo.py
+|   |   ├── timeline.py
+|   |   ├── vline_hline_demo.py
+|   |   └── xcorr_acorr_demo.py
+|   ├── misc
+|   |   ├── README.txt
+|   |   ├── anchored_artists.py
+|   |   ├── bbox_intersect.py
+|   |   ├── contour_manual.py
+|   |   ├── coords_report.py
+|   |   ├── custom_projection.py
+|   |   ├── customize_rc.py
+|   |   ├── demo_agg_filter.py
+|   |   ├── demo_ribbon_box.py
+|   |   ├── fig_x.py
+|   |   ├── fill_spiral.py
+|   |   ├── findobj_demo.py
+|   |   ├── font_indexing.py
+|   |   ├── ftface_props.py
+|   |   ├── histogram_path.py
+|   |   ├── hyperlinks_sgskip.py
+|   |   ├── image_thumbnail_sgskip.py
+|   |   ├── keyword_plotting.py
+|   |   ├── logos2.py
+|   |   ├── multipage_pdf.py
+|   |   ├── multiprocess_sgskip.py
+|   |   ├── packed_bubbles.py
+|   |   ├── patheffect_demo.py
+|   |   ├── print_stdout_sgskip.py
+|   |   ├── rasterization_demo.py
+|   |   ├── set_and_get.py
+|   |   ├── svg_filter_line.py
+|   |   ├── svg_filter_pie.py
+|   |   ├── table_demo.py
+|   |   ├── tickedstroke_demo.py
+|   |   ├── transoffset.py
+|   |   └── zorder_demo.py
+|   ├── mplot3d
+|   |   ├── 2dcollections3d.py
+|   |   ├── 3d_bars.py
+|   |   ├── README.txt
+|   |   ├── bars3d.py
+|   |   ├── box3d.py
+|   |   ├── contour3d.py
+|   |   ├── contour3d_2.py
+|   |   ├── contour3d_3.py
+|   |   ├── contourf3d.py
+|   |   ├── contourf3d_2.py
+|   |   ├── custom_shaded_3d_surface.py
+|   |   ├── errorbar3d.py
+|   |   ├── hist3d.py
+|   |   ├── lines3d.py
+|   |   ├── lorenz_attractor.py
+|   |   ├── mixed_subplots.py
+|   |   ├── offset.py
+|   |   ├── pathpatch3d.py
+|   |   ├── polys3d.py
+|   |   ├── projections.py
+|   |   ├── quiver3d.py
+|   |   ├── rotate_axes3d_sgskip.py
+|   |   ├── scatter3d.py
+|   |   ├── stem3d_demo.py
+|   |   ├── subplot3d.py
+|   |   ├── surface3d.py
+|   |   ├── surface3d_2.py
+|   |   ├── surface3d_3.py
+|   |   ├── surface3d_radial.py
+|   |   ├── text3d.py
+|   |   ├── tricontour3d.py
+|   |   ├── tricontourf3d.py
+|   |   ├── trisurf3d.py
+|   |   ├── trisurf3d_2.py
+|   |   ├── view_planes_3d.py
+|   |   ├── voxels.py
+|   |   ├── voxels_numpy_logo.py
+|   |   ├── voxels_rgb.py
+|   |   ├── voxels_torus.py
+|   |   ├── wire3d.py
+|   |   ├── wire3d_animation_sgskip.py
+|   |   └── wire3d_zero_stride.py
+|   ├── pie_and_polar_charts
+|   |   ├── README.txt
+|   |   ├── bar_of_pie.py
+|   |   ├── nested_pie.py
+|   |   ├── pie_and_donut_labels.py
+|   |   ├── pie_demo2.py
+|   |   ├── pie_features.py
+|   |   ├── polar_bar.py
+|   |   ├── polar_demo.py
+|   |   ├── polar_error_caps.py
+|   |   ├── polar_legend.py
+|   |   └── polar_scatter.py
+|   ├── pyplots
+|   |   ├── README.txt
+|   |   ├── axline.py
+|   |   ├── pyplot_simple.py
+|   |   ├── pyplot_text.py
+|   |   ├── pyplot_three.py
+|   |   └── pyplot_two_subplots.py
+|   ├── scales
+|   |   ├── README.txt
+|   |   ├── asinh_demo.py
+|   |   ├── aspect_loglog.py
+|   |   ├── custom_scale.py
+|   |   ├── log_bar.py
+|   |   ├── log_demo.py
+|   |   ├── logit_demo.py
+|   |   ├── power_norm.py
+|   |   ├── scales.py
+|   |   ├── semilogx_demo.py
+|   |   └── symlog_demo.py
+|   ├── shapes_and_collections
+|   |   ├── README.txt
+|   |   ├── arrow_guide.py
+|   |   ├── artist_reference.py
+|   |   ├── collections.py
+|   |   ├── compound_path.py
+|   |   ├── dolphin.py
+|   |   ├── donut.py
+|   |   ├── ellipse_collection.py
+|   |   ├── ellipse_demo.py
+|   |   ├── fancybox_demo.py
+|   |   ├── hatch_demo.py
+|   |   ├── hatch_style_reference.py
+|   |   ├── line_collection.py
+|   |   ├── patch_collection.py
+|   |   ├── path_patch.py
+|   |   ├── quad_bezier.py
+|   |   └── scatter.py
+|   ├── showcase
+|   |   ├── README.txt
+|   |   ├── anatomy.py
+|   |   ├── firefox.py
+|   |   ├── integral.py
+|   |   ├── mandelbrot.py
+|   |   ├── stock_prices.py
+|   |   └── xkcd.py
+|   ├── specialty_plots
+|   |   ├── README.txt
+|   |   ├── advanced_hillshading.py
+|   |   ├── anscombe.py
+|   |   ├── hinton_demo.py
+|   |   ├── leftventricle_bullseye.py
+|   |   ├── mri_demo.py
+|   |   ├── mri_with_eeg.py
+|   |   ├── radar_chart.py
+|   |   ├── sankey_basics.py
+|   |   ├── sankey_links.py
+|   |   ├── sankey_rankine.py
+|   |   ├── skewt.py
+|   |   └── topographic_hillshading.py
+|   ├── spines
+|   |   ├── README.txt
+|   |   ├── centered_spines_with_arrows.py
+|   |   ├── multiple_yaxis_with_spines.py
+|   |   ├── spine_placement_demo.py
+|   |   ├── spines.py
+|   |   └── spines_dropped.py
+|   ├── statistics
+|   |   ├── README.txt
+|   |   ├── barchart_demo.py
+|   |   ├── boxplot.py
+|   |   ├── boxplot_color.py
+|   |   ├── boxplot_demo.py
+|   |   ├── boxplot_vs_violin.py
+|   |   ├── bxp.py
+|   |   ├── confidence_ellipse.py
+|   |   ├── customized_violin.py
+|   |   ├── errorbar.py
+|   |   ├── errorbar_features.py
+|   |   ├── errorbar_limits.py
+|   |   ├── errorbars_and_boxes.py
+|   |   ├── hexbin_demo.py
+|   |   ├── hist.py
+|   |   ├── histogram_cumulative.py
+|   |   ├── histogram_features.py
+|   |   ├── histogram_histtypes.py
+|   |   ├── histogram_multihist.py
+|   |   ├── multiple_histograms_side_by_side.py
+|   |   ├── time_series_histogram.py
+|   |   └── violinplot.py
+|   ├── style_sheets
+|   |   ├── README.txt
+|   |   ├── bmh.py
+|   |   ├── dark_background.py
+|   |   ├── fivethirtyeight.py
+|   |   ├── ggplot.py
+|   |   ├── grayscale.py
+|   |   ├── plot_solarizedlight2.py
+|   |   └── style_sheets_reference.py
+|   ├── subplots_axes_and_figures
+|   |   ├── README.txt
+|   |   ├── align_labels_demo.py
+|   |   ├── auto_subplots_adjust.py
+|   |   ├── axes_box_aspect.py
+|   |   ├── axes_demo.py
+|   |   ├── axes_margins.py
+|   |   ├── axes_props.py
+|   |   ├── axes_zoom_effect.py
+|   |   ├── axhspan_demo.py
+|   |   ├── axis_equal_demo.py
+|   |   ├── axis_labels_demo.py
+|   |   ├── broken_axis.py
+|   |   ├── colorbar_placement.py
+|   |   ├── custom_figure_class.py
+|   |   ├── demo_constrained_layout.py
+|   |   ├── demo_tight_layout.py
+|   |   ├── fahrenheit_celsius_scales.py
+|   |   ├── figure_size_units.py
+|   |   ├── figure_title.py
+|   |   ├── ganged_plots.py
+|   |   ├── geo_demo.py
+|   |   ├── gridspec_and_subplots.py
+|   |   ├── gridspec_multicolumn.py
+|   |   ├── gridspec_nested.py
+|   |   ├── invert_axes.py
+|   |   ├── mosaic.py
+|   |   ├── multiple_figs_demo.py
+|   |   ├── secondary_axis.py
+|   |   ├── share_axis_lims_views.py
+|   |   ├── shared_axis_demo.py
+|   |   ├── subfigures.py
+|   |   ├── subplot.py
+|   |   ├── subplots_adjust.py
+|   |   ├── subplots_demo.py
+|   |   ├── two_scales.py
+|   |   └── zoom_inset_axes.py
+|   ├── text_labels_and_annotations
+|   |   ├── README.txt
+|   |   ├── accented_text.py
+|   |   ├── align_ylabels.py
+|   |   ├── angle_annotation.py
+|   |   ├── angles_on_bracket_arrows.py
+|   |   ├── annotate_transform.py
+|   |   ├── annotation_basic.py
+|   |   ├── annotation_demo.py
+|   |   ├── annotation_polar.py
+|   |   ├── arrow_demo.py
+|   |   ├── autowrap.py
+|   |   ├── custom_legends.py
+|   |   ├── date.py
+|   |   ├── demo_annotation_box.py
+|   |   ├── demo_text_path.py
+|   |   ├── demo_text_rotation_mode.py
+|   |   ├── dfrac_demo.py
+|   |   ├── engineering_formatter.py
+|   |   ├── fancyarrow_demo.py
+|   |   ├── fancytextbox_demo.py
+|   |   ├── figlegend_demo.py
+|   |   ├── font_family_rc.py
+|   |   ├── font_file.py
+|   |   ├── font_table.py
+|   |   ├── fonts_demo.py
+|   |   ├── fonts_demo_kw.py
+|   |   ├── label_subplots.py
+|   |   ├── legend.py
+|   |   ├── legend_demo.py
+|   |   ├── line_with_text.py
+|   |   ├── mathtext_asarray.py
+|   |   ├── mathtext_demo.py
+|   |   ├── mathtext_examples.py
+|   |   ├── mathtext_fontfamily_example.py
+|   |   ├── multiline.py
+|   |   ├── placing_text_boxes.py
+|   |   ├── rainbow_text.py
+|   |   ├── stix_fonts_demo.py
+|   |   ├── tex_demo.py
+|   |   ├── text_alignment.py
+|   |   ├── text_commands.py
+|   |   ├── text_fontdict.py
+|   |   ├── text_rotation_relative_to_line.py
+|   |   ├── titles_demo.py
+|   |   ├── unicode_minus.py
+|   |   ├── usetex_baseline_test.py
+|   |   ├── usetex_fonteffects.py
+|   |   └── watermark_text.py
+|   ├── ticks
+|   |   ├── README.txt
+|   |   ├── auto_ticks.py
+|   |   ├── centered_ticklabels.py
+|   |   ├── colorbar_tick_labelling_demo.py
+|   |   ├── custom_ticker1.py
+|   |   ├── date_concise_formatter.py
+|   |   ├── date_demo_convert.py
+|   |   ├── date_demo_rrule.py
+|   |   ├── date_formatters_locators.py
+|   |   ├── date_index_formatter.py
+|   |   ├── date_precision_and_epochs.py
+|   |   ├── dollar_ticks.py
+|   |   ├── fig_axes_customize_simple.py
+|   |   ├── major_minor_demo.py
+|   |   ├── scalarformatter.py
+|   |   ├── tick-formatters.py
+|   |   ├── tick-locators.py
+|   |   ├── tick_label_right.py
+|   |   ├── tick_labels_from_values.py
+|   |   ├── tick_xlabel_top.py
+|   |   ├── ticklabels_rotation.py
+|   |   └── ticks_too_many.py
+|   ├── units
+|   |   ├── README.txt
+|   |   ├── annotate_with_units.py
+|   |   ├── artist_tests.py
+|   |   ├── bar_demo2.py
+|   |   ├── bar_unit_demo.py
+|   |   ├── basic_units.py
+|   |   ├── ellipse_with_units.py
+|   |   ├── evans_test.py
+|   |   ├── radian_demo.py
+|   |   ├── units_sample.py
+|   |   └── units_scatter.py
+|   ├── user_interfaces
+|   |   ├── README.txt
+|   |   ├── canvasagg.py
+|   |   ├── embedding_in_gtk3_panzoom_sgskip.py
+|   |   ├── embedding_in_gtk3_sgskip.py
+|   |   ├── embedding_in_gtk4_panzoom_sgskip.py
+|   |   ├── embedding_in_gtk4_sgskip.py
+|   |   ├── embedding_in_qt_sgskip.py
+|   |   ├── embedding_in_tk_sgskip.py
+|   |   ├── embedding_in_wx2_sgskip.py
+|   |   ├── embedding_in_wx3_sgskip.py
+|   |   ├── embedding_in_wx4_sgskip.py
+|   |   ├── embedding_in_wx5_sgskip.py
+|   |   ├── embedding_webagg_sgskip.py
+|   |   ├── fourier_demo_wx_sgskip.py
+|   |   ├── gtk3_spreadsheet_sgskip.py
+|   |   ├── gtk4_spreadsheet_sgskip.py
+|   |   ├── images
+|   |   ├── mathtext_wx_sgskip.py
+|   |   ├── mpl_with_glade3_sgskip.py
+|   |   ├── mplcvd.py
+|   |   ├── pylab_with_gtk3_sgskip.py
+|   |   ├── pylab_with_gtk4_sgskip.py
+|   |   ├── svg_histogram_sgskip.py
+|   |   ├── svg_tooltip_sgskip.py
+|   |   ├── toolmanager_sgskip.py
+|   |   ├── web_application_server_sgskip.py
+|   |   └── wxcursor_demo_sgskip.py
+|   ├── userdemo
+|   |   ├── README.txt
+|   |   ├── anchored_box04.py
+|   |   ├── annotate_explain.py
+|   |   ├── annotate_simple01.py
+|   |   ├── annotate_simple02.py
+|   |   ├── annotate_simple03.py
+|   |   ├── annotate_simple04.py
+|   |   ├── annotate_simple_coord01.py
+|   |   ├── annotate_simple_coord02.py
+|   |   ├── annotate_simple_coord03.py
+|   |   ├── annotate_text_arrow.py
+|   |   ├── connect_simple01.py
+|   |   ├── connectionstyle_demo.py
+|   |   ├── custom_boxstyle01.py
+|   |   ├── demo_gridspec01.py
+|   |   ├── demo_gridspec03.py
+|   |   ├── demo_gridspec06.py
+|   |   ├── pgf_fonts.py
+|   |   ├── pgf_preamble_sgskip.py
+|   |   ├── pgf_texsystem.py
+|   |   ├── simple_annotate01.py
+|   |   ├── simple_legend01.py
+|   |   └── simple_legend02.py
+|   └── widgets
+|       ├── README.txt
+|       ├── annotated_cursor.py
+|       ├── buttons.py
+|       ├── check_buttons.py
+|       ├── cursor.py
+|       ├── lasso_selector_demo_sgskip.py
+|       ├── menu.py
+|       ├── mouse_cursor.py
+|       ├── multicursor.py
+|       ├── polygon_selector_demo.py
+|       ├── polygon_selector_simple.py
+|       ├── radio_buttons.py
+|       ├── range_slider.py
+|       ├── rectangle_selector.py
+|       ├── slider_demo.py
+|       ├── slider_snap_demo.py
+|       ├── span_selector.py
+|       └── textbox.py
+├── extern
+|   ├── agg24-svn
+|   |   ├── include
+|   |   |   ├── ctrl
+|   |   |   ├── platform
+|   |   |   |   ├── mac
+|   |   |   |   └── win32
+|   |   |   └── util
+|   |   └── src
+|   |       ├── agg_arc.cpp
+|   |       ├── agg_arrowhead.cpp
+|   |       ├── agg_bezier_arc.cpp
+|   |       ├── agg_bspline.cpp
+|   |       ├── agg_color_rgba.cpp
+|   |       ├── agg_curves.cpp
+|   |       ├── agg_embedded_raster_fonts.cpp
+|   |       ├── agg_gsv_text.cpp
+|   |       ├── agg_image_filters.cpp
+|   |       ├── agg_line_aa_basics.cpp
+|   |       ├── agg_line_profile_aa.cpp
+|   |       ├── agg_rounded_rect.cpp
+|   |       ├── agg_sqrt_tables.cpp
+|   |       ├── agg_trans_affine.cpp
+|   |       ├── agg_trans_double_path.cpp
+|   |       ├── agg_trans_single_path.cpp
+|   |       ├── agg_trans_warp_magnifier.cpp
+|   |       ├── agg_vcgen_bspline.cpp
+|   |       ├── agg_vcgen_contour.cpp
+|   |       ├── agg_vcgen_dash.cpp
+|   |       ├── agg_vcgen_markers_term.cpp
+|   |       ├── agg_vcgen_smooth_poly1.cpp
+|   |       ├── agg_vcgen_stroke.cpp
+|   |       ├── agg_vpgen_clip_polygon.cpp
+|   |       ├── agg_vpgen_clip_polyline.cpp
+|   |       ├── agg_vpgen_segmentator.cpp
+|   |       ├── ctrl
+|   |       |   ├── agg_bezier_ctrl.cpp
+|   |       |   ├── agg_cbox_ctrl.cpp
+|   |       |   ├── agg_gamma_ctrl.cpp
+|   |       |   ├── agg_gamma_spline.cpp
+|   |       |   ├── agg_polygon_ctrl.cpp
+|   |       |   ├── agg_rbox_ctrl.cpp
+|   |       |   ├── agg_scale_ctrl.cpp
+|   |       |   ├── agg_slider_ctrl.cpp
+|   |       |   └── agg_spline_ctrl.cpp
+|   |       └── platform
+|   |           ├── AmigaOS
+|   |           ├── BeOS
+|   |           ├── X11
+|   |           ├── mac
+|   |           ├── sdl
+|   |           └── win32
+|   └── ttconv
+|       ├── pprdrv_tt.cpp
+|       ├── pprdrv_tt2.cpp
+|       └── ttutil.cpp
+├── lib
+|   ├── matplotlib
+|   |   ├── __init__.py
+|   |   ├── _afm.py
+|   |   ├── _animation_data.py
+|   |   ├── _api
+|   |   |   ├── __init__.py
+|   |   |   └── deprecation.py
+|   |   ├── _blocking_input.py
+|   |   ├── _cm.py
+|   |   ├── _cm_listed.py
+|   |   ├── _color_data.py
+|   |   ├── _constrained_layout.py
+|   |   ├── _docstring.py
+|   |   ├── _enums.py
+|   |   ├── _fontconfig_pattern.py
+|   |   ├── _internal_utils.py
+|   |   ├── _layoutgrid.py
+|   |   ├── _mathtext.py
+|   |   ├── _mathtext_data.py
+|   |   ├── _pylab_helpers.py
+|   |   ├── _text_helpers.py
+|   |   ├── _tight_bbox.py
+|   |   ├── _tight_layout.py
+|   |   ├── _type1font.py
+|   |   ├── animation.py
+|   |   ├── artist.py
+|   |   ├── axes
+|   |   |   ├── __init__.py
+|   |   |   ├── _axes.py
+|   |   |   ├── _base.py
+|   |   |   └── _secondary_axes.py
+|   |   ├── axis.py
+|   |   ├── backend_bases.py
+|   |   ├── backend_managers.py
+|   |   ├── backend_tools.py
+|   |   ├── backends
+|   |   |   ├── __init__.py
+|   |   |   ├── _backend_gtk.py
+|   |   |   ├── _backend_pdf_ps.py
+|   |   |   ├── _backend_tk.py
+|   |   |   ├── backend_agg.py
+|   |   |   ├── backend_cairo.py
+|   |   |   ├── backend_gtk3.py
+|   |   |   ├── backend_gtk3agg.py
+|   |   |   ├── backend_gtk3cairo.py
+|   |   |   ├── backend_gtk4.py
+|   |   |   ├── backend_gtk4agg.py
+|   |   |   ├── backend_gtk4cairo.py
+|   |   |   ├── backend_macosx.py
+|   |   |   ├── backend_mixed.py
+|   |   |   ├── backend_nbagg.py
+|   |   |   ├── backend_pdf.py
+|   |   |   ├── backend_pgf.py
+|   |   |   ├── backend_ps.py
+|   |   |   ├── backend_qt.py
+|   |   |   ├── backend_qt5.py
+|   |   |   ├── backend_qt5agg.py
+|   |   |   ├── backend_qt5cairo.py
+|   |   |   ├── backend_qtagg.py
+|   |   |   ├── backend_qtcairo.py
+|   |   |   ├── backend_svg.py
+|   |   |   ├── backend_template.py
+|   |   |   ├── backend_tkagg.py
+|   |   |   ├── backend_tkcairo.py
+|   |   |   ├── backend_webagg.py
+|   |   |   ├── backend_webagg_core.py
+|   |   |   ├── backend_wx.py
+|   |   |   ├── backend_wxagg.py
+|   |   |   ├── backend_wxcairo.py
+|   |   |   ├── qt_compat.py
+|   |   |   ├── qt_editor
+|   |   |   |   ├── __init__.py
+|   |   |   |   ├── _formlayout.py
+|   |   |   |   └── figureoptions.py
+|   |   |   └── web_backend
+|   |   |       ├── .eslintrc.js
+|   |   |       ├── all_figures.html
+|   |   |       ├── css
+|   |   |       ├── ipython_inline_figure.html
+|   |   |       ├── js
+|   |   |       └── single_figure.html
+|   |   ├── bezier.py
+|   |   ├── category.py
+|   |   ├── cbook.py
+|   |   ├── cm.py
+|   |   ├── collections.py
+|   |   ├── colorbar.py
+|   |   ├── colors.py
+|   |   ├── container.py
+|   |   ├── contour.py
+|   |   ├── dates.py
+|   |   ├── dviread.py
+|   |   ├── figure.py
+|   |   ├── font_manager.py
+|   |   ├── gridspec.py
+|   |   ├── hatch.py
+|   |   ├── image.py
+|   |   ├── layout_engine.py
+|   |   ├── legend.py
+|   |   ├── legend_handler.py
+|   |   ├── lines.py
+|   |   ├── markers.py
+|   |   ├── mathtext.py
+|   |   ├── mlab.py
+|   |   ├── mpl-data
+|   |   |   ├── fonts
+|   |   |   |   ├── afm
+|   |   |   |   ├── pdfcorefonts
+|   |   |   |   └── ttf
+|   |   |   ├── images
+|   |   |   ├── plot_directive
+|   |   |   |   └── plot_directive.css
+|   |   |   ├── sample_data
+|   |   |   |   ├── README.txt
+|   |   |   |   └── axes_grid
+|   |   |   └── stylelib
+|   |   ├── offsetbox.py
+|   |   ├── patches.py
+|   |   ├── path.py
+|   |   ├── patheffects.py
+|   |   ├── projections
+|   |   |   ├── __init__.py
+|   |   |   ├── geo.py
+|   |   |   └── polar.py
+|   |   ├── pylab.py
+|   |   ├── pyplot.py
+|   |   ├── quiver.py
+|   |   ├── rcsetup.py
+|   |   ├── sankey.py
+|   |   ├── scale.py
+|   |   ├── sphinxext
+|   |   |   ├── __init__.py
+|   |   |   ├── mathmpl.py
+|   |   |   └── plot_directive.py
+|   |   ├── spines.py
+|   |   ├── stackplot.py
+|   |   ├── streamplot.py
+|   |   ├── style
+|   |   |   ├── __init__.py
+|   |   |   └── core.py
+|   |   ├── table.py
+|   |   ├── testing
+|   |   |   ├── __init__.py
+|   |   |   ├── _markers.py
+|   |   |   ├── compare.py
+|   |   |   ├── conftest.py
+|   |   |   ├── decorators.py
+|   |   |   ├── exceptions.py
+|   |   |   ├── jpl_units
+|   |   |   |   ├── Duration.py
+|   |   |   |   ├── Epoch.py
+|   |   |   |   ├── EpochConverter.py
+|   |   |   |   ├── StrConverter.py
+|   |   |   |   ├── UnitDbl.py
+|   |   |   |   ├── UnitDblConverter.py
+|   |   |   |   ├── UnitDblFormatter.py
+|   |   |   |   └── __init__.py
+|   |   |   └── widgets.py
+|   |   ├── tests
+|   |   |   ├── __init__.py
+|   |   |   ├── baseline_images
+|   |   |   |   ├── dviread
+|   |   |   |   ├── pngsuite
+|   |   |   |   ├── test_agg
+|   |   |   |   ├── test_agg_filter
+|   |   |   |   ├── test_arrow_patches
+|   |   |   |   ├── test_artist
+|   |   |   |   ├── test_axes
+|   |   |   |   ├── test_backend_pdf
+|   |   |   |   ├── test_backend_pgf
+|   |   |   |   ├── test_backend_ps
+|   |   |   |   ├── test_backend_svg
+|   |   |   |   ├── test_bbox_tight
+|   |   |   |   ├── test_collections
+|   |   |   |   ├── test_colorbar
+|   |   |   |   ├── test_colors
+|   |   |   |   ├── test_compare_images
+|   |   |   |   ├── test_constrainedlayout
+|   |   |   |   ├── test_contour
+|   |   |   |   ├── test_dates
+|   |   |   |   ├── test_figure
+|   |   |   |   ├── test_image
+|   |   |   |   ├── test_legend
+|   |   |   |   ├── test_lines
+|   |   |   |   ├── test_mathtext
+|   |   |   |   ├── test_offsetbox
+|   |   |   |   ├── test_patches
+|   |   |   |   ├── test_path
+|   |   |   |   ├── test_patheffects
+|   |   |   |   ├── test_png
+|   |   |   |   ├── test_polar
+|   |   |   |   ├── test_quiver
+|   |   |   |   ├── test_scale
+|   |   |   |   ├── test_simplification
+|   |   |   |   ├── test_skew
+|   |   |   |   ├── test_spines
+|   |   |   |   ├── test_streamplot
+|   |   |   |   ├── test_subplots
+|   |   |   |   ├── test_table
+|   |   |   |   ├── test_text
+|   |   |   |   ├── test_tightlayout
+|   |   |   |   ├── test_transforms
+|   |   |   |   ├── test_triangulation
+|   |   |   |   ├── test_ttconv
+|   |   |   |   ├── test_units
+|   |   |   |   ├── test_usetex
+|   |   |   |   └── test_widgets
+|   |   |   ├── conftest.py
+|   |   |   ├── test_afm.py
+|   |   |   ├── test_agg.py
+|   |   |   ├── test_agg_filter.py
+|   |   |   ├── test_animation.py
+|   |   |   ├── test_api.py
+|   |   |   ├── test_arrow_patches.py
+|   |   |   ├── test_artist.py
+|   |   |   ├── test_axes.py
+|   |   |   ├── test_backend_bases.py
+|   |   |   ├── test_backend_cairo.py
+|   |   |   ├── test_backend_gtk3.py
+|   |   |   ├── test_backend_macosx.py
+|   |   |   ├── test_backend_nbagg.py
+|   |   |   ├── test_backend_pdf.py
+|   |   |   ├── test_backend_pgf.py
+|   |   |   ├── test_backend_ps.py
+|   |   |   ├── test_backend_qt.py
+|   |   |   ├── test_backend_svg.py
+|   |   |   ├── test_backend_template.py
+|   |   |   ├── test_backend_tk.py
+|   |   |   ├── test_backend_tools.py
+|   |   |   ├── test_backend_webagg.py
+|   |   |   ├── test_backends_interactive.py
+|   |   |   ├── test_basic.py
+|   |   |   ├── test_bbox_tight.py
+|   |   |   ├── test_category.py
+|   |   |   ├── test_cbook.py
+|   |   |   ├── test_collections.py
+|   |   |   ├── test_colorbar.py
+|   |   |   ├── test_colors.py
+|   |   |   ├── test_compare_images.py
+|   |   |   ├── test_constrainedlayout.py
+|   |   |   ├── test_container.py
+|   |   |   ├── test_contour.py
+|   |   |   ├── test_cycles.py
+|   |   |   ├── test_dates.py
+|   |   |   ├── test_determinism.py
+|   |   |   ├── test_doc.py
+|   |   |   ├── test_dviread.py
+|   |   |   ├── test_figure.py
+|   |   |   ├── test_font_manager.py
+|   |   |   ├── test_fontconfig_pattern.py
+|   |   |   ├── test_ft2font.py
+|   |   |   ├── test_getattr.py
+|   |   |   ├── test_gridspec.py
+|   |   |   ├── test_image.py
+|   |   |   ├── test_legend.py
+|   |   |   ├── test_lines.py
+|   |   |   ├── test_marker.py
+|   |   |   ├── test_mathtext.py
+|   |   |   ├── test_matplotlib.py
+|   |   |   ├── test_mlab.py
+|   |   |   ├── test_offsetbox.py
+|   |   |   ├── test_patches.py
+|   |   |   ├── test_path.py
+|   |   |   ├── test_patheffects.py
+|   |   |   ├── test_pickle.py
+|   |   |   ├── test_png.py
+|   |   |   ├── test_polar.py
+|   |   |   ├── test_preprocess_data.py
+|   |   |   ├── test_pyplot.py
+|   |   |   ├── test_quiver.py
+|   |   |   ├── test_rcparams.py
+|   |   |   ├── test_sankey.py
+|   |   |   ├── test_scale.py
+|   |   |   ├── test_simplification.py
+|   |   |   ├── test_skew.py
+|   |   |   ├── test_sphinxext.py
+|   |   |   ├── test_spines.py
+|   |   |   ├── test_streamplot.py
+|   |   |   ├── test_style.py
+|   |   |   ├── test_subplots.py
+|   |   |   ├── test_table.py
+|   |   |   ├── test_testing.py
+|   |   |   ├── test_texmanager.py
+|   |   |   ├── test_text.py
+|   |   |   ├── test_textpath.py
+|   |   |   ├── test_ticker.py
+|   |   |   ├── test_tightlayout.py
+|   |   |   ├── test_transforms.py
+|   |   |   ├── test_triangulation.py
+|   |   |   ├── test_ttconv.py
+|   |   |   ├── test_type1font.py
+|   |   |   ├── test_units.py
+|   |   |   ├── test_usetex.py
+|   |   |   ├── test_widgets.py
+|   |   |   └── tinypages
+|   |   |       ├── README.md
+|   |   |       ├── _static
+|   |   |       ├── conf.py
+|   |   |       ├── included_plot_21.rst
+|   |   |       ├── index.rst
+|   |   |       ├── range4.py
+|   |   |       ├── range6.py
+|   |   |       └── some_plots.rst
+|   |   ├── texmanager.py
+|   |   ├── text.py
+|   |   ├── textpath.py
+|   |   ├── ticker.py
+|   |   ├── transforms.py
+|   |   ├── tri
+|   |   |   ├── __init__.py
+|   |   |   ├── _triangulation.py
+|   |   |   ├── _tricontour.py
+|   |   |   ├── _trifinder.py
+|   |   |   ├── _triinterpolate.py
+|   |   |   ├── _tripcolor.py
+|   |   |   ├── _triplot.py
+|   |   |   ├── _trirefine.py
+|   |   |   ├── _tritools.py
+|   |   |   ├── triangulation.py
+|   |   |   ├── tricontour.py
+|   |   |   ├── trifinder.py
+|   |   |   ├── triinterpolate.py
+|   |   |   ├── tripcolor.py
+|   |   |   ├── triplot.py
+|   |   |   ├── trirefine.py
+|   |   |   └── tritools.py
+|   |   ├── units.py
+|   |   └── widgets.py
+|   ├── mpl_toolkits
+|   |   ├── __init__.py
+|   |   ├── axes_grid1
+|   |   |   ├── __init__.py
+|   |   |   ├── anchored_artists.py
+|   |   |   ├── axes_divider.py
+|   |   |   ├── axes_grid.py
+|   |   |   ├── axes_rgb.py
+|   |   |   ├── axes_size.py
+|   |   |   ├── inset_locator.py
+|   |   |   ├── mpl_axes.py
+|   |   |   ├── parasite_axes.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── baseline_images
+|   |   |       ├── conftest.py
+|   |   |       └── test_axes_grid1.py
+|   |   ├── axisartist
+|   |   |   ├── __init__.py
+|   |   |   ├── angle_helper.py
+|   |   |   ├── axes_divider.py
+|   |   |   ├── axes_grid.py
+|   |   |   ├── axes_rgb.py
+|   |   |   ├── axis_artist.py
+|   |   |   ├── axisline_style.py
+|   |   |   ├── axislines.py
+|   |   |   ├── floating_axes.py
+|   |   |   ├── grid_finder.py
+|   |   |   ├── grid_helper_curvelinear.py
+|   |   |   ├── parasite_axes.py
+|   |   |   └── tests
+|   |   |       ├── __init__.py
+|   |   |       ├── baseline_images
+|   |   |       ├── conftest.py
+|   |   |       ├── test_angle_helper.py
+|   |   |       ├── test_axis_artist.py
+|   |   |       ├── test_axislines.py
+|   |   |       ├── test_floating_axes.py
+|   |   |       ├── test_grid_finder.py
+|   |   |       └── test_grid_helper_curvelinear.py
+|   |   └── mplot3d
+|   |       ├── __init__.py
+|   |       ├── art3d.py
+|   |       ├── axes3d.py
+|   |       ├── axis3d.py
+|   |       ├── proj3d.py
+|   |       └── tests
+|   |           ├── __init__.py
+|   |           ├── baseline_images
+|   |           ├── conftest.py
+|   |           ├── test_art3d.py
+|   |           ├── test_axes3d.py
+|   |           └── test_legend3d.py
+|   └── pylab.py
+├── plot_types
+|   ├── 3D
+|   |   ├── README.rst
+|   |   ├── scatter3d_simple.py
+|   |   ├── surface3d_simple.py
+|   |   ├── trisurf3d_simple.py
+|   |   ├── voxels_simple.py
+|   |   └── wire3d_simple.py
+|   ├── README.rst
+|   ├── arrays
+|   |   ├── README.rst
+|   |   ├── barbs.py
+|   |   ├── contour.py
+|   |   ├── contourf.py
+|   |   ├── imshow.py
+|   |   ├── pcolormesh.py
+|   |   ├── quiver.py
+|   |   └── streamplot.py
+|   ├── basic
+|   |   ├── README.rst
+|   |   ├── bar.py
+|   |   ├── fill_between.py
+|   |   ├── plot.py
+|   |   ├── scatter_plot.py
+|   |   ├── stackplot.py
+|   |   ├── stem.py
+|   |   └── step.py
+|   ├── stats
+|   |   ├── README.rst
+|   |   ├── boxplot_plot.py
+|   |   ├── errorbar_plot.py
+|   |   ├── eventplot.py
+|   |   ├── hexbin.py
+|   |   ├── hist2d.py
+|   |   ├── hist_plot.py
+|   |   ├── pie.py
+|   |   └── violin.py
+|   └── unstructured
+|       ├── README.rst
+|       ├── tricontour.py
+|       ├── tricontourf.py
+|       ├── tripcolor.py
+|       └── triplot.py
+├── requirements
+|   ├── dev
+|   |   └── dev-requirements.txt
+|   ├── doc
+|   |   └── doc-requirements.txt
+|   └── testing
+|       ├── all.txt
+|       ├── extra.txt
+|       ├── flake8.txt
+|       └── minver.txt
+├── setup.py
+├── setupext.py
+├── src
+|   ├── _backend_agg.cpp
+|   ├── _backend_agg_wrapper.cpp
+|   ├── _c_internal_utils.c
+|   ├── _image_wrapper.cpp
+|   ├── _path_wrapper.cpp
+|   ├── _qhull_wrapper.cpp
+|   ├── _tkagg.cpp
+|   ├── _ttconv.cpp
+|   ├── checkdep_freetype2.c
+|   ├── doc
+|   ├── ft2font.cpp
+|   ├── ft2font_wrapper.cpp
+|   ├── py_converters.cpp
+|   └── tri
+|       ├── _tri.cpp
+|       └── _tri_wrapper.cpp
+├── tools
+|   ├── README.txt
+|   ├── boilerplate.py
+|   ├── cache_zenodo_svg.py
+|   ├── create_DejaVuDisplay.sh
+|   ├── embed_js.py
+|   ├── gh_api.py
+|   ├── github_stats.py
+|   ├── make_icons.py
+|   ├── memleak.py
+|   ├── run_examples.py
+|   ├── subset.py
+|   ├── triage_tests.py
+|   └── visualize_tests.py
+└── tutorials
+    ├── README.txt
+    ├── advanced
+    |   ├── README.txt
+    |   ├── blitting.py
+    |   ├── path_tutorial.py
+    |   ├── patheffects_guide.py
+    |   └── transforms_tutorial.py
+    ├── colors
+    |   ├── README.txt
+    |   ├── colorbar_only.py
+    |   ├── colormap-manipulation.py
+    |   ├── colormapnorms.py
+    |   ├── colormaps.py
+    |   └── colors.py
+    ├── intermediate
+    |   ├── README.txt
+    |   ├── arranging_axes.py
+    |   ├── artists.py
+    |   ├── autoscale.py
+    |   ├── color_cycle.py
+    |   ├── constrainedlayout_guide.py
+    |   ├── imshow_extent.py
+    |   ├── legend_guide.py
+    |   └── tight_layout_guide.py
+    ├── introductory
+    |   ├── README.txt
+    |   ├── animation_tutorial.py
+    |   ├── customizing.py
+    |   ├── images.py
+    |   ├── lifecycle.py
+    |   ├── pyplot.py
+    |   └── quick_start.py
+    ├── provisional
+    |   └── README.txt
+    ├── text
+    |   ├── README.txt
+    |   ├── annotations.py
+    |   ├── mathtext.py
+    |   ├── pgf.py
+    |   ├── text_intro.py
+    |   ├── text_props.py
+    |   └── usetex.py
+    └── toolkits
+        ├── README.txt
+        ├── axes_grid.py
+        ├── axisartist.py
+        └── mplot3d.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: [Bug]: Windows correction is not correct in `mlab._spectral_helper`
+
+Description: ### Bug summary
+
+Windows correction is not correct in `mlab._spectral_helper`:
+https://github.com/matplotlib/matplotlib/blob/3418bada1c1f44da1f73916c5603e3ae79fe58c1/lib/matplotlib/mlab.py#L423-L430
+
+The `np.abs` is not needed, and give wrong result for window with negative value, such as `flattop`.
+For reference, the implementation of scipy can be found here :
+https://github.com/scipy/scipy/blob/d9f75db82fdffef06187c9d8d2f0f5b36c7a791b/scipy/signal/_spectral_py.py#L1854-L1859
+
+### Code for reproduction
+
+```python
+import numpy as np
+from scipy import signal
+window = signal.windows.flattop(512)
+print(np.abs(window).sum()**2-window.sum()**2)
+```
+
+
+### Actual outcome
+
+4372.942556173262
+
+### Expected outcome
+
+0
+
+### Additional information
+
+_No response_
+
+### Operating system
+
+_No response_
+
+### Matplotlib Version
+
+latest
+
+### Matplotlib Backend
+
+_No response_
+
+### Python version
+
+_No response_
+
+### Jupyter version
+
+_No response_
+
+### Installation
+
+None
+
+Patch information:
+diff --git a/lib/matplotlib/mlab.py b/lib/matplotlib/mlab.py
+index 3552904c3d..efa2f84cae 100644
+--- a/lib/matplotlib/mlab.py
++++ b/lib/matplotlib/mlab.py
+@@ -395,12 +395,12 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+     elif mode == 'psd':
+         result = np.conj(result) * result
+     elif mode == 'magnitude':
+-        result = np.abs(result) / np.abs(window).sum()
++        result = np.abs(result) / window.sum()
+     elif mode == 'angle' or mode == 'phase':
+         # we unwrap the phase later to handle the onesided vs. twosided case
+         result = np.angle(result)
+     elif mode == 'complex':
+-        result /= np.abs(window).sum()
++        result /= window.sum()
+ 
+     if mode == 'psd':
+ 
+@@ -424,10 +424,10 @@ def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+             result /= Fs
+             # Scale the spectrum by the norm of the window to compensate for
+             # windowing loss; see Bendat & Piersol Sec 11.5.2.
+-            result /= (np.abs(window)**2).sum()
++            result /= (window**2).sum()
+         else:
+             # In this case, preserve power in the segment, not amplitude
+-            result /= np.abs(window).sum()**2
++            result /= window.sum()**2
+ 
+     t = np.arange(NFFT/2, len(x) - NFFT/2 + 1, NFFT - noverlap)/Fs
+ 
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of lib/matplotlib/mlab.py
+Extra Requirements: 
+Purpose: I need the full source code of the `mlab` module to understand the context of the `_spectral_helper` function, its callers, and the windowing logic involved in the bug.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: lib/matplotlib/mlab.py
+Line number range: 1 - 500
+Content:
+1. """
+2. Numerical Python functions written for compatibility with MATLAB
+3. commands with the same names. Most numerical Python functions can be found in
+4. the `NumPy`_ and `SciPy`_ libraries. What remains here is code for performing
+5. spectral computations and kernel density estimations.
+6. 
+7. .. _NumPy: https://numpy.org
+8. .. _SciPy: https://www.scipy.org
+9. 
+10. Spectral functions
+11. ------------------
+12. 
+13. `cohere`
+14.     Coherence (normalized cross spectral density)
+15. 
+16. `csd`
+17.     Cross spectral density using Welch's average periodogram
+18. 
+19. `detrend`
+20.     Remove the mean or best fit line from an array
+21. 
+22. `psd`
+23.     Power spectral density using Welch's average periodogram
+24. 
+25. `specgram`
+26.     Spectrogram (spectrum over segments of time)
+27. 
+28. `complex_spectrum`
+29.     Return the complex-valued frequency spectrum of a signal
+30. 
+31. `magnitude_spectrum`
+32.     Return the magnitude of the frequency spectrum of a signal
+33. 
+34. `angle_spectrum`
+35.     Return the angle (wrapped phase) of the frequency spectrum of a signal
+36. 
+37. `phase_spectrum`
+38.     Return the phase (unwrapped angle) of the frequency spectrum of a signal
+39. 
+40. `detrend_mean`
+41.     Remove the mean from a line.
+42. 
+43. `detrend_linear`
+44.     Remove the best fit line from a line.
+45. 
+46. `detrend_none`
+47.     Return the original line.
+48. 
+49. `stride_windows`
+50.     Get all windows in an array in a memory-efficient manner
+51. """
+52. 
+53. import functools
+54. from numbers import Number
+55. 
+56. import numpy as np
+57. 
+58. from matplotlib import _api, _docstring, cbook
+59. 
+60. 
+61. def window_hanning(x):
+62.     """
+63.     Return *x* times the Hanning (or Hann) window of len(*x*).
+64. 
+65.     See Also
+66.     --------
+67.     window_none : Another window algorithm.
+68.     """
+69.     return np.hanning(len(x))*x
+70. 
+71. 
+72. def window_none(x):
+73.     """
+74.     No window function; simply return *x*.
+75. 
+76.     See Also
+77.     --------
+78.     window_hanning : Another window algorithm.
+79.     """
+80.     return x
+81. 
+82. 
+83. def detrend(x, key=None, axis=None):
+84.     """
+85.     Return *x* with its trend removed.
+86. 
+87.     Parameters
+88.     ----------
+89.     x : array or sequence
+90.         Array or sequence containing the data.
+91. 
+92.     key : {'default', 'constant', 'mean', 'linear', 'none'} or function
+93.         The detrending algorithm to use. 'default', 'mean', and 'constant' are
+94.         the same as `detrend_mean`. 'linear' is the same as `detrend_linear`.
+95.         'none' is the same as `detrend_none`. The default is 'mean'. See the
+96.         corresponding functions for more details regarding the algorithms. Can
+97.         also be a function that carries out the detrend operation.
+98. 
+99.     axis : int
+100.         The axis along which to do the detrending.
+101. 
+102.     See Also
+103.     --------
+104.     detrend_mean : Implementation of the 'mean' algorithm.
+105.     detrend_linear : Implementation of the 'linear' algorithm.
+106.     detrend_none : Implementation of the 'none' algorithm.
+107.     """
+108.     if key is None or key in ['constant', 'mean', 'default']:
+109.         return detrend(x, key=detrend_mean, axis=axis)
+110.     elif key == 'linear':
+111.         return detrend(x, key=detrend_linear, axis=axis)
+112.     elif key == 'none':
+113.         return detrend(x, key=detrend_none, axis=axis)
+114.     elif callable(key):
+115.         x = np.asarray(x)
+116.         if axis is not None and axis + 1 > x.ndim:
+117.             raise ValueError(f'axis(={axis}) out of bounds')
+118.         if (axis is None and x.ndim == 0) or (not axis and x.ndim == 1):
+119.             return key(x)
+120.         # try to use the 'axis' argument if the function supports it,
+121.         # otherwise use apply_along_axis to do it
+122.         try:
+123.             return key(x, axis=axis)
+124.         except TypeError:
+125.             return np.apply_along_axis(key, axis=axis, arr=x)
+126.     else:
+127.         raise ValueError(
+128.             f"Unknown value for key: {key!r}, must be one of: 'default', "
+129.             f"'constant', 'mean', 'linear', or a function")
+130. 
+131. 
+132. def detrend_mean(x, axis=None):
+133.     """
+134.     Return *x* minus the mean(*x*).
+135. 
+136.     Parameters
+137.     ----------
+138.     x : array or sequence
+139.         Array or sequence containing the data
+140.         Can have any dimensionality
+141. 
+142.     axis : int
+143.         The axis along which to take the mean.  See `numpy.mean` for a
+144.         description of this argument.
+145. 
+146.     See Also
+147.     --------
+148.     detrend_linear : Another detrend algorithm.
+149.     detrend_none : Another detrend algorithm.
+150.     detrend : A wrapper around all the detrend algorithms.
+151.     """
+152.     x = np.asarray(x)
+153. 
+154.     if axis is not None and axis+1 > x.ndim:
+155.         raise ValueError('axis(=%s) out of bounds' % axis)
+156. 
+157.     return x - x.mean(axis, keepdims=True)
+158. 
+159. 
+160. def detrend_none(x, axis=None):
+161.     """
+162.     Return *x*: no detrending.
+163. 
+164.     Parameters
+165.     ----------
+166.     x : any object
+167.         An object containing the data
+168. 
+169.     axis : int
+170.         This parameter is ignored.
+171.         It is included for compatibility with detrend_mean
+172. 
+173.     See Also
+174.     --------
+175.     detrend_mean : Another detrend algorithm.
+176.     detrend_linear : Another detrend algorithm.
+177.     detrend : A wrapper around all the detrend algorithms.
+178.     """
+179.     return x
+180. 
+181. 
+182. def detrend_linear(y):
+183.     """
+184.     Return *x* minus best fit line; 'linear' detrending.
+185. 
+186.     Parameters
+187.     ----------
+188.     y : 0-D or 1-D array or sequence
+189.         Array or sequence containing the data
+190. 
+191.     See Also
+192.     --------
+193.     detrend_mean : Another detrend algorithm.
+194.     detrend_none : Another detrend algorithm.
+195.     detrend : A wrapper around all the detrend algorithms.
+196.     """
+197.     # This is faster than an algorithm based on linalg.lstsq.
+198.     y = np.asarray(y)
+199. 
+200.     if y.ndim > 1:
+201.         raise ValueError('y cannot have ndim > 1')
+202. 
+203.     # short-circuit 0-D array.
+204.     if not y.ndim:
+205.         return np.array(0., dtype=y.dtype)
+206. 
+207.     x = np.arange(y.size, dtype=float)
+208. 
+209.     C = np.cov(x, y, bias=1)
+210.     b = C[0, 1]/C[0, 0]
+211. 
+212.     a = y.mean() - b*x.mean()
+213.     return y - (b*x + a)
+214. 
+215. 
+216. @_api.deprecated("3.6")
+217. def stride_windows(x, n, noverlap=None, axis=0):
+218.     """
+219.     Get all windows of *x* with length *n* as a single array,
+220.     using strides to avoid data duplication.
+221. 
+222.     .. warning::
+223. 
+224.         It is not safe to write to the output array.  Multiple
+225.         elements may point to the same piece of memory,
+226.         so modifying one value may change others.
+227. 
+228.     Parameters
+229.     ----------
+230.     x : 1D array or sequence
+231.         Array or sequence containing the data.
+232.     n : int
+233.         The number of data points in each window.
+234.     noverlap : int, default: 0 (no overlap)
+235.         The overlap between adjacent windows.
+236.     axis : int
+237.         The axis along which the windows will run.
+238. 
+239.     References
+240.     ----------
+241.     `stackoverflow: Rolling window for 1D arrays in Numpy?
+242.     <https://stackoverflow.com/a/6811241>`_
+243.     `stackoverflow: Using strides for an efficient moving average filter
+244.     <https://stackoverflow.com/a/4947453>`_
+245.     """
+246.     if noverlap is None:
+247.         noverlap = 0
+248.     if np.ndim(x) != 1:
+249.         raise ValueError('only 1-dimensional arrays can be used')
+250.     return _stride_windows(x, n, noverlap, axis)
+251. 
+252. 
+253. def _stride_windows(x, n, noverlap=0, axis=0):
+254.     # np>=1.20 provides sliding_window_view, and we only ever use axis=0.
+255.     if hasattr(np.lib.stride_tricks, "sliding_window_view") and axis == 0:
+256.         if noverlap >= n:
+257.             raise ValueError('noverlap must be less than n')
+258.         return np.lib.stride_tricks.sliding_window_view(
+259.             x, n, axis=0)[::n - noverlap].T
+260. 
+261.     if noverlap >= n:
+262.         raise ValueError('noverlap must be less than n')
+263.     if n < 1:
+264.         raise ValueError('n cannot be less than 1')
+265. 
+266.     x = np.asarray(x)
+267. 
+268.     if n == 1 and noverlap == 0:
+269.         if axis == 0:
+270.             return x[np.newaxis]
+271.         else:
+272.             return x[np.newaxis].T
+273.     if n > x.size:
+274.         raise ValueError('n cannot be greater than the length of x')
+275. 
+276.     # np.lib.stride_tricks.as_strided easily leads to memory corruption for
+277.     # non integer shape and strides, i.e. noverlap or n. See #3845.
+278.     noverlap = int(noverlap)
+279.     n = int(n)
+280. 
+281.     step = n - noverlap
+282.     if axis == 0:
+283.         shape = (n, (x.shape[-1]-noverlap)//step)
+284.         strides = (x.strides[0], step*x.strides[0])
+285.     else:
+286.         shape = ((x.shape[-1]-noverlap)//step, n)
+287.         strides = (step*x.strides[0], x.strides[0])
+288.     return np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+289. 
+290. 
+291. def _spectral_helper(x, y=None, NFFT=None, Fs=None, detrend_func=None,
+292.                      window=None, noverlap=None, pad_to=None,
+293.                      sides=None, scale_by_freq=None, mode=None):
+294.     """
+295.     Private helper implementing the common parts between the psd, csd,
+296.     spectrogram and complex, magnitude, angle, and phase spectrums.
+297.     """
+298.     if y is None:
+299.         # if y is None use x for y
+300.         same_data = True
+301.     else:
+302.         # The checks for if y is x are so that we can use the same function to
+303.         # implement the core of psd(), csd(), and spectrogram() without doing
+304.         # extra calculations.  We return the unaveraged Pxy, freqs, and t.
+305.         same_data = y is x
+306. 
+307.     if Fs is None:
+308.         Fs = 2
+309.     if noverlap is None:
+310.         noverlap = 0
+311.     if detrend_func is None:
+312.         detrend_func = detrend_none
+313.     if window is None:
+314.         window = window_hanning
+315. 
+316.     # if NFFT is set to None use the whole signal
+317.     if NFFT is None:
+318.         NFFT = 256
+319. 
+320.     if mode is None or mode == 'default':
+321.         mode = 'psd'
+322.     _api.check_in_list(
+323.         ['default', 'psd', 'complex', 'magnitude', 'angle', 'phase'],
+324.         mode=mode)
+325. 
+326.     if not same_data and mode != 'psd':
+327.         raise ValueError("x and y must be equal if mode is not 'psd'")
+328. 
+329.     # Make sure we're dealing with a numpy array. If y and x were the same
+330.     # object to start with, keep them that way
+331.     x = np.asarray(x)
+332.     if not same_data:
+333.         y = np.asarray(y)
+334. 
+335.     if sides is None or sides == 'default':
+336.         if np.iscomplexobj(x):
+337.             sides = 'twosided'
+338.         else:
+339.             sides = 'onesided'
+340.     _api.check_in_list(['default', 'onesided', 'twosided'], sides=sides)
+341. 
+342.     # zero pad x and y up to NFFT if they are shorter than NFFT
+343.     if len(x) < NFFT:
+344.         n = len(x)
+345.         x = np.resize(x, NFFT)
+346.         x[n:] = 0
+347. 
+348.     if not same_data and len(y) < NFFT:
+349.         n = len(y)
+350.         y = np.resize(y, NFFT)
+351.         y[n:] = 0
+352. 
+353.     if pad_to is None:
+354.         pad_to = NFFT
+355. 
+356.     if mode != 'psd':
+357.         scale_by_freq = False
+358.     elif scale_by_freq is None:
+359.         scale_by_freq = True
+360. 
+361.     # For real x, ignore the negative frequencies unless told otherwise
+362.     if sides == 'twosided':
+363.         numFreqs = pad_to
+364.         if pad_to % 2:
+365.             freqcenter = (pad_to - 1)//2 + 1
+366.         else:
+367.             freqcenter = pad_to//2
+368.         scaling_factor = 1.
+369.     elif sides == 'onesided':
+370.         if pad_to % 2:
+371.             numFreqs = (pad_to + 1)//2
+372.         else:
+373.             numFreqs = pad_to//2 + 1
+374.         scaling_factor = 2.
+375. 
+376.     if not np.iterable(window):
+377.         window = window(np.ones(NFFT, x.dtype))
+378.     if len(window) != NFFT:
+379.         raise ValueError(
+380.             "The window length must match the data's first dimension")
+381. 
+382.     result = _stride_windows(x, NFFT, noverlap)
+383.     result = detrend(result, detrend_func, axis=0)
+384.     result = result * window.reshape((-1, 1))
+385.     result = np.fft.fft(result, n=pad_to, axis=0)[:numFreqs, :]
+386.     freqs = np.fft.fftfreq(pad_to, 1/Fs)[:numFreqs]
+387. 
+388.     if not same_data:
+389.         # if same_data is False, mode must be 'psd'
+390.         resultY = _stride_windows(y, NFFT, noverlap)
+391.         resultY = detrend(resultY, detrend_func, axis=0)
+392.         resultY = resultY * window.reshape((-1, 1))
+393.         resultY = np.fft.fft(resultY, n=pad_to, axis=0)[:numFreqs, :]
+394.         result = np.conj(result) * resultY
+395.     elif mode == 'psd':
+396.         result = np.conj(result) * result
+397.     elif mode == 'magnitude':
+398.         result = np.abs(result) / np.abs(window).sum()
+399.     elif mode == 'angle' or mode == 'phase':
+400.         # we unwrap the phase later to handle the onesided vs. twosided case
+401.         result = np.angle(result)
+402.     elif mode == 'complex':
+403.         result /= np.abs(window).sum()
+404. 
+405.     if mode == 'psd':
+406. 
+407.         # Also include scaling factors for one-sided densities and dividing by
+408.         # the sampling frequency, if desired. Scale everything, except the DC
+409.         # component and the NFFT/2 component:
+410. 
+411.         # if we have a even number of frequencies, don't scale NFFT/2
+412.         if not NFFT % 2:
+413.             slc = slice(1, -1, None)
+414.         # if we have an odd number, just don't scale DC
+415.         else:
+416.             slc = slice(1, None, None)
+417. 
+418.         result[slc] *= scaling_factor
+419. 
+420.         # MATLAB divides by the sampling frequency so that density function
+421.         # has units of dB/Hz and can be integrated by the plotted frequency
+422.         # values. Perform the same scaling here.
+423.         if scale_by_freq:
+424.             result /= Fs
+425.             # Scale the spectrum by the norm of the window to compensate for
+426.             # windowing loss; see Bendat & Piersol Sec 11.5.2.
+427.             result /= (np.abs(window)**2).sum()
+428.         else:
+429.             # In this case, preserve power in the segment, not amplitude
+430.             result /= np.abs(window).sum()**2
+431. 
+432.     t = np.arange(NFFT/2, len(x) - NFFT/2 + 1, NFFT - noverlap)/Fs
+433. 
+434.     if sides == 'twosided':
+435.         # center the frequency range at zero
+436.         freqs = np.roll(freqs, -freqcenter, axis=0)
+437.         result = np.roll(result, -freqcenter, axis=0)
+438.     elif not pad_to % 2:
+439.         # get the last value correctly, it is negative otherwise
+440.         freqs[-1] *= -1
+441. 
+442.     # we unwrap the phase here to handle the onesided vs. twosided case
+443.     if mode == 'phase':
+444.         result = np.unwrap(result, axis=0)
+445. 
+446.     return result, freqs, t
+447. 
+448. 
+449. def _single_spectrum_helper(
+450.         mode, x, Fs=None, window=None, pad_to=None, sides=None):
+451.     """
+452.     Private helper implementing the commonality between the complex, magnitude,
+453.     angle, and phase spectrums.
+454.     """
+455.     _api.check_in_list(['complex', 'magnitude', 'angle', 'phase'], mode=mode)
+456. 
+457.     if pad_to is None:
+458.         pad_to = len(x)
+459. 
+460.     spec, freqs, _ = _spectral_helper(x=x, y=None, NFFT=len(x), Fs=Fs,
+461.                                       detrend_func=detrend_none, window=window,
+462.                                       noverlap=0, pad_to=pad_to,
+463.                                       sides=sides,
+464.                                       scale_by_freq=False,
+465.                                       mode=mode)
+466.     if mode != 'complex':
+467.         spec = spec.real
+468. 
+469.     if spec.ndim == 2 and spec.shape[1] == 1:
+470.         spec = spec[:, 0]
+471. 
+472.     return spec, freqs
+473. 
+474. 
+475. # Split out these keyword docs so that they can be used elsewhere
+476. _docstring.interpd.update(
+477.     Spectral="""\
+478. Fs : float, default: 2
+479.     The sampling frequency (samples per time unit).  It is used to calculate
+480.     the Fourier frequencies, *freqs*, in cycles per time unit.
+481. 
+482. window : callable or ndarray, default: `.window_hanning`
+483.     A function or a vector of length *NFFT*.  To create window vectors see
+484.     `.window_hanning`, `.window_none`, `numpy.blackman`, `numpy.hamming`,
+485.     `numpy.bartlett`, `scipy.signal`, `scipy.signal.get_window`, etc.  If a
+486.     function is passed as the argument, it must take a data segment as an
+487.     argument and return the windowed version of the segment.
+488. 
+489. sides : {'default', 'onesided', 'twosided'}, optional
+490.     Which sides of the spectrum to return. 'default' is one-sided for real
+491.     data and two-sided for complex data. 'onesided' forces the return of a
+492.     one-sided spectrum, while 'twosided' forces two-sided.""",
+493. 
+494.     Single_Spectrum="""\
+495. pad_to : int, optional
+496.     The number of points to which the data segment is padded when performing
+497.     the FFT.  While not increasing the actual resolution of the spectrum (the
+498.     minimum distance between resolvable peaks), this can give more points in
+499.     the plot, allowing for more detail. This corresponds to the *n* parameter
+500.     in the call to `~numpy.fft.fft`.  The default is None, which sets *pad_to*
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 476 - 531
+Content:
+476. _docstring.interpd.update(
+477.     Spectral="""\
+478. Fs : float, default: 2
+479.     The sampling frequency (samples per time unit).  It is used to calculate
+480.     the Fourier frequencies, *freqs*, in cycles per time unit.
+481. 
+482. window : callable or ndarray, default: `.window_hanning`
+483.     A function or a vector of length *NFFT*.  To create window vectors see
+484.     `.window_hanning`, `.window_none`, `numpy.blackman`, `numpy.hamming`,
+485.     `numpy.bartlett`, `scipy.signal`, `scipy.signal.get_window`, etc.  If a
+486.     function is passed as the argument, it must take a data segment as an
+487.     argument and return the windowed version of the segment.
+488. 
+489. sides : {'default', 'onesided', 'twosided'}, optional
+490.     Which sides of the spectrum to return. 'default' is one-sided for real
+491.     data and two-sided for complex data. 'onesided' forces the return of a
+492.     one-sided spectrum, while 'twosided' forces two-sided.""",
+493. 
+494.     Single_Spectrum="""\
+495. pad_to : int, optional
+496.     The number of points to which the data segment is padded when performing
+497.     the FFT.  While not increasing the actual resolution of the spectrum (the
+498.     minimum distance between resolvable peaks), this can give more points in
+499.     the plot, allowing for more detail. This corresponds to the *n* parameter
+500.     in the call to `~numpy.fft.fft`.  The default is None, which sets *pad_to*
+501.     equal to the length of the input signal (i.e. no padding).""",
+502. 
+503.     PSD="""\
+504. pad_to : int, optional
+505.     The number of points to which the data segment is padded when performing
+506.     the FFT.  This can be different from *NFFT*, which specifies the number
+507.     of data points used.  While not increasing the actual resolution of the
+508.     spectrum (the minimum distance between resolvable peaks), this can give
+509.     more points in the plot, allowing for more detail. This corresponds to
+510.     the *n* parameter in the call to `~numpy.fft.fft`. The default is None,
+511.     which sets *pad_to* equal to *NFFT*
+512. 
+513. NFFT : int, default: 256
+514.     The number of data points used in each block for the FFT.  A power 2 is
+515.     most efficient.  This should *NOT* be used to get zero padding, or the
+516.     scaling of the result will be incorrect; use *pad_to* for this instead.
+517. 
+518. detrend : {'none', 'mean', 'linear'} or callable, default: 'none'
+519.     The function applied to each segment before fft-ing, designed to remove
+520.     the mean or linear trend.  Unlike in MATLAB, where the *detrend* parameter
+521.     is a vector, in Matplotlib it is a function.  The :mod:`~matplotlib.mlab`
+522.     module defines `.detrend_none`, `.detrend_mean`, and `.detrend_linear`,
+523.     but you can use a custom function as well.  You can also use a string to
+524.     choose one of the functions: 'none' calls `.detrend_none`. 'mean' calls
+525.     `.detrend_mean`. 'linear' calls `.detrend_linear`.
+526. 
+527. scale_by_freq : bool, default: True
+528.     Whether the resulting density values should be scaled by the scaling
+529.     frequency, which gives density in units of 1/Hz.  This allows for
+530.     integration over the returned frequency values.  The default is True for
+531.     MATLAB compatibility.""")
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 534 - 587
+Content:
+534. @_docstring.dedent_interpd
+535. def psd(x, NFFT=None, Fs=None, detrend=None, window=None,
+536.         noverlap=None, pad_to=None, sides=None, scale_by_freq=None):
+537.     r"""
+538.     Compute the power spectral density.
+539. 
+540.     The power spectral density :math:`P_{xx}` by Welch's average
+541.     periodogram method.  The vector *x* is divided into *NFFT* length
+542.     segments.  Each segment is detrended by function *detrend* and
+543.     windowed by function *window*.  *noverlap* gives the length of
+544.     the overlap between segments.  The :math:`|\mathrm{fft}(i)|^2`
+545.     of each segment :math:`i` are averaged to compute :math:`P_{xx}`.
+546. 
+547.     If len(*x*) < *NFFT*, it will be zero padded to *NFFT*.
+548. 
+549.     Parameters
+550.     ----------
+551.     x : 1-D array or sequence
+552.         Array or sequence containing the data
+553. 
+554.     %(Spectral)s
+555. 
+556.     %(PSD)s
+557. 
+558.     noverlap : int, default: 0 (no overlap)
+559.         The number of points of overlap between segments.
+560. 
+561.     Returns
+562.     -------
+563.     Pxx : 1-D array
+564.         The values for the power spectrum :math:`P_{xx}` (real valued)
+565. 
+566.     freqs : 1-D array
+567.         The frequencies corresponding to the elements in *Pxx*
+568. 
+569.     References
+570.     ----------
+571.     Bendat & Piersol -- Random Data: Analysis and Measurement Procedures, John
+572.     Wiley & Sons (1986)
+573. 
+574.     See Also
+575.     --------
+576.     specgram
+577.         `specgram` differs in the default overlap; in not returning the mean of
+578.         the segment periodograms; and in returning the times of the segments.
+579. 
+580.     magnitude_spectrum : returns the magnitude spectrum.
+581. 
+582.     csd : returns the spectral density between two signals.
+583.     """
+584.     Pxx, freqs = csd(x=x, y=None, NFFT=NFFT, Fs=Fs, detrend=detrend,
+585.                      window=window, noverlap=noverlap, pad_to=pad_to,
+586.                      sides=sides, scale_by_freq=scale_by_freq)
+587.     return Pxx.real, freqs
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 590 - 651
+Content:
+590. @_docstring.dedent_interpd
+591. def csd(x, y, NFFT=None, Fs=None, detrend=None, window=None,
+592.         noverlap=None, pad_to=None, sides=None, scale_by_freq=None):
+593.     """
+594.     Compute the cross-spectral density.
+595. 
+596.     The cross spectral density :math:`P_{xy}` by Welch's average
+597.     periodogram method.  The vectors *x* and *y* are divided into
+598.     *NFFT* length segments.  Each segment is detrended by function
+599.     *detrend* and windowed by function *window*.  *noverlap* gives
+600.     the length of the overlap between segments.  The product of
+601.     the direct FFTs of *x* and *y* are averaged over each segment
+602.     to compute :math:`P_{xy}`, with a scaling to correct for power
+603.     loss due to windowing.
+604. 
+605.     If len(*x*) < *NFFT* or len(*y*) < *NFFT*, they will be zero
+606.     padded to *NFFT*.
+607. 
+608.     Parameters
+609.     ----------
+610.     x, y : 1-D arrays or sequences
+611.         Arrays or sequences containing the data
+612. 
+613.     %(Spectral)s
+614. 
+615.     %(PSD)s
+616. 
+617.     noverlap : int, default: 0 (no overlap)
+618.         The number of points of overlap between segments.
+619. 
+620.     Returns
+621.     -------
+622.     Pxy : 1-D array
+623.         The values for the cross spectrum :math:`P_{xy}` before scaling (real
+624.         valued)
+625. 
+626.     freqs : 1-D array
+627.         The frequencies corresponding to the elements in *Pxy*
+628. 
+629.     References
+630.     ----------
+631.     Bendat & Piersol -- Random Data: Analysis and Measurement Procedures, John
+632.     Wiley & Sons (1986)
+633. 
+634.     See Also
+635.     --------
+636.     psd : equivalent to setting ``y = x``.
+637.     """
+638.     if NFFT is None:
+639.         NFFT = 256
+640.     Pxy, freqs, _ = _spectral_helper(x=x, y=y, NFFT=NFFT, Fs=Fs,
+641.                                      detrend_func=detrend, window=window,
+642.                                      noverlap=noverlap, pad_to=pad_to,
+643.                                      sides=sides, scale_by_freq=scale_by_freq,
+644.                                      mode='psd')
+645. 
+646.     if Pxy.ndim == 2:
+647.         if Pxy.shape[1] > 1:
+648.             Pxy = Pxy.mean(axis=1)
+649.         else:
+650.             Pxy = Pxy[:, 0]
+651.     return Pxy, freqs
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 710 - 791
+Content:
+710. @_docstring.dedent_interpd
+711. def specgram(x, NFFT=None, Fs=None, detrend=None, window=None,
+712.              noverlap=None, pad_to=None, sides=None, scale_by_freq=None,
+713.              mode=None):
+714.     """
+715.     Compute a spectrogram.
+716. 
+717.     Compute and plot a spectrogram of data in *x*.  Data are split into
+718.     *NFFT* length segments and the spectrum of each section is
+719.     computed.  The windowing function *window* is applied to each
+720.     segment, and the amount of overlap of each segment is
+721.     specified with *noverlap*.
+722. 
+723.     Parameters
+724.     ----------
+725.     x : array-like
+726.         1-D array or sequence.
+727. 
+728.     %(Spectral)s
+729. 
+730.     %(PSD)s
+731. 
+732.     noverlap : int, default: 128
+733.         The number of points of overlap between blocks.
+734.     mode : str, default: 'psd'
+735.         What sort of spectrum to use:
+736.             'psd'
+737.                 Returns the power spectral density.
+738.             'complex'
+739.                 Returns the complex-valued frequency spectrum.
+740.             'magnitude'
+741.                 Returns the magnitude spectrum.
+742.             'angle'
+743.                 Returns the phase spectrum without unwrapping.
+744.             'phase'
+745.                 Returns the phase spectrum with unwrapping.
+746. 
+747.     Returns
+748.     -------
+749.     spectrum : array-like
+750.         2D array, columns are the periodograms of successive segments.
+751. 
+752.     freqs : array-like
+753.         1-D array, frequencies corresponding to the rows in *spectrum*.
+754. 
+755.     t : array-like
+756.         1-D array, the times corresponding to midpoints of segments
+757.         (i.e the columns in *spectrum*).
+758. 
+759.     See Also
+760.     --------
+761.     psd : differs in the overlap and in the return values.
+762.     complex_spectrum : similar, but with complex valued frequencies.
+763.     magnitude_spectrum : similar single segment when *mode* is 'magnitude'.
+764.     angle_spectrum : similar to single segment when *mode* is 'angle'.
+765.     phase_spectrum : similar to single segment when *mode* is 'phase'.
+766. 
+767.     Notes
+768.     -----
+769.     *detrend* and *scale_by_freq* only apply when *mode* is set to 'psd'.
+770. 
+771.     """
+772.     if noverlap is None:
+773.         noverlap = 128  # default in _spectral_helper() is noverlap = 0
+774.     if NFFT is None:
+775.         NFFT = 256  # same default as in _spectral_helper()
+776.     if len(x) <= NFFT:
+777.         _api.warn_external("Only one segment is calculated since parameter "
+778.                            f"NFFT (={NFFT}) >= signal length (={len(x)}).")
+779. 
+780.     spec, freqs, t = _spectral_helper(x=x, y=None, NFFT=NFFT, Fs=Fs,
+781.                                       detrend_func=detrend, window=window,
+782.                                       noverlap=noverlap, pad_to=pad_to,
+783.                                       sides=sides,
+784.                                       scale_by_freq=scale_by_freq,
+785.                                       mode=mode)
+786. 
+787.     if mode != 'complex':
+788.         spec = spec.real  # Needed since helper implements generically
+789. 
+790.     return spec, freqs, t
+791. 
+
+
+File: lib/matplotlib/mlab.py
+Line number range: 793 - 840
+Content:
+793. @_docstring.dedent_interpd
+794. def cohere(x, y, NFFT=256, Fs=2, detrend=detrend_none, window=window_hanning,
+795.            noverlap=0, pad_to=None, sides='default', scale_by_freq=None):
+796.     r"""
+797.     The coherence between *x* and *y*.  Coherence is the normalized
+798.     cross spectral density:
+799. 
+800.     .. math::
+801. 
+802.         C_{xy} = \frac{|P_{xy}|^2}{P_{xx}P_{yy}}
+803. 
+804.     Parameters
+805.     ----------
+806.     x, y
+807.         Array or sequence containing the data
+808. 
+809.     %(Spectral)s
+810. 
+811.     %(PSD)s
+812. 
+813.     noverlap : int, default: 0 (no overlap)
+814.         The number of points of overlap between segments.
+815. 
+816.     Returns
+817.     -------
+818.     Cxy : 1-D array
+819.         The coherence vector.
+820.     freqs : 1-D array
+821.             The frequencies for the elements in *Cxy*.
+822. 
+823.     See Also
+824.     --------
+825.     :func:`psd`, :func:`csd` :
+826.         For information about the methods used to compute :math:`P_{xy}`,
+827.         :math:`P_{xx}` and :math:`P_{yy}`.
+828.     """
+829.     if len(x) < 2 * NFFT:
+830.         raise ValueError(
+831.             "Coherence is calculated by averaging over *NFFT* length "
+832.             "segments.  Your signal is too short for your choice of *NFFT*.")
+833.     Pxx, f = psd(x, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
+834.                  scale_by_freq)
+835.     Pyy, f = psd(y, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
+836.                  scale_by_freq)
+837.     Pxy, f = csd(x, y, NFFT, Fs, detrend, window, noverlap, pad_to, sides,
+838.                  scale_by_freq)
+839.     Cxy = np.abs(Pxy) ** 2 / (Pxx * Pyy)
+840.     return Cxy, f
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 03:18:26,478 - thread-129519985886912.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="I have the complete source code for `lib/matplotlib/mlab.py`, which contains the `_spectral_helper` function and all its callers within the module. The provided context is sufficient to understand the bug, which is a misapplication of `np.abs` on the window function, and to apply the patch provided in the user's query. No further context is needed." query='' extra_requirements='' purpose=''
+2025-12-21 03:18:26,479 - thread-129519985886912.prometheus_context_collector - INFO - Successfully retrieved 6 context snippets

@@ -1,0 +1,4303 @@
+2025-12-23 09:49:24,512 - thread-131122390365888.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+2025-12-23 09:49:24,569 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9917.bugfix.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 09:49:45,218 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The user wants to understand a bug fix related to `caplog.clear()` and `caplog.get_records()`. The issue description and patch point to `src/_pytest/logging.py` as the location of the relevant code. To fully understand the problem and the provided fix, I need to examine the complete implementation of the `LogCaptureFixture` and `LogCaptureHandler` classes, as well as the `caplog` fixture setup, all of which are expected to be in this file. This will clarify how log records are stored, accessed via `get_records`, and how the old `clear` method caused inconsistencies.' query='Please provide the full content of `src/_pytest/logging.py`.' extra_requirements='' purpose='I need this file to understand the interaction between `caplog.get_records` and `caplog.clear` and why the provided patch is the correct solution.'
+2025-12-23 09:49:45,220 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `src/_pytest/logging.py`.
+2025-12-23 09:49:45,220 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-23 09:49:45,220 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-23 09:49:45,221 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-23 09:49:45,221 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `src/_pytest/logging.py`.
+Purpose: I need this file to understand the interaction between `caplog.get_records` and `caplog.clear` and why the provided patch is the correct solution.
+2025-12-23 09:49:48,619 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `src/_pytest/logging.py` to help you understand the interaction between `caplog.get_records` and `caplog.clear`. This will provide the necessary context to evaluate the provided patch.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "src/_pytest/logging.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2048, 'candidates_token_count': 71, 'total_token_count': 2322, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2048}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 71}], 'thoughts_token_count': 203, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.10841776619494801, 'model_name': 'gemini-2.5-pro'} id='run--b19d4146-0959-4526-95d5-df9b6a6135a0-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'src/_pytest/logging.py'}, 'id': 'fae6d107-4dfc-4551-aa19-37a4753bbff6', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2048, 'output_tokens': 71, 'total_tokens': 2322, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 203}}
+2025-12-23 09:50:08,857 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have analyzed the `src/_pytest/logging.py` file to clarify the interaction between `caplog.get_records` and `caplog.clear`. The `LogCaptureFixture` class contains both of these methods. I found that `get_records` retrieves logs from a storage that is populated at the end of each test phase (setup, call, teardown), while `clear` resets the live log handler, erasing only the currently captured records. This means `clear` does not affect the records of already completed phases, which is likely the reason for the patch you mentioned.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 9094, 'candidates_token_count': 121, 'total_token_count': 11112, 'cached_content_token_count': 1836, 'prompt_tokens_details': [{'modality': 1, 'token_count': 9094}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1836}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 121}], 'thoughts_token_count': 1897}, 'finish_reason': 'STOP', 'avg_logprobs': -2.231160313629907, 'model_name': 'gemini-2.5-pro'} id='run--81b4f0a5-93b2-4701-9dd9-1271c8622b96-0' usage_metadata={'input_tokens': 9094, 'output_tokens': 121, 'total_tokens': 11112, 'input_token_details': {'cache_read': 1836}, 'output_token_details': {'reasoning': 1897}}
+2025-12-23 09:50:08,859 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `src/_pytest/logging.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need this file to understand the interaction between `caplog.get_records` and `caplog.clear` and why the provided patch is the correct solution.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: src/_pytest/logging.py
+Line number range: 1 - 500
+Content:
+1. """Access and control log capturing."""
+2. import io
+3. import logging
+4. import os
+5. import re
+6. from contextlib import contextmanager
+7. from contextlib import nullcontext
+8. from io import StringIO
+9. from pathlib import Path
+10. from typing import AbstractSet
+11. from typing import Dict
+12. from typing import Generator
+13. from typing import List
+14. from typing import Mapping
+15. from typing import Optional
+16. from typing import Tuple
+17. from typing import TYPE_CHECKING
+18. from typing import TypeVar
+19. from typing import Union
+20. 
+21. from _pytest import nodes
+22. from _pytest._io import TerminalWriter
+23. from _pytest.capture import CaptureManager
+24. from _pytest.compat import final
+25. from _pytest.config import _strtobool
+26. from _pytest.config import Config
+27. from _pytest.config import create_terminal_writer
+28. from _pytest.config import hookimpl
+29. from _pytest.config import UsageError
+30. from _pytest.config.argparsing import Parser
+31. from _pytest.deprecated import check_ispytest
+32. from _pytest.fixtures import fixture
+33. from _pytest.fixtures import FixtureRequest
+34. from _pytest.main import Session
+35. from _pytest.stash import StashKey
+36. from _pytest.terminal import TerminalReporter
+37. 
+38. if TYPE_CHECKING:
+39.     logging_StreamHandler = logging.StreamHandler[StringIO]
+40. else:
+41.     logging_StreamHandler = logging.StreamHandler
+42. 
+43. 
+44. DEFAULT_LOG_FORMAT = "%(levelname)-8s %(name)s:%(filename)s:%(lineno)d %(message)s"
+45. DEFAULT_LOG_DATE_FORMAT = "%H:%M:%S"
+46. _ANSI_ESCAPE_SEQ = re.compile(r"\x1b\[[\d;]+m")
+47. caplog_handler_key = StashKey["LogCaptureHandler"]()
+48. caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()
+49. 
+50. 
+51. def _remove_ansi_escape_sequences(text: str) -> str:
+52.     return _ANSI_ESCAPE_SEQ.sub("", text)
+53. 
+54. 
+55. class ColoredLevelFormatter(logging.Formatter):
+56.     """A logging formatter which colorizes the %(levelname)..s part of the
+57.     log format passed to __init__."""
+58. 
+59.     LOGLEVEL_COLOROPTS: Mapping[int, AbstractSet[str]] = {
+60.         logging.CRITICAL: {"red"},
+61.         logging.ERROR: {"red", "bold"},
+62.         logging.WARNING: {"yellow"},
+63.         logging.WARN: {"yellow"},
+64.         logging.INFO: {"green"},
+65.         logging.DEBUG: {"purple"},
+66.         logging.NOTSET: set(),
+67.     }
+68.     LEVELNAME_FMT_REGEX = re.compile(r"%\(levelname\)([+-.]?\d*(?:\.\d+)?s)")
+69. 
+70.     def __init__(self, terminalwriter: TerminalWriter, *args, **kwargs) -> None:
+71.         super().__init__(*args, **kwargs)
+72.         self._terminalwriter = terminalwriter
+73.         self._original_fmt = self._style._fmt
+74.         self._level_to_fmt_mapping: Dict[int, str] = {}
+75. 
+76.         for level, color_opts in self.LOGLEVEL_COLOROPTS.items():
+77.             self.add_color_level(level, *color_opts)
+78. 
+79.     def add_color_level(self, level: int, *color_opts: str) -> None:
+80.         """Add or update color opts for a log level.
+81. 
+82.         :param level:
+83.             Log level to apply a style to, e.g. ``logging.INFO``.
+84.         :param color_opts:
+85.             ANSI escape sequence color options. Capitalized colors indicates
+86.             background color, i.e. ``'green', 'Yellow', 'bold'`` will give bold
+87.             green text on yellow background.
+88. 
+89.         .. warning::
+90.             This is an experimental API.
+91.         """
+92. 
+93.         assert self._fmt is not None
+94.         levelname_fmt_match = self.LEVELNAME_FMT_REGEX.search(self._fmt)
+95.         if not levelname_fmt_match:
+96.             return
+97.         levelname_fmt = levelname_fmt_match.group()
+98. 
+99.         formatted_levelname = levelname_fmt % {"levelname": logging.getLevelName(level)}
+100. 
+101.         # add ANSI escape sequences around the formatted levelname
+102.         color_kwargs = {name: True for name in color_opts}
+103.         colorized_formatted_levelname = self._terminalwriter.markup(
+104.             formatted_levelname, **color_kwargs
+105.         )
+106.         self._level_to_fmt_mapping[level] = self.LEVELNAME_FMT_REGEX.sub(
+107.             colorized_formatted_levelname, self._fmt
+108.         )
+109. 
+110.     def format(self, record: logging.LogRecord) -> str:
+111.         fmt = self._level_to_fmt_mapping.get(record.levelno, self._original_fmt)
+112.         self._style._fmt = fmt
+113.         return super().format(record)
+114. 
+115. 
+116. class PercentStyleMultiline(logging.PercentStyle):
+117.     """A logging style with special support for multiline messages.
+118. 
+119.     If the message of a record consists of multiple lines, this style
+120.     formats the message as if each line were logged separately.
+121.     """
+122. 
+123.     def __init__(self, fmt: str, auto_indent: Union[int, str, bool, None]) -> None:
+124.         super().__init__(fmt)
+125.         self._auto_indent = self._get_auto_indent(auto_indent)
+126. 
+127.     @staticmethod
+128.     def _get_auto_indent(auto_indent_option: Union[int, str, bool, None]) -> int:
+129.         """Determine the current auto indentation setting.
+130. 
+131.         Specify auto indent behavior (on/off/fixed) by passing in
+132.         extra={"auto_indent": [value]} to the call to logging.log() or
+133.         using a --log-auto-indent [value] command line or the
+134.         log_auto_indent [value] config option.
+135. 
+136.         Default behavior is auto-indent off.
+137. 
+138.         Using the string "True" or "on" or the boolean True as the value
+139.         turns auto indent on, using the string "False" or "off" or the
+140.         boolean False or the int 0 turns it off, and specifying a
+141.         positive integer fixes the indentation position to the value
+142.         specified.
+143. 
+144.         Any other values for the option are invalid, and will silently be
+145.         converted to the default.
+146. 
+147.         :param None|bool|int|str auto_indent_option:
+148.             User specified option for indentation from command line, config
+149.             or extra kwarg. Accepts int, bool or str. str option accepts the
+150.             same range of values as boolean config options, as well as
+151.             positive integers represented in str form.
+152. 
+153.         :returns:
+154.             Indentation value, which can be
+155.             -1 (automatically determine indentation) or
+156.             0 (auto-indent turned off) or
+157.             >0 (explicitly set indentation position).
+158.         """
+159. 
+160.         if auto_indent_option is None:
+161.             return 0
+162.         elif isinstance(auto_indent_option, bool):
+163.             if auto_indent_option:
+164.                 return -1
+165.             else:
+166.                 return 0
+167.         elif isinstance(auto_indent_option, int):
+168.             return int(auto_indent_option)
+169.         elif isinstance(auto_indent_option, str):
+170.             try:
+171.                 return int(auto_indent_option)
+172.             except ValueError:
+173.                 pass
+174.             try:
+175.                 if _strtobool(auto_indent_option):
+176.                     return -1
+177.             except ValueError:
+178.                 return 0
+179. 
+180.         return 0
+181. 
+182.     def format(self, record: logging.LogRecord) -> str:
+183.         if "\n" in record.message:
+184.             if hasattr(record, "auto_indent"):
+185.                 # Passed in from the "extra={}" kwarg on the call to logging.log().
+186.                 auto_indent = self._get_auto_indent(record.auto_indent)  # type: ignore[attr-defined]
+187.             else:
+188.                 auto_indent = self._auto_indent
+189. 
+190.             if auto_indent:
+191.                 lines = record.message.splitlines()
+192.                 formatted = self._fmt % {**record.__dict__, "message": lines[0]}
+193. 
+194.                 if auto_indent < 0:
+195.                     indentation = _remove_ansi_escape_sequences(formatted).find(
+196.                         lines[0]
+197.                     )
+198.                 else:
+199.                     # Optimizes logging by allowing a fixed indentation.
+200.                     indentation = auto_indent
+201.                 lines[0] = formatted
+202.                 return ("\n" + " " * indentation).join(lines)
+203.         return self._fmt % record.__dict__
+204. 
+205. 
+206. def get_option_ini(config: Config, *names: str):
+207.     for name in names:
+208.         ret = config.getoption(name)  # 'default' arg won't work as expected
+209.         if ret is None:
+210.             ret = config.getini(name)
+211.         if ret:
+212.             return ret
+213. 
+214. 
+215. def pytest_addoption(parser: Parser) -> None:
+216.     """Add options to control log capturing."""
+217.     group = parser.getgroup("logging")
+218. 
+219.     def add_option_ini(option, dest, default=None, type=None, **kwargs):
+220.         parser.addini(
+221.             dest, default=default, type=type, help="Default value for " + option
+222.         )
+223.         group.addoption(option, dest=dest, **kwargs)
+224. 
+225.     add_option_ini(
+226.         "--log-level",
+227.         dest="log_level",
+228.         default=None,
+229.         metavar="LEVEL",
+230.         help=(
+231.             "Level of messages to catch/display."
+232.             " Not set by default, so it depends on the root/parent log handler's"
+233.             ' effective level, where it is "WARNING" by default.'
+234.         ),
+235.     )
+236.     add_option_ini(
+237.         "--log-format",
+238.         dest="log_format",
+239.         default=DEFAULT_LOG_FORMAT,
+240.         help="Log format used by the logging module",
+241.     )
+242.     add_option_ini(
+243.         "--log-date-format",
+244.         dest="log_date_format",
+245.         default=DEFAULT_LOG_DATE_FORMAT,
+246.         help="Log date format used by the logging module",
+247.     )
+248.     parser.addini(
+249.         "log_cli",
+250.         default=False,
+251.         type="bool",
+252.         help='Enable log display during test run (also known as "live logging")',
+253.     )
+254.     add_option_ini(
+255.         "--log-cli-level", dest="log_cli_level", default=None, help="CLI logging level"
+256.     )
+257.     add_option_ini(
+258.         "--log-cli-format",
+259.         dest="log_cli_format",
+260.         default=None,
+261.         help="Log format used by the logging module",
+262.     )
+263.     add_option_ini(
+264.         "--log-cli-date-format",
+265.         dest="log_cli_date_format",
+266.         default=None,
+267.         help="Log date format used by the logging module",
+268.     )
+269.     add_option_ini(
+270.         "--log-file",
+271.         dest="log_file",
+272.         default=None,
+273.         help="Path to a file when logging will be written to",
+274.     )
+275.     add_option_ini(
+276.         "--log-file-level",
+277.         dest="log_file_level",
+278.         default=None,
+279.         help="Log file logging level",
+280.     )
+281.     add_option_ini(
+282.         "--log-file-format",
+283.         dest="log_file_format",
+284.         default=DEFAULT_LOG_FORMAT,
+285.         help="Log format used by the logging module",
+286.     )
+287.     add_option_ini(
+288.         "--log-file-date-format",
+289.         dest="log_file_date_format",
+290.         default=DEFAULT_LOG_DATE_FORMAT,
+291.         help="Log date format used by the logging module",
+292.     )
+293.     add_option_ini(
+294.         "--log-auto-indent",
+295.         dest="log_auto_indent",
+296.         default=None,
+297.         help="Auto-indent multiline messages passed to the logging module. Accepts true|on, false|off or an integer.",
+298.     )
+299. 
+300. 
+301. _HandlerType = TypeVar("_HandlerType", bound=logging.Handler)
+302. 
+303. 
+304. # Not using @contextmanager for performance reasons.
+305. class catching_logs:
+306.     """Context manager that prepares the whole logging machinery properly."""
+307. 
+308.     __slots__ = ("handler", "level", "orig_level")
+309. 
+310.     def __init__(self, handler: _HandlerType, level: Optional[int] = None) -> None:
+311.         self.handler = handler
+312.         self.level = level
+313. 
+314.     def __enter__(self):
+315.         root_logger = logging.getLogger()
+316.         if self.level is not None:
+317.             self.handler.setLevel(self.level)
+318.         root_logger.addHandler(self.handler)
+319.         if self.level is not None:
+320.             self.orig_level = root_logger.level
+321.             root_logger.setLevel(min(self.orig_level, self.level))
+322.         return self.handler
+323. 
+324.     def __exit__(self, type, value, traceback):
+325.         root_logger = logging.getLogger()
+326.         if self.level is not None:
+327.             root_logger.setLevel(self.orig_level)
+328.         root_logger.removeHandler(self.handler)
+329. 
+330. 
+331. class LogCaptureHandler(logging_StreamHandler):
+332.     """A logging handler that stores log records and the log text."""
+333. 
+334.     def __init__(self) -> None:
+335.         """Create a new log handler."""
+336.         super().__init__(StringIO())
+337.         self.records: List[logging.LogRecord] = []
+338. 
+339.     def emit(self, record: logging.LogRecord) -> None:
+340.         """Keep the log records in a list in addition to the log text."""
+341.         self.records.append(record)
+342.         super().emit(record)
+343. 
+344.     def reset(self) -> None:
+345.         self.records = []
+346.         self.stream = StringIO()
+347. 
+348.     def handleError(self, record: logging.LogRecord) -> None:
+349.         if logging.raiseExceptions:
+350.             # Fail the test if the log message is bad (emit failed).
+351.             # The default behavior of logging is to print "Logging error"
+352.             # to stderr with the call stack and some extra details.
+353.             # pytest wants to make such mistakes visible during testing.
+354.             raise
+355. 
+356. 
+357. @final
+358. class LogCaptureFixture:
+359.     """Provides access and control of log capturing."""
+360. 
+361.     def __init__(self, item: nodes.Node, *, _ispytest: bool = False) -> None:
+362.         check_ispytest(_ispytest)
+363.         self._item = item
+364.         self._initial_handler_level: Optional[int] = None
+365.         # Dict of log name -> log level.
+366.         self._initial_logger_levels: Dict[Optional[str], int] = {}
+367. 
+368.     def _finalize(self) -> None:
+369.         """Finalize the fixture.
+370. 
+371.         This restores the log levels changed by :meth:`set_level`.
+372.         """
+373.         # Restore log levels.
+374.         if self._initial_handler_level is not None:
+375.             self.handler.setLevel(self._initial_handler_level)
+376.         for logger_name, level in self._initial_logger_levels.items():
+377.             logger = logging.getLogger(logger_name)
+378.             logger.setLevel(level)
+379. 
+380.     @property
+381.     def handler(self) -> LogCaptureHandler:
+382.         """Get the logging handler used by the fixture.
+383. 
+384.         :rtype: LogCaptureHandler
+385.         """
+386.         return self._item.stash[caplog_handler_key]
+387. 
+388.     def get_records(self, when: str) -> List[logging.LogRecord]:
+389.         """Get the logging records for one of the possible test phases.
+390. 
+391.         :param str when:
+392.             Which test phase to obtain the records from. Valid values are: "setup", "call" and "teardown".
+393. 
+394.         :returns: The list of captured records at the given stage.
+395.         :rtype: List[logging.LogRecord]
+396. 
+397.         .. versionadded:: 3.4
+398.         """
+399.         return self._item.stash[caplog_records_key].get(when, [])
+400. 
+401.     @property
+402.     def text(self) -> str:
+403.         """The formatted log text."""
+404.         return _remove_ansi_escape_sequences(self.handler.stream.getvalue())
+405. 
+406.     @property
+407.     def records(self) -> List[logging.LogRecord]:
+408.         """The list of log records."""
+409.         return self.handler.records
+410. 
+411.     @property
+412.     def record_tuples(self) -> List[Tuple[str, int, str]]:
+413.         """A list of a stripped down version of log records intended
+414.         for use in assertion comparison.
+415. 
+416.         The format of the tuple is:
+417. 
+418.             (logger_name, log_level, message)
+419.         """
+420.         return [(r.name, r.levelno, r.getMessage()) for r in self.records]
+421. 
+422.     @property
+423.     def messages(self) -> List[str]:
+424.         """A list of format-interpolated log messages.
+425. 
+426.         Unlike 'records', which contains the format string and parameters for
+427.         interpolation, log messages in this list are all interpolated.
+428. 
+429.         Unlike 'text', which contains the output from the handler, log
+430.         messages in this list are unadorned with levels, timestamps, etc,
+431.         making exact comparisons more reliable.
+432. 
+433.         Note that traceback or stack info (from :func:`logging.exception` or
+434.         the `exc_info` or `stack_info` arguments to the logging functions) is
+435.         not included, as this is added by the formatter in the handler.
+436. 
+437.         .. versionadded:: 3.7
+438.         """
+439.         return [r.getMessage() for r in self.records]
+440. 
+441.     def clear(self) -> None:
+442.         """Reset the list of log records and the captured log text."""
+443.         self.handler.reset()
+444. 
+445.     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+446.         """Set the level of a logger for the duration of a test.
+447. 
+448.         .. versionchanged:: 3.4
+449.             The levels of the loggers changed by this function will be
+450.             restored to their initial values at the end of the test.
+451. 
+452.         :param int level: The level.
+453.         :param str logger: The logger to update. If not given, the root logger.
+454.         """
+455.         logger_obj = logging.getLogger(logger)
+456.         # Save the original log-level to restore it during teardown.
+457.         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+458.         logger_obj.setLevel(level)
+459.         if self._initial_handler_level is None:
+460.             self._initial_handler_level = self.handler.level
+461.         self.handler.setLevel(level)
+462. 
+463.     @contextmanager
+464.     def at_level(
+465.         self, level: Union[int, str], logger: Optional[str] = None
+466.     ) -> Generator[None, None, None]:
+467.         """Context manager that sets the level for capturing of logs. After
+468.         the end of the 'with' statement the level is restored to its original
+469.         value.
+470. 
+471.         :param int level: The level.
+472.         :param str logger: The logger to update. If not given, the root logger.
+473.         """
+474.         logger_obj = logging.getLogger(logger)
+475.         orig_level = logger_obj.level
+476.         logger_obj.setLevel(level)
+477.         handler_orig_level = self.handler.level
+478.         self.handler.setLevel(level)
+479.         try:
+480.             yield
+481.         finally:
+482.             logger_obj.setLevel(orig_level)
+483.             self.handler.setLevel(handler_orig_level)
+484. 
+485. 
+486. @fixture
+487. def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+488.     """Access and control log capturing.
+489. 
+490.     Captured logs are available through the following properties/methods::
+491. 
+492.     * caplog.messages        -> list of format-interpolated log messages
+493.     * caplog.text            -> string containing formatted log output
+494.     * caplog.records         -> list of logging.LogRecord instances
+495.     * caplog.record_tuples   -> list of (logger_name, level, message) tuples
+496.     * caplog.clear()         -> clear captured records and formatted log output string
+497.     """
+498.     result = LogCaptureFixture(request.node, _ispytest=True)
+499.     yield result
+500.     result._finalize()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-23 09:50:13,890 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="The user requested the full content of the file `src/_pytest/logging.py`. The provided context contains the entire file, which is necessary to understand the complete implementation and interaction of the logging functionalities within pytest, specifically `caplog.get_records` and `caplog.clear` as mentioned in the user's purpose.", relative_path='src/_pytest/logging.py', start_line=1, end_line=500)]
+2025-12-23 09:50:13,891 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `src/_pytest/logging.py`.
+2025-12-23 09:50:13,891 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-23 09:50:13,891 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-23 09:50:13,892 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-23 09:50:13,892 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-23 09:50:13,892 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9917.bugfix.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `src/_pytest/logging.py`.
+Extra Requirements: 
+Purpose: I need this file to understand the interaction between `caplog.get_records` and `caplog.clear` and why the provided patch is the correct solution.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: src/_pytest/logging.py
+Line number range: 1 - 500
+Content:
+1. """Access and control log capturing."""
+2. import io
+3. import logging
+4. import os
+5. import re
+6. from contextlib import contextmanager
+7. from contextlib import nullcontext
+8. from io import StringIO
+9. from pathlib import Path
+10. from typing import AbstractSet
+11. from typing import Dict
+12. from typing import Generator
+13. from typing import List
+14. from typing import Mapping
+15. from typing import Optional
+16. from typing import Tuple
+17. from typing import TYPE_CHECKING
+18. from typing import TypeVar
+19. from typing import Union
+20. 
+21. from _pytest import nodes
+22. from _pytest._io import TerminalWriter
+23. from _pytest.capture import CaptureManager
+24. from _pytest.compat import final
+25. from _pytest.config import _strtobool
+26. from _pytest.config import Config
+27. from _pytest.config import create_terminal_writer
+28. from _pytest.config import hookimpl
+29. from _pytest.config import UsageError
+30. from _pytest.config.argparsing import Parser
+31. from _pytest.deprecated import check_ispytest
+32. from _pytest.fixtures import fixture
+33. from _pytest.fixtures import FixtureRequest
+34. from _pytest.main import Session
+35. from _pytest.stash import StashKey
+36. from _pytest.terminal import TerminalReporter
+37. 
+38. if TYPE_CHECKING:
+39.     logging_StreamHandler = logging.StreamHandler[StringIO]
+40. else:
+41.     logging_StreamHandler = logging.StreamHandler
+42. 
+43. 
+44. DEFAULT_LOG_FORMAT = "%(levelname)-8s %(name)s:%(filename)s:%(lineno)d %(message)s"
+45. DEFAULT_LOG_DATE_FORMAT = "%H:%M:%S"
+46. _ANSI_ESCAPE_SEQ = re.compile(r"\x1b\[[\d;]+m")
+47. caplog_handler_key = StashKey["LogCaptureHandler"]()
+48. caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()
+49. 
+50. 
+51. def _remove_ansi_escape_sequences(text: str) -> str:
+52.     return _ANSI_ESCAPE_SEQ.sub("", text)
+53. 
+54. 
+55. class ColoredLevelFormatter(logging.Formatter):
+56.     """A logging formatter which colorizes the %(levelname)..s part of the
+57.     log format passed to __init__."""
+58. 
+59.     LOGLEVEL_COLOROPTS: Mapping[int, AbstractSet[str]] = {
+60.         logging.CRITICAL: {"red"},
+61.         logging.ERROR: {"red", "bold"},
+62.         logging.WARNING: {"yellow"},
+63.         logging.WARN: {"yellow"},
+64.         logging.INFO: {"green"},
+65.         logging.DEBUG: {"purple"},
+66.         logging.NOTSET: set(),
+67.     }
+68.     LEVELNAME_FMT_REGEX = re.compile(r"%\(levelname\)([+-.]?\d*(?:\.\d+)?s)")
+69. 
+70.     def __init__(self, terminalwriter: TerminalWriter, *args, **kwargs) -> None:
+71.         super().__init__(*args, **kwargs)
+72.         self._terminalwriter = terminalwriter
+73.         self._original_fmt = self._style._fmt
+74.         self._level_to_fmt_mapping: Dict[int, str] = {}
+75. 
+76.         for level, color_opts in self.LOGLEVEL_COLOROPTS.items():
+77.             self.add_color_level(level, *color_opts)
+78. 
+79.     def add_color_level(self, level: int, *color_opts: str) -> None:
+80.         """Add or update color opts for a log level.
+81. 
+82.         :param level:
+83.             Log level to apply a style to, e.g. ``logging.INFO``.
+84.         :param color_opts:
+85.             ANSI escape sequence color options. Capitalized colors indicates
+86.             background color, i.e. ``'green', 'Yellow', 'bold'`` will give bold
+87.             green text on yellow background.
+88. 
+89.         .. warning::
+90.             This is an experimental API.
+91.         """
+92. 
+93.         assert self._fmt is not None
+94.         levelname_fmt_match = self.LEVELNAME_FMT_REGEX.search(self._fmt)
+95.         if not levelname_fmt_match:
+96.             return
+97.         levelname_fmt = levelname_fmt_match.group()
+98. 
+99.         formatted_levelname = levelname_fmt % {"levelname": logging.getLevelName(level)}
+100. 
+101.         # add ANSI escape sequences around the formatted levelname
+102.         color_kwargs = {name: True for name in color_opts}
+103.         colorized_formatted_levelname = self._terminalwriter.markup(
+104.             formatted_levelname, **color_kwargs
+105.         )
+106.         self._level_to_fmt_mapping[level] = self.LEVELNAME_FMT_REGEX.sub(
+107.             colorized_formatted_levelname, self._fmt
+108.         )
+109. 
+110.     def format(self, record: logging.LogRecord) -> str:
+111.         fmt = self._level_to_fmt_mapping.get(record.levelno, self._original_fmt)
+112.         self._style._fmt = fmt
+113.         return super().format(record)
+114. 
+115. 
+116. class PercentStyleMultiline(logging.PercentStyle):
+117.     """A logging style with special support for multiline messages.
+118. 
+119.     If the message of a record consists of multiple lines, this style
+120.     formats the message as if each line were logged separately.
+121.     """
+122. 
+123.     def __init__(self, fmt: str, auto_indent: Union[int, str, bool, None]) -> None:
+124.         super().__init__(fmt)
+125.         self._auto_indent = self._get_auto_indent(auto_indent)
+126. 
+127.     @staticmethod
+128.     def _get_auto_indent(auto_indent_option: Union[int, str, bool, None]) -> int:
+129.         """Determine the current auto indentation setting.
+130. 
+131.         Specify auto indent behavior (on/off/fixed) by passing in
+132.         extra={"auto_indent": [value]} to the call to logging.log() or
+133.         using a --log-auto-indent [value] command line or the
+134.         log_auto_indent [value] config option.
+135. 
+136.         Default behavior is auto-indent off.
+137. 
+138.         Using the string "True" or "on" or the boolean True as the value
+139.         turns auto indent on, using the string "False" or "off" or the
+140.         boolean False or the int 0 turns it off, and specifying a
+141.         positive integer fixes the indentation position to the value
+142.         specified.
+143. 
+144.         Any other values for the option are invalid, and will silently be
+145.         converted to the default.
+146. 
+147.         :param None|bool|int|str auto_indent_option:
+148.             User specified option for indentation from command line, config
+149.             or extra kwarg. Accepts int, bool or str. str option accepts the
+150.             same range of values as boolean config options, as well as
+151.             positive integers represented in str form.
+152. 
+153.         :returns:
+154.             Indentation value, which can be
+155.             -1 (automatically determine indentation) or
+156.             0 (auto-indent turned off) or
+157.             >0 (explicitly set indentation position).
+158.         """
+159. 
+160.         if auto_indent_option is None:
+161.             return 0
+162.         elif isinstance(auto_indent_option, bool):
+163.             if auto_indent_option:
+164.                 return -1
+165.             else:
+166.                 return 0
+167.         elif isinstance(auto_indent_option, int):
+168.             return int(auto_indent_option)
+169.         elif isinstance(auto_indent_option, str):
+170.             try:
+171.                 return int(auto_indent_option)
+172.             except ValueError:
+173.                 pass
+174.             try:
+175.                 if _strtobool(auto_indent_option):
+176.                     return -1
+177.             except ValueError:
+178.                 return 0
+179. 
+180.         return 0
+181. 
+182.     def format(self, record: logging.LogRecord) -> str:
+183.         if "\n" in record.message:
+184.             if hasattr(record, "auto_indent"):
+185.                 # Passed in from the "extra={}" kwarg on the call to logging.log().
+186.                 auto_indent = self._get_auto_indent(record.auto_indent)  # type: ignore[attr-defined]
+187.             else:
+188.                 auto_indent = self._auto_indent
+189. 
+190.             if auto_indent:
+191.                 lines = record.message.splitlines()
+192.                 formatted = self._fmt % {**record.__dict__, "message": lines[0]}
+193. 
+194.                 if auto_indent < 0:
+195.                     indentation = _remove_ansi_escape_sequences(formatted).find(
+196.                         lines[0]
+197.                     )
+198.                 else:
+199.                     # Optimizes logging by allowing a fixed indentation.
+200.                     indentation = auto_indent
+201.                 lines[0] = formatted
+202.                 return ("\n" + " " * indentation).join(lines)
+203.         return self._fmt % record.__dict__
+204. 
+205. 
+206. def get_option_ini(config: Config, *names: str):
+207.     for name in names:
+208.         ret = config.getoption(name)  # 'default' arg won't work as expected
+209.         if ret is None:
+210.             ret = config.getini(name)
+211.         if ret:
+212.             return ret
+213. 
+214. 
+215. def pytest_addoption(parser: Parser) -> None:
+216.     """Add options to control log capturing."""
+217.     group = parser.getgroup("logging")
+218. 
+219.     def add_option_ini(option, dest, default=None, type=None, **kwargs):
+220.         parser.addini(
+221.             dest, default=default, type=type, help="Default value for " + option
+222.         )
+223.         group.addoption(option, dest=dest, **kwargs)
+224. 
+225.     add_option_ini(
+226.         "--log-level",
+227.         dest="log_level",
+228.         default=None,
+229.         metavar="LEVEL",
+230.         help=(
+231.             "Level of messages to catch/display."
+232.             " Not set by default, so it depends on the root/parent log handler's"
+233.             ' effective level, where it is "WARNING" by default.'
+234.         ),
+235.     )
+236.     add_option_ini(
+237.         "--log-format",
+238.         dest="log_format",
+239.         default=DEFAULT_LOG_FORMAT,
+240.         help="Log format used by the logging module",
+241.     )
+242.     add_option_ini(
+243.         "--log-date-format",
+244.         dest="log_date_format",
+245.         default=DEFAULT_LOG_DATE_FORMAT,
+246.         help="Log date format used by the logging module",
+247.     )
+248.     parser.addini(
+249.         "log_cli",
+250.         default=False,
+251.         type="bool",
+252.         help='Enable log display during test run (also known as "live logging")',
+253.     )
+254.     add_option_ini(
+255.         "--log-cli-level", dest="log_cli_level", default=None, help="CLI logging level"
+256.     )
+257.     add_option_ini(
+258.         "--log-cli-format",
+259.         dest="log_cli_format",
+260.         default=None,
+261.         help="Log format used by the logging module",
+262.     )
+263.     add_option_ini(
+264.         "--log-cli-date-format",
+265.         dest="log_cli_date_format",
+266.         default=None,
+267.         help="Log date format used by the logging module",
+268.     )
+269.     add_option_ini(
+270.         "--log-file",
+271.         dest="log_file",
+272.         default=None,
+273.         help="Path to a file when logging will be written to",
+274.     )
+275.     add_option_ini(
+276.         "--log-file-level",
+277.         dest="log_file_level",
+278.         default=None,
+279.         help="Log file logging level",
+280.     )
+281.     add_option_ini(
+282.         "--log-file-format",
+283.         dest="log_file_format",
+284.         default=DEFAULT_LOG_FORMAT,
+285.         help="Log format used by the logging module",
+286.     )
+287.     add_option_ini(
+288.         "--log-file-date-format",
+289.         dest="log_file_date_format",
+290.         default=DEFAULT_LOG_DATE_FORMAT,
+291.         help="Log date format used by the logging module",
+292.     )
+293.     add_option_ini(
+294.         "--log-auto-indent",
+295.         dest="log_auto_indent",
+296.         default=None,
+297.         help="Auto-indent multiline messages passed to the logging module. Accepts true|on, false|off or an integer.",
+298.     )
+299. 
+300. 
+301. _HandlerType = TypeVar("_HandlerType", bound=logging.Handler)
+302. 
+303. 
+304. # Not using @contextmanager for performance reasons.
+305. class catching_logs:
+306.     """Context manager that prepares the whole logging machinery properly."""
+307. 
+308.     __slots__ = ("handler", "level", "orig_level")
+309. 
+310.     def __init__(self, handler: _HandlerType, level: Optional[int] = None) -> None:
+311.         self.handler = handler
+312.         self.level = level
+313. 
+314.     def __enter__(self):
+315.         root_logger = logging.getLogger()
+316.         if self.level is not None:
+317.             self.handler.setLevel(self.level)
+318.         root_logger.addHandler(self.handler)
+319.         if self.level is not None:
+320.             self.orig_level = root_logger.level
+321.             root_logger.setLevel(min(self.orig_level, self.level))
+322.         return self.handler
+323. 
+324.     def __exit__(self, type, value, traceback):
+325.         root_logger = logging.getLogger()
+326.         if self.level is not None:
+327.             root_logger.setLevel(self.orig_level)
+328.         root_logger.removeHandler(self.handler)
+329. 
+330. 
+331. class LogCaptureHandler(logging_StreamHandler):
+332.     """A logging handler that stores log records and the log text."""
+333. 
+334.     def __init__(self) -> None:
+335.         """Create a new log handler."""
+336.         super().__init__(StringIO())
+337.         self.records: List[logging.LogRecord] = []
+338. 
+339.     def emit(self, record: logging.LogRecord) -> None:
+340.         """Keep the log records in a list in addition to the log text."""
+341.         self.records.append(record)
+342.         super().emit(record)
+343. 
+344.     def reset(self) -> None:
+345.         self.records = []
+346.         self.stream = StringIO()
+347. 
+348.     def handleError(self, record: logging.LogRecord) -> None:
+349.         if logging.raiseExceptions:
+350.             # Fail the test if the log message is bad (emit failed).
+351.             # The default behavior of logging is to print "Logging error"
+352.             # to stderr with the call stack and some extra details.
+353.             # pytest wants to make such mistakes visible during testing.
+354.             raise
+355. 
+356. 
+357. @final
+358. class LogCaptureFixture:
+359.     """Provides access and control of log capturing."""
+360. 
+361.     def __init__(self, item: nodes.Node, *, _ispytest: bool = False) -> None:
+362.         check_ispytest(_ispytest)
+363.         self._item = item
+364.         self._initial_handler_level: Optional[int] = None
+365.         # Dict of log name -> log level.
+366.         self._initial_logger_levels: Dict[Optional[str], int] = {}
+367. 
+368.     def _finalize(self) -> None:
+369.         """Finalize the fixture.
+370. 
+371.         This restores the log levels changed by :meth:`set_level`.
+372.         """
+373.         # Restore log levels.
+374.         if self._initial_handler_level is not None:
+375.             self.handler.setLevel(self._initial_handler_level)
+376.         for logger_name, level in self._initial_logger_levels.items():
+377.             logger = logging.getLogger(logger_name)
+378.             logger.setLevel(level)
+379. 
+380.     @property
+381.     def handler(self) -> LogCaptureHandler:
+382.         """Get the logging handler used by the fixture.
+383. 
+384.         :rtype: LogCaptureHandler
+385.         """
+386.         return self._item.stash[caplog_handler_key]
+387. 
+388.     def get_records(self, when: str) -> List[logging.LogRecord]:
+389.         """Get the logging records for one of the possible test phases.
+390. 
+391.         :param str when:
+392.             Which test phase to obtain the records from. Valid values are: "setup", "call" and "teardown".
+393. 
+394.         :returns: The list of captured records at the given stage.
+395.         :rtype: List[logging.LogRecord]
+396. 
+397.         .. versionadded:: 3.4
+398.         """
+399.         return self._item.stash[caplog_records_key].get(when, [])
+400. 
+401.     @property
+402.     def text(self) -> str:
+403.         """The formatted log text."""
+404.         return _remove_ansi_escape_sequences(self.handler.stream.getvalue())
+405. 
+406.     @property
+407.     def records(self) -> List[logging.LogRecord]:
+408.         """The list of log records."""
+409.         return self.handler.records
+410. 
+411.     @property
+412.     def record_tuples(self) -> List[Tuple[str, int, str]]:
+413.         """A list of a stripped down version of log records intended
+414.         for use in assertion comparison.
+415. 
+416.         The format of the tuple is:
+417. 
+418.             (logger_name, log_level, message)
+419.         """
+420.         return [(r.name, r.levelno, r.getMessage()) for r in self.records]
+421. 
+422.     @property
+423.     def messages(self) -> List[str]:
+424.         """A list of format-interpolated log messages.
+425. 
+426.         Unlike 'records', which contains the format string and parameters for
+427.         interpolation, log messages in this list are all interpolated.
+428. 
+429.         Unlike 'text', which contains the output from the handler, log
+430.         messages in this list are unadorned with levels, timestamps, etc,
+431.         making exact comparisons more reliable.
+432. 
+433.         Note that traceback or stack info (from :func:`logging.exception` or
+434.         the `exc_info` or `stack_info` arguments to the logging functions) is
+435.         not included, as this is added by the formatter in the handler.
+436. 
+437.         .. versionadded:: 3.7
+438.         """
+439.         return [r.getMessage() for r in self.records]
+440. 
+441.     def clear(self) -> None:
+442.         """Reset the list of log records and the captured log text."""
+443.         self.handler.reset()
+444. 
+445.     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+446.         """Set the level of a logger for the duration of a test.
+447. 
+448.         .. versionchanged:: 3.4
+449.             The levels of the loggers changed by this function will be
+450.             restored to their initial values at the end of the test.
+451. 
+452.         :param int level: The level.
+453.         :param str logger: The logger to update. If not given, the root logger.
+454.         """
+455.         logger_obj = logging.getLogger(logger)
+456.         # Save the original log-level to restore it during teardown.
+457.         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+458.         logger_obj.setLevel(level)
+459.         if self._initial_handler_level is None:
+460.             self._initial_handler_level = self.handler.level
+461.         self.handler.setLevel(level)
+462. 
+463.     @contextmanager
+464.     def at_level(
+465.         self, level: Union[int, str], logger: Optional[str] = None
+466.     ) -> Generator[None, None, None]:
+467.         """Context manager that sets the level for capturing of logs. After
+468.         the end of the 'with' statement the level is restored to its original
+469.         value.
+470. 
+471.         :param int level: The level.
+472.         :param str logger: The logger to update. If not given, the root logger.
+473.         """
+474.         logger_obj = logging.getLogger(logger)
+475.         orig_level = logger_obj.level
+476.         logger_obj.setLevel(level)
+477.         handler_orig_level = self.handler.level
+478.         self.handler.setLevel(level)
+479.         try:
+480.             yield
+481.         finally:
+482.             logger_obj.setLevel(orig_level)
+483.             self.handler.setLevel(handler_orig_level)
+484. 
+485. 
+486. @fixture
+487. def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+488.     """Access and control log capturing.
+489. 
+490.     Captured logs are available through the following properties/methods::
+491. 
+492.     * caplog.messages        -> list of format-interpolated log messages
+493.     * caplog.text            -> string containing formatted log output
+494.     * caplog.records         -> list of logging.LogRecord instances
+495.     * caplog.record_tuples   -> list of (logger_name, level, message) tuples
+496.     * caplog.clear()         -> clear captured records and formatted log output string
+497.     """
+498.     result = LogCaptureFixture(request.node, _ispytest=True)
+499.     yield result
+500.     result._finalize()
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 09:50:45,417 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user's issue is about a conflict between `caplog.get_records` and `caplog.clear`. The provided context for `src/_pytest/logging.py` is incomplete and ends at line 500. The crucial logic for how `caplog` handles records across different test phases (setup, call, teardown) is managed by `pytest_runtest_*` hooks, which are defined later in the file. To understand why `caplog.clear()` breaks `caplog.get_records()`, I need to see how the records are stored in `item.stash` for each phase, which is handled by these missing hook implementations." query='Please provide the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions from `src/_pytest/logging.py`.' extra_requirements='' purpose='This will reveal how log records for different test phases are managed and why the original `clear` method causes inconsistencies, thus explaining the necessity of the patch.'
+2025-12-23 09:50:45,418 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions from `src/_pytest/logging.py`.
+2025-12-23 09:50:45,418 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-23 09:50:45,419 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-23 09:50:45,420 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-23 09:50:45,420 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions from `src/_pytest/logging.py`.
+Purpose: This will reveal how log records for different test phases are managed and why the original `clear` method causes inconsistencies, thus explaining the necessity of the patch.
+2025-12-23 09:50:51,326 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'find_ast_node_with_type_in_file_with_relative_path', 'arguments': '{"type": "function_definition", "relative_path": "src/_pytest/logging.py"}'}, '__gemini_function_call_thought_signatures__': {'2084337b-85d5-4ba9-9a6b-cd8914c413fd': 'CrYOAY89a1+di3GxqtcR6sdTmfMJ6FCsBvxcS/oFRbasNA3F92KF+6sbpWEBBLDrpK69N4x9c0ZKXd4oMsDWo3RfSdNVU6aByaiIee7DtkHdxT2MdLTvn9K4v7SmYeEWU/MX7x/79oRsdHUnYjL0fdnqF2W93n00tMi10a5AfO1ctO9NvjYLc/ScqpWM+uf0lK0ygY3GgCoI7OiIHwirdeol0gpcKi7izLKNH5uk8XUKWMHPH/uxjACg9ANqkUjbbAhGdkP+yBJhhinL156tF/gLPYpkVWYbQBy335edaN329Z0ubaaIZ1BfxSiiOJgML84hff90M47j08boJa5uWcADXTlH/sQTCd+Vh692aMauZt8a7C91NnR0fOQzz4c9MW26ElVJlAl6sHUVtdatoIhaZBYQlG2o+ugzOBJag20QN9i8e7WhisqfjWj+tYIs5Hf5c8t8l4e4Qd/ARVZbnzxjzpgfoAiG2FK5/73t0rYM7ilG0dAReewVaqtIhxr5+8S2CHMU3+w1wb4HGYTzagHZDPDxEikM6XdnB5VOUFYOGCaSgAKsi/dtxbO091DAfuEu1anee7wmvhIJGLNK4jFAbEntYkE7oSc9EBhH28o5Cxj2aZeLTg5sXjJ8db1O4jWTQg1NKUW4Q8AtUANiRMzb6ytyesw04LjeSOUOGJTpyqLRwXC8p4h8e+CG3iGF7/wdL05GPMr4DyD5q45HDlHnIgD5JaQ7L8b4fPX5XS67YlP3xJ2ybGa8NMVr0di9qVRx+2fJJ9/rboJk7426WCN7uXAudSd+a2MRA5cf6giWfukAjhMR09zJcBQ8zri9wEfVlA7tKgdX6PYu2a82HHn6ZwYJwcSTmGuE34NYk6kHQ6tfVOrqGi1dndI2hkCGbpeCB5NAtxR5LY321GvEzHYajOgKynOQpIdN47e3r8y/lshjLAKMboWoVAsUFKStEbSVIdtfe6itHNtpiqA+uBLfHaF5UpjCva9cWlk260UVChiTGrukq/m8mWACDuzRTrmuuE64eFV/axvh93XCZ/9Gwr/6TeDpcBO9JyuaKG6IKZrokDocDOPQU/6iYppkjS6S7LMoeUNdxkEjQRw1aIC9aIMEL4jY1Fo3LeK4kqUTGlQ111cxyn464hN8DnBPFFZrhv6rpaaepmaD39cNCEnRzV6PjOif1k18EL3Zl+3ZOZkophSpNkvoa3MqJr/M1O7rincJg26X+ZwipMhckQE+uL3/4+TrYSgjh14kTwA/Z8Q1uPrkT7v7U/lidMAeHS1V4P47J/7vQAcxaTmK1hwAwhi08rKRxTqNc3q03xiFeBruyctfTUZZ0tfCfbT0uIFzTLkzNrfkwfNkaJRg86eLTRlizwDLn9jzxDT1xleCafImKTeP/h3GCoTB9wb4I32iRXU58T2FPX686Lp+450qUuW1EUQavGdYXCF426w/CeGcibpwkX+5MF/8n/Nzb8W/KRCFk6R3qQaMrozAi/qkiCcYMAjdOsLhTqTl4BTHSpf4EQFt+5+p2q065Jitj4sq3GHlvSA+7VlQztuls5asJt96FS3bNbHWKRWSf9AqOTuOykP9taA2izwxhO2EXZKqB4ECtWhGt24bJe+pYJYJQMWa+gmQ1KbCs615zk4tccYzJt5O5MGTRvwlPNdpmPh7lInFqY9bx25IwyYRYN0ZAGZ87npg0dyrm0P2fMEgk3kGUy/w3NT74lSrDIGSEM1Ty2Ep5p5hadqQjJ29gwdhvY+6ug84LtkzemfB5VVuMOClAOXKkzW40KF4SHwMIdGicbuBiJ1nxlTWsOUK1ZZhWdpynT2yE+4h0Gc9nn6ldAMz2n5hme6c7JK8e9azmlWVRlQD/HuuSdAEQRNdFBaEkPNfFOJwEh0IHXVDav1uHhFpFTNKOX6Z58Ip2g+8FBpNl92g7JiuX1a7k9PvQGueqw8otYGQXyB35Y7uUQ4pU9TmcjVAUyAxgQV4K46WmVT6qOQKxKaB0HgJ2UI9valauZ+qRGCmHNK7Qf+Gh8qAyumZTxFy7uf/S3HPcXJJKqDd713mjP2G7hP0TKnJVBfVUEkl6PGM3M4mpNRJZXGR25kIqAtpION6UKGahMxas6bEyDqwY4ikr2LBF1KGXR7cWIVOlo4NQGvRvmNUIdtCDCwUdWZLuAsGsGT6o/wAuvPPTvslO36NJILnUFQCFFdf5+hhEzQNN8A3yFGTfyAjjIOE4MDJNGGYxBPveZmQhI1VVNhDF77+k5bbK4d1TMBdq/+tEYqbjyg3ucK2UYpOf4UUL0+eSj9CIuwz95cWsCg7voGbe+hzZXi+sPiSjvvO/XStEnxJIWCFWeC2QFNQYKM3y//B+HHixJoSsX/x7WpipK0pc1lKEJtBAp3T8QI0ztnyaRO1FdXvrEKhyLJSFng0jN/klc+85WwwuiMtNcWEg5MdeJVbshB4hhhN2hTdAHDfiX9eAg=='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2081, 'candidates_token_count': 33, 'total_token_count': 2649, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2081}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 33}], 'thoughts_token_count': 535, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.5563881036007043, 'model_name': 'gemini-2.5-pro'} id='run--b8c199d4-736b-4848-9b31-e5e6618d8331-0' tool_calls=[{'name': 'find_ast_node_with_type_in_file_with_relative_path', 'args': {'type': 'function_definition', 'relative_path': 'src/_pytest/logging.py'}, 'id': '2084337b-85d5-4ba9-9a6b-cd8914c413fd', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2081, 'output_tokens': 33, 'total_tokens': 2649, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 535}}
+2025-12-23 09:51:17,136 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_relative_path', 'arguments': '{"text": "def pytest_runtest_setup", "relative_path": "src/_pytest/logging.py"}'}, '__gemini_function_call_thought_signatures__': {'4eaf3d1c-fb44-4971-b516-a52f9b262ff1': 'CswIAY89a19qL1lRevcmD+XCXTLMGGXipabFzts6YZ10y0gcZBYvybFsMhxCSzSK/rsvDkbQQzHu8b6IlGzVUyjVt+3xeUzJQb1NduzPfLmjl9lIHQhWdDbA1wUVSkZ2poGx1J5+OLx6nh7UMbPmQfV0A1H1xXI5ruhZbLiwf+796IEwH8BhCk6/Y+B57PDZTD4uQhZhQmxVjmX9n4fO0ceCGFCF233/83Wr6xDB6Lv1iQRq7FHcRRdKc/kdq7AtPG7V/CjWJb896O9IlkgijAm308gKQS5CxZ2hOAgqU6961IsJpHnZJlEoAhE8inReFsb8S1sbfBhxubCuTjG/BqwSQfZq7b+qwwVgIyRwmXknSy1PkA1whGqxJ0rEVQOA/vIQm0ltBUF8BvTAX4IB8yp6tPRBslRoigCFe3HSR1DzTCYder30RzlBq/Rd7QHjAmO+mckO+jLo/w/mxwli/hujS5CbgFWkg/TzfPckfWtloFByfB/bJOwnx1gScMaNAloCLueQnOeWgGS62H5lIaeZP8osN4W5Ysg69iYqOv32xFFYU5DVN7+YJAdEaXhx9pP3Q8/0NnpyYEJCsedL0oDh4xCKbvT6HyIhEK4n0pWMTUVaWeMhmMwN7FUMU6ic6Y2Ct4qOzrZO8FQW7xCG5B7XwC5BLjXRyTzi1mNM+WDSWmPr2bgS67LQGB56fbO8xNTiQPZmO7QVDQ+RTSiVXZznVBu+/k7w6lui8HhETZB4bnuhLA+uqa7g886F3WUBYL38qLPqe6CNlYe4c9VBnIN/CI3XqP7ptTjupNPsnMWNWKw2RAHlGPDxScCkHHvEi9gG0Bcq2AGj4Ix54RKnBZvlng60EgU7pE0NPZCLYBfqvmcu3n5tuByQ/c4qt9+hoCsLtEghzl1CMZ6euqpA8FiHyoOrq/O5GfVMkeLVf1YUWV27nF9pDHwmhCJQ79L5B8yjj7iK2zYp9tUdgjUBw3ghV+sdYi1bWVZj4w1UQmU2YPS0Jkq8poexSin2va3+v4NWXllNhPHbikUKWYpoEYpZiIH3ApZRxOx5kF3q0C0GPdxnbrnUVB4KGklkp/ijObcz/ugQyFiQkv3mVwo0V1QbDEQ87WUylNLIcQ6qUPC/r3h8R6YS1ntw3GsdeEqudVGIRQarDDlKUtjlhMpPLMF56nWXncT2hy3w4v7wse762p6yN6icAsqzqfZwVezlo38F11gsFNQP2taVgoh3+nYMtQyYsTym5flkId7dzzK3JviW8xNUV6KDqozhOR/rvTh7OGF9P0zHhVrtwa9/gPSJeuJtkTcX5gjKvCWhHRc7p7F91EjQ/MO8mvFvWgAlSCtw6+k2ThebmVBnAi8ywJU/rV3/1WwYZ6bDLurMiVpLD3RdI2MxmgnBVCHKuh/9NVYtzRoqyEuH0F01tDga5nCuJTVG+NXPDV/OYuzuDR0h3C7LeXEtfKxJUj99/e8='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 3638, 'candidates_token_count': 37, 'total_token_count': 5896, 'cached_content_token_count': 1657, 'prompt_tokens_details': [{'modality': 1, 'token_count': 4173}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1657}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 37}], 'thoughts_token_count': 2221}, 'finish_reason': 'STOP', 'avg_logprobs': -5.26326524889147, 'model_name': 'gemini-2.5-pro'} id='run--ef268d7b-d25d-4c79-8815-de2f3d410416-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_relative_path', 'args': {'text': 'def pytest_runtest_setup', 'relative_path': 'src/_pytest/logging.py'}, 'id': '4eaf3d1c-fb44-4971-b516-a52f9b262ff1', 'type': 'tool_call'}] usage_metadata={'input_tokens': 3638, 'output_tokens': 37, 'total_tokens': 5896, 'input_token_details': {'cache_read': 1657}, 'output_token_details': {'reasoning': 2221}}
+2025-12-23 09:51:21,359 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_code_with_relative_path', 'arguments': '{"end_line": 735.0, "start_line": 728.0, "relative_path": "src/_pytest/logging.py"}'}, '__gemini_function_call_thought_signatures__': {'42df2a95-4ba2-4ee2-a2ed-6bc32b81e6c6': 'CuAFAY89a1/jsIhxorwASFluKuKiu2C9c+Vxb6YvLjglaZa4XsCFDaXgGSmPTeFFWWh7f5Q8oXQiIdBP9f5VOMeG7sSSEqBh9gyrf+UfA54rzGYkip1CMACIC0U+79uN51tGUT3+GRr09+6rxdEflXZlp09z/zN50VhM9Vy9qigKtl53dDGlNBl67eFubAT38S7Q0jo8z22Tn4ThjFi6w7RJqu29beEvzwanRp7jZQfylwrFYszPZYc1g86tf1+sxtjBMTitJmo6unMsby/7TqDrIP2924RBYAHjVbLhfxPIcmExDfJOtyVBisMhKk//vkl6wOiQznbtqQSKy31WkaSlzsPUwnd7CGreoGrrBLNF3/h4S8VIj2XaKOt/s7lpl1xUQVPq4WYhcLtiaaMZdgZ/+5v6/WLa2J6CxdfKuOANbXivt065poM/BCcg+AvJHvdvEyTJgBPGf2mjQVd9tZwnB4FRAG7r1TKEKGjoM/paHp9uGW3sTEzo4ZG7jzNIeayPjcyotKAq8XgAW7tcQEejt/OEgNB7fo2N/99p8BxnsE1ngB/mGAotRlOqhxw5K9virx02HMYdktcwDXAS5ZwoW3/cR9MG0tj1TAJL8eb7Jm8sUXuWM3twOadCY0K3jTA6O+03RBkrRzezulVEKgIpHns9I679E38l8/jSrpHeuX7i+9lTYi2cR3pkkpyOODBm2fGth+WXzTVxX1FpyXXJhWibKPJqxVSV5HoZc0UPw0SuZD5Aif9xVkyQx1fYzFFE/yab5vrGWKU/QLTMWkBHLurzaItVx2948I2heaPg6D1EF+N215HMl9tGg4rj/skvNSjfYnvtUx0hQnXwMdyVwvAP+zxfzv+4+PTKcymU83RswWYH0tQS+vBMaVkLTo8rRYb9VVpqM39M8ygSPdP9BxELvt1f/j+Is2CNgsQWYT8yq8spoGLrZx42yYr1Ob6MAuiJQE5Y8mkppSFjtY0mOA=='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6358, 'candidates_token_count': 108, 'total_token_count': 6678, 'cached_content_token_count': 3550, 'prompt_tokens_details': [{'modality': 1, 'token_count': 7181}], 'cache_tokens_details': [{'modality': 1, 'token_count': 3550}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 108}], 'thoughts_token_count': 212}, 'finish_reason': 'STOP', 'avg_logprobs': -0.14141714131390606, 'model_name': 'gemini-2.5-pro'} id='run--e12a9c86-e590-4321-9406-e76a65403f65-0' tool_calls=[{'name': 'read_code_with_relative_path', 'args': {'end_line': 714.0, 'start_line': 697.0, 'relative_path': 'src/_pytest/logging.py'}, 'id': '42df2a95-4ba2-4ee2-a2ed-6bc32b81e6c6', 'type': 'tool_call'}, {'name': 'read_code_with_relative_path', 'args': {'end_line': 722.0, 'start_line': 715.0, 'relative_path': 'src/_pytest/logging.py'}, 'id': 'cf964e3b-b7d4-4d5c-81dc-761384f976e8', 'type': 'tool_call'}, {'name': 'read_code_with_relative_path', 'args': {'end_line': 727.0, 'start_line': 723.0, 'relative_path': 'src/_pytest/logging.py'}, 'id': 'fe654599-a2d3-4917-a57b-efea0c0add23', 'type': 'tool_call'}, {'name': 'read_code_with_relative_path', 'args': {'end_line': 735.0, 'start_line': 728.0, 'relative_path': 'src/_pytest/logging.py'}, 'id': '74486179-6211-4d56-b7c4-0473752dedae', 'type': 'tool_call'}] usage_metadata={'input_tokens': 6358, 'output_tokens': 108, 'total_tokens': 6678, 'input_token_details': {'cache_read': 3550}, 'output_token_details': {'reasoning': 212}}
+2025-12-23 09:51:25,420 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have found the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions within the `src/_pytest/logging.py` file. I first located the `LoggingPlugin` class that contains these methods and then extracted the specific code for each function. This reveals how test phase-specific log records are managed.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 7431, 'candidates_token_count': 90, 'total_token_count': 7703, 'cached_content_token_count': 7105, 'prompt_tokens_details': [{'modality': 1, 'token_count': 8466}], 'cache_tokens_details': [{'modality': 1, 'token_count': 7105}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 90}], 'thoughts_token_count': 182}, 'finish_reason': 'STOP', 'avg_logprobs': -0.2977939181857639, 'model_name': 'gemini-2.5-pro'} id='run--6a87f643-10ee-4524-9fc2-5c471c6b842a-0' usage_metadata={'input_tokens': 7431, 'output_tokens': 90, 'total_tokens': 7703, 'input_token_details': {'cache_read': 7105}, 'output_token_details': {'reasoning': 182}}
+2025-12-23 09:51:25,422 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions from `src/_pytest/logging.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+This will reveal how log records for different test phases are managed and why the original `clear` method causes inconsistencies, thus explaining the necessity of the patch.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: src/_pytest/logging.py
+Line number range: 51 - 52
+Content:
+def _remove_ansi_escape_sequences(text: str) -> str:
+    return _ANSI_ESCAPE_SEQ.sub("", text)
+
+
+File: src/_pytest/logging.py
+Line number range: 206 - 212
+Content:
+def get_option_ini(config: Config, *names: str):
+    for name in names:
+        ret = config.getoption(name)  # 'default' arg won't work as expected
+        if ret is None:
+            ret = config.getini(name)
+        if ret:
+            return ret
+
+
+File: src/_pytest/logging.py
+Line number range: 215 - 298
+Content:
+def pytest_addoption(parser: Parser) -> None:
+    """Add options to control log capturing."""
+    group = parser.getgroup("logging")
+
+    def add_option_ini(option, dest, default=None, type=None, **kwargs):
+        parser.addini(
+            dest, default=default, type=type, help="Default value for " + option
+        )
+        group.addoption(option, dest=dest, **kwargs)
+
+    add_option_ini(
+        "--log-level",
+        dest="log_level",
+        default=None,
+        metavar="LEVEL",
+        help=(
+            "Level of messages to catch/display."
+            " Not set by default, so it depends on the root/parent log handler's"
+            ' effective level, where it is "WARNING" by default.'
+        ),
+    )
+    add_option_ini(
+        "--log-format",
+        dest="log_format",
+        default=DEFAULT_LOG_FORMAT,
+        help="Log format used by the logging module",
+    )
+    add_option_ini(
+        "--log-date-format",
+        dest="log_date_format",
+        default=DEFAULT_LOG_DATE_FORMAT,
+        help="Log date format used by the logging module",
+    )
+    parser.addini(
+        "log_cli",
+        default=False,
+        type="bool",
+        help='Enable log display during test run (also known as "live logging")',
+    )
+    add_option_ini(
+        "--log-cli-level", dest="log_cli_level", default=None, help="CLI logging level"
+    )
+    add_option_ini(
+        "--log-cli-format",
+        dest="log_cli_format",
+        default=None,
+        help="Log format used by the logging module",
+    )
+    add_option_ini(
+        "--log-cli-date-format",
+        dest="log_cli_date_format",
+        default=None,
+        help="Log date format used by the logging module",
+    )
+    add_option_ini(
+        "--log-file",
+        dest="log_file",
+        default=None,
+        help="Path to a file when logging will be written to",
+    )
+    add_option_ini(
+        "--log-file-level",
+        dest="log_file_level",
+        default=None,
+        help="Log file logging level",
+    )
+    add_option_ini(
+        "--log-file-format",
+        dest="log_file_format",
+        default=DEFAULT_LOG_FORMAT,
+        help="Log format used by the logging module",
+    )
+    add_option_ini(
+        "--log-file-date-format",
+        dest="log_file_date_format",
+        default=DEFAULT_LOG_DATE_FORMAT,
+        help="Log date format used by the logging module",
+    )
+    add_option_ini(
+        "--log-auto-indent",
+        dest="log_auto_indent",
+        default=None,
+        help="Auto-indent multiline messages passed to the logging module. Accepts true|on, false|off or an integer.",
+    )
+
+
+File: src/_pytest/logging.py
+Line number range: 503 - 523
+Content:
+def get_log_level_for_setting(config: Config, *setting_names: str) -> Optional[int]:
+    for setting_name in setting_names:
+        log_level = config.getoption(setting_name)
+        if log_level is None:
+            log_level = config.getini(setting_name)
+        if log_level:
+            break
+    else:
+        return None
+
+    if isinstance(log_level, str):
+        log_level = log_level.upper()
+    try:
+        return int(getattr(logging, log_level, log_level))
+    except ValueError as e:
+        # Python logging does not recognise this as a logging level
+        raise UsageError(
+            "'{}' is not recognized as a logging level name for "
+            "'{}'. Please consider passing the "
+            "logging level num instead.".format(log_level, setting_name)
+        ) from e
+
+
+File: src/_pytest/logging.py
+Line number range: 532 - 745
+Content:
+class LoggingPlugin:
+    """Attaches to the logging module and captures log messages for each test."""
+
+    def __init__(self, config: Config) -> None:
+        """Create a new plugin to capture log messages.
+
+        The formatter can be safely shared across all handlers so
+        create a single one for the entire test session here.
+        """
+        self._config = config
+
+        # Report logging.
+        self.formatter = self._create_formatter(
+            get_option_ini(config, "log_format"),
+            get_option_ini(config, "log_date_format"),
+            get_option_ini(config, "log_auto_indent"),
+        )
+        self.log_level = get_log_level_for_setting(config, "log_level")
+        self.caplog_handler = LogCaptureHandler()
+        self.caplog_handler.setFormatter(self.formatter)
+        self.report_handler = LogCaptureHandler()
+        self.report_handler.setFormatter(self.formatter)
+
+        # File logging.
+        self.log_file_level = get_log_level_for_setting(config, "log_file_level")
+        log_file = get_option_ini(config, "log_file") or os.devnull
+        if log_file != os.devnull:
+            directory = os.path.dirname(os.path.abspath(log_file))
+            if not os.path.isdir(directory):
+                os.makedirs(directory)
+
+        self.log_file_handler = _FileHandler(log_file, mode="w", encoding="UTF-8")
+        log_file_format = get_option_ini(config, "log_file_format", "log_format")
+        log_file_date_format = get_option_ini(
+            config, "log_file_date_format", "log_date_format"
+        )
+
+        log_file_formatter = logging.Formatter(
+            log_file_format, datefmt=log_file_date_format
+        )
+        self.log_file_handler.setFormatter(log_file_formatter)
+
+        # CLI/live logging.
+        self.log_cli_level = get_log_level_for_setting(
+            config, "log_cli_level", "log_level"
+        )
+        if self._log_cli_enabled():
+            terminal_reporter = config.pluginmanager.get_plugin("terminalreporter")
+            capture_manager = config.pluginmanager.get_plugin("capturemanager")
+            # if capturemanager plugin is disabled, live logging still works.
+            self.log_cli_handler: Union[
+                _LiveLoggingStreamHandler, _LiveLoggingNullHandler
+            ] = _LiveLoggingStreamHandler(terminal_reporter, capture_manager)
+        else:
+            self.log_cli_handler = _LiveLoggingNullHandler()
+        log_cli_formatter = self._create_formatter(
+            get_option_ini(config, "log_cli_format", "log_format"),
+            get_option_ini(config, "log_cli_date_format", "log_date_format"),
+            get_option_ini(config, "log_auto_indent"),
+        )
+        self.log_cli_handler.setFormatter(log_cli_formatter)
+
+    def _create_formatter(self, log_format, log_date_format, auto_indent):
+        # Color option doesn't exist if terminal plugin is disabled.
+        color = getattr(self._config.option, "color", "no")
+        if color != "no" and ColoredLevelFormatter.LEVELNAME_FMT_REGEX.search(
+            log_format
+        ):
+            formatter: logging.Formatter = ColoredLevelFormatter(
+                create_terminal_writer(self._config), log_format, log_date_format
+            )
+        else:
+            formatter = logging.Formatter(log_format, log_date_format)
+
+        formatter._style = PercentStyleMultiline(
+            formatter._style._fmt, auto_indent=auto_indent
+        )
+
+        return formatter
+
+    def set_log_path(self, fname: str) -> None:
+        """Set the filename parameter for Logging.FileHandler().
+
+        Creates parent directory if it does not exist.
+
+        .. warning::
+            This is an experimental API.
+        """
+        fpath = Path(fname)
+
+        if not fpath.is_absolute():
+            fpath = self._config.rootpath / fpath
+
+        if not fpath.parent.exists():
+            fpath.parent.mkdir(exist_ok=True, parents=True)
+
+        # https://github.com/python/mypy/issues/11193
+        stream: io.TextIOWrapper = fpath.open(mode="w", encoding="UTF-8")  # type: ignore[assignment]
+        old_stream = self.log_file_handler.setStream(stream)
+        if old_stream:
+            old_stream.close()
+
+    def _log_cli_enabled(self):
+        """Return whether live logging is enabled."""
+        enabled = self._config.getoption(
+            "--log-cli-level"
+        ) is not None or self._config.getini("log_cli")
+        if not enabled:
+            return False
+
+        terminal_reporter = self._config.pluginmanager.get_plugin("terminalreporter")
+        if terminal_reporter is None:
+            # terminal reporter is disabled e.g. by pytest-xdist.
+            return False
+
+        return True
+
+    @hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_sessionstart(self) -> Generator[None, None, None]:
+        self.log_cli_handler.set_when("sessionstart")
+
+        with catching_logs(self.log_cli_handler, level=self.log_cli_level):
+            with catching_logs(self.log_file_handler, level=self.log_file_level):
+                yield
+
+    @hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_collection(self) -> Generator[None, None, None]:
+        self.log_cli_handler.set_when("collection")
+
+        with catching_logs(self.log_cli_handler, level=self.log_cli_level):
+            with catching_logs(self.log_file_handler, level=self.log_file_level):
+                yield
+
+    @hookimpl(hookwrapper=True)
+    def pytest_runtestloop(self, session: Session) -> Generator[None, None, None]:
+        if session.config.option.collectonly:
+            yield
+            return
+
+        if self._log_cli_enabled() and self._config.getoption("verbose") < 1:
+            # The verbose flag is needed to avoid messy test progress output.
+            self._config.option.verbose = 1
+
+        with catching_logs(self.log_cli_handler, level=self.log_cli_level):
+            with catching_logs(self.log_file_handler, level=self.log_file_level):
+                yield  # Run all the tests.
+
+    @hookimpl
+    def pytest_runtest_logstart(self) -> None:
+        self.log_cli_handler.reset()
+        self.log_cli_handler.set_when("start")
+
+    @hookimpl
+    def pytest_runtest_logreport(self) -> None:
+        self.log_cli_handler.set_when("logreport")
+
+    def _runtest_for(self, item: nodes.Item, when: str) -> Generator[None, None, None]:
+        """Implement the internals of the pytest_runtest_xxx() hooks."""
+        with catching_logs(
+            self.caplog_handler,
+            level=self.log_level,
+        ) as caplog_handler, catching_logs(
+            self.report_handler,
+            level=self.log_level,
+        ) as report_handler:
+            caplog_handler.reset()
+            report_handler.reset()
+            item.stash[caplog_records_key][when] = caplog_handler.records
+            item.stash[caplog_handler_key] = caplog_handler
+
+            yield
+
+            log = report_handler.stream.getvalue().strip()
+            item.add_report_section(when, "log", log)
+
+    @hookimpl(hookwrapper=True)
+    def pytest_runtest_setup(self, item: nodes.Item) -> Generator[None, None, None]:
+        self.log_cli_handler.set_when("setup")
+
+        empty: Dict[str, List[logging.LogRecord]] = {}
+        item.stash[caplog_records_key] = empty
+        yield from self._runtest_for(item, "setup")
+
+    @hookimpl(hookwrapper=True)
+    def pytest_runtest_call(self, item: nodes.Item) -> Generator[None, None, None]:
+        self.log_cli_handler.set_when("call")
+
+        yield from self._runtest_for(item, "call")
+
+    @hookimpl(hookwrapper=True)
+    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None, None, None]:
+        self.log_cli_handler.set_when("teardown")
+
+        yield from self._runtest_for(item, "teardown")
+        del item.stash[caplog_records_key]
+        del item.stash[caplog_handler_key]
+
+    @hookimpl
+    def pytest_runtest_logfinish(self) -> None:
+        self.log_cli_handler.set_when("finish")
+
+    @hookimpl(hookwrapper=True, tryfirst=True)
+    def pytest_sessionfinish(self) -> Generator[None, None, None]:
+        self.log_cli_handler.set_when("sessionfinish")
+
+        with catching_logs(self.log_cli_handler, level=self.log_cli_level):
+            with catching_logs(self.log_file_handler, level=self.log_file_level):
+                yield
+
+    @hookimpl
+    def pytest_unconfigure(self) -> None:
+        # Close the FileHandler explicitly.
+        # (logging.shutdown might have lost the weakref?!)
+        self.log_file_handler.close()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-23 09:51:35,515 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asked for the implementation of the `_runtest_for` function.\n2. Extended relevance:\n   - This method is called by the other requested functions (`pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`) and contains the core logic for capturing logs during a specific test phase (`when`). It sets up the `caplog_handler` and `report_handler` to capture logs for the item's stash.", relative_path='src/_pytest/logging.py', start_line=697, end_line=714), ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asked for the implementation of the `pytest_runtest_setup` function.\n2. Extended relevance:\n   - This hook wrapper manages the logging for the 'setup' phase of a test. It initializes the log record storage for the test item and then calls `_runtest_for` to handle the actual log capturing.", relative_path='src/_pytest/logging.py', start_line=716, end_line=722), ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asked for the implementation of the `pytest_runtest_call` function.\n2. Extended relevance:\n   - This hook wrapper manages the logging for the 'call' (execution) phase of a test. It delegates to `_runtest_for` to perform the log capturing for this phase.", relative_path='src/_pytest/logging.py', start_line=724, end_line=728), ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly asked for the implementation of the `pytest_runtest_teardown` function.\n2. Extended relevance:\n   - This hook wrapper manages the logging for the 'teardown' phase of a test. It calls `_runtest_for` to capture logs and then cleans up the logging-related data from the test item's stash.", relative_path='src/_pytest/logging.py', start_line=730, end_line=736)]
+2025-12-23 09:51:35,517 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 4 contexts to memory for query: Please provide the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions from `src/_pytest/logging.py`.
+2025-12-23 09:51:35,517 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-23 09:51:35,517 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-23 09:51:35,518 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 4 new contexts to 1 existing contexts
+2025-12-23 09:51:35,518 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 5 total contexts (removed 0 duplicates)
+2025-12-23 09:51:35,518 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE
+|   |   ├── 1_bug_report.md
+|   |   ├── 2_feature_request.md
+|   |   └── config.yml
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   ├── dependabot.yml
+|   └── workflows
+|       ├── backport.yml
+|       ├── deploy.yml
+|       ├── prepare-release-pr.yml
+|       ├── test.yml
+|       └── update-plugin-list.yml
+├── .pre-commit-config.yaml
+├── .readthedocs.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   ├── skip.py
+|   ├── unit_test.py
+|   └── xunit.py
+├── changelog
+|   ├── 7337.improvement.rst
+|   ├── 8508.improvement.rst
+|   ├── 8646.improvement.rst
+|   ├── 9741.improvement.rst
+|   ├── 9742.improvement.rst
+|   ├── 9823.improvement.rst
+|   ├── 9873.improvement.rst
+|   ├── 9883.improvement.rst
+|   ├── 9897.feature.rst
+|   ├── 9906.trivial.rst
+|   ├── 9910.trivial.rst
+|   ├── 9917.bugfix.rst
+|   ├── 9920.improvement.rst
+|   ├── 9984.trivial.rst
+|   ├── 9987.improvement.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── layout.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   ├── release-6.0.0.rst
+|       |   ├── release-6.0.0rc1.rst
+|       |   ├── release-6.0.1.rst
+|       |   ├── release-6.0.2.rst
+|       |   ├── release-6.1.0.rst
+|       |   ├── release-6.1.1.rst
+|       |   ├── release-6.1.2.rst
+|       |   ├── release-6.2.0.rst
+|       |   ├── release-6.2.1.rst
+|       |   ├── release-6.2.2.rst
+|       |   ├── release-6.2.3.rst
+|       |   ├── release-6.2.4.rst
+|       |   ├── release-6.2.5.rst
+|       |   ├── release-7.0.0.rst
+|       |   ├── release-7.0.0rc1.rst
+|       |   ├── release-7.0.1.rst
+|       |   ├── release-7.1.0.rst
+|       |   ├── release-7.1.1.rst
+|       |   ├── release-7.1.2.rst
+|       |   └── sprint2016.rst
+|       ├── backwards-compatibility.rst
+|       ├── builtin.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   ├── test_fixtures_order_autouse.py
+|       |   |   ├── test_fixtures_order_autouse_multiple_scopes.py
+|       |   |   ├── test_fixtures_order_autouse_temp_effects.py
+|       |   |   ├── test_fixtures_order_dependencies.py
+|       |   |   ├── test_fixtures_order_scope.py
+|       |   |   └── test_fixtures_request_different_scope.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── explanation
+|       |   ├── anatomy.rst
+|       |   ├── fixtures.rst
+|       |   ├── flaky.rst
+|       |   ├── goodpractices.rst
+|       |   ├── index.rst
+|       |   └── pythonpath.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── historical-notes.rst
+|       ├── history.rst
+|       ├── how-to
+|       |   ├── assert.rst
+|       |   ├── bash-completion.rst
+|       |   ├── cache.rst
+|       |   ├── capture-stdout-stderr.rst
+|       |   ├── capture-warnings.rst
+|       |   ├── doctest.rst
+|       |   ├── existingtestsuite.rst
+|       |   ├── failures.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── logging.rst
+|       |   ├── mark.rst
+|       |   ├── monkeypatch.rst
+|       |   ├── nose.rst
+|       |   ├── output.rst
+|       |   ├── parametrize.rst
+|       |   ├── plugins.rst
+|       |   ├── skipping.rst
+|       |   ├── tmp_path.rst
+|       |   ├── unittest.rst
+|       |   ├── usage.rst
+|       |   ├── writing_hook_functions.rst
+|       |   ├── writing_plugins.rst
+|       |   └── xunit_setup.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── naming20.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── recwarn.rst
+|       ├── reference
+|       |   ├── customize.rst
+|       |   ├── exit-codes.rst
+|       |   ├── fixtures.rst
+|       |   ├── index.rst
+|       |   ├── plugin_list.rst
+|       |   └── reference.rst
+|       ├── requirements.txt
+|       ├── sponsor.rst
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── prepare-release-pr.py
+|   ├── publish-gh-release-notes.py
+|   ├── release.major.rst
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.pre.rst
+|   ├── release.py
+|   ├── towncrier-draft-to-file.py
+|   └── update-plugin-list.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── compat.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── legacypath.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── pytester_assertions.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── python_path.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── runner.py
+|   |   ├── scope.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stash.py
+|   |   ├── stepwise.py
+|   |   ├── terminal.py
+|   |   ├── threadexception.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── unraisableexception.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       └── __main__.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── __init__.py
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   ├── test_compare_dataclasses_with_custom_eq.py
+    |   |   ├── test_compare_initvar.py
+    |   |   ├── test_compare_recursive_dataclasses.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── doctest
+    |   |   └── main_py
+    |   |       ├── __main__.py
+    |   |       └── test_normal_module.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmp_path_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   ├── test_unittest_asynctest.py
+    |   |   └── test_unittest_plain_async.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── plugins_integration
+    |   ├── README.rst
+    |   ├── bdd_wallet.py
+    |   ├── django_settings.py
+    |   ├── pytest_anyio_integration.py
+    |   ├── pytest_asyncio_integration.py
+    |   ├── pytest_mock_integration.py
+    |   ├── pytest_trio_integration.py
+    |   ├── pytest_twisted_integration.py
+    |   ├── requirements.txt
+    |   └── simple_integration.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_findpaths.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_legacypath.py
+    ├── test_link_resolve.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_python_path.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_scope.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stash.py
+    ├── test_stepwise.py
+    ├── test_terminal.py
+    ├── test_threadexception.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_unraisableexception.py
+    ├── test_warning_types.py
+    ├── test_warnings.py
+    └── typing_checks.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: caplog.get_records and caplog.clear conflict
+
+Description: # Description
+
+`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.
+
+During test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.
+
+# Reproductive example
+```python
+import logging
+
+def test(caplog) -> None:
+    def verify_consistency() -> None:
+        assert caplog.get_records("call") == caplog.records
+
+    verify_consistency()
+    logging.warning("test")
+    verify_consistency()
+    caplog.clear()
+    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, "test">] == []
+```
+
+# Environment details
+Arch Linux, Python 3.9.10:
+```
+Package    Version
+---------- -------
+attrs      21.4.0
+iniconfig  1.1.1
+packaging  21.3
+pip        22.0.4
+pluggy     1.0.0
+py         1.11.0
+pyparsing  3.0.8
+pytest     7.1.1
+setuptools 60.10.0
+tomli      2.0.1
+wheel      0.37.1
+```
+
+Patch information:
+diff --git a/doc/en/how-to/logging.rst b/doc/en/how-to/logging.rst
+index c99835a2b..81c93b9b6 100644
+--- a/doc/en/how-to/logging.rst
++++ b/doc/en/how-to/logging.rst
+@@ -129,7 +129,7 @@ severity and message:
+ 
+         assert caplog.record_tuples == [("root", logging.INFO, "boo arg")]
+ 
+-You can call ``caplog.clear()`` to reset the captured log records in a test:
++You can call ``caplog.clear()`` to reset the captured log records in a test.
+ 
+ .. code-block:: python
+ 
+@@ -139,6 +139,8 @@ You can call ``caplog.clear()`` to reset the captured log records in a test:
+         your_test_method()
+         assert ["Foo"] == [rec.message for rec in caplog.records]
+ 
++Calling ``caplog.clear()`` affects only the current stage (``setup``, ``call``, or ``teardown``). It clears the records and captured text in-place, so that references obtained via ``caplog.get_records(when)`` for the current stage remain consistent with ``caplog.records`` and will also be cleared. Records from previous stages are not modified.
++
+ 
+ The ``caplog.records`` attribute contains records from the current stage only, so
+ inside the ``setup`` phase it contains only setup logs, same with the ``call`` and
+diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py
+index a4f4214b1..458d76b50 100644
+--- a/src/_pytest/logging.py
++++ b/src/_pytest/logging.py
+@@ -342,6 +342,13 @@ class LogCaptureHandler(logging_StreamHandler):
+         super().emit(record)
+ 
+     def reset(self) -> None:
++        """Replace records and stream with new instances.
++
++        Intended for internal use at test phase boundaries to establish a new
++        list object per phase. For clearing during a phase while keeping
++        references (e.g. from caplog.get_records(when)) consistent, use
++        LogCaptureFixture.clear().
++        """
+         self.records = []
+         self.stream = StringIO()
+ 
+@@ -439,8 +446,28 @@ class LogCaptureFixture:
+         return [r.getMessage() for r in self.records]
+ 
+     def clear(self) -> None:
+-        """Reset the list of log records and the captured log text."""
+-        self.handler.reset()
++        """Reset the list of log records and the captured log text.
++
++        This clears the current phase's records and text in-place so that
++        references obtained via get_records(when) remain consistent with
++        caplog.records during the same phase.
++        """
++        # Clear records in-place to preserve the list object identity stored in
++        # item.stash[caplog_records_key][when].
++        del self.handler.records[:]
++        # Clear the existing StringIO stream without replacing the object to
++        # preserve any external references.
++        stream = self.handler.stream
++        if hasattr(stream, "seek") and hasattr(stream, "truncate"):
++            try:
++                stream.seek(0)
++                stream.truncate(0)
++            except Exception:
++                # Fallback: replace with a new stream if in-place clearing fails.
++                # This should be rare, but ensures clear() does not raise.
++                self.handler.stream = StringIO()
++        else:
++            self.handler.stream = StringIO()
+ 
+     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+         """Set the level of a logger for the duration of a test.
+
+
+Find all relevant source code context needed to understand and fix this issue.
+Focus on production code (ignore test files) and follow these steps:
+1. Identify key components mentioned in the issue, especially from the error message(functions, classes, types, etc.)
+2. Find their complete implementations and class definitions
+3. Include related code from the same module that affects the behavior
+4. Follow imports to find dependent code that directly impacts the issue
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `src/_pytest/logging.py`.
+Extra Requirements: 
+Purpose: I need this file to understand the interaction between `caplog.get_records` and `caplog.clear` and why the provided patch is the correct solution.
+
+Previous refined query 2:
+Essential Query: Please provide the implementations of the `pytest_runtest_setup`, `pytest_runtest_call`, `pytest_runtest_teardown`, and `_runtest_for` functions from `src/_pytest/logging.py`.
+Extra Requirements: 
+Purpose: This will reveal how log records for different test phases are managed and why the original `clear` method causes inconsistencies, thus explaining the necessity of the patch.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: src/_pytest/logging.py
+Line number range: 1 - 500
+Content:
+1. """Access and control log capturing."""
+2. import io
+3. import logging
+4. import os
+5. import re
+6. from contextlib import contextmanager
+7. from contextlib import nullcontext
+8. from io import StringIO
+9. from pathlib import Path
+10. from typing import AbstractSet
+11. from typing import Dict
+12. from typing import Generator
+13. from typing import List
+14. from typing import Mapping
+15. from typing import Optional
+16. from typing import Tuple
+17. from typing import TYPE_CHECKING
+18. from typing import TypeVar
+19. from typing import Union
+20. 
+21. from _pytest import nodes
+22. from _pytest._io import TerminalWriter
+23. from _pytest.capture import CaptureManager
+24. from _pytest.compat import final
+25. from _pytest.config import _strtobool
+26. from _pytest.config import Config
+27. from _pytest.config import create_terminal_writer
+28. from _pytest.config import hookimpl
+29. from _pytest.config import UsageError
+30. from _pytest.config.argparsing import Parser
+31. from _pytest.deprecated import check_ispytest
+32. from _pytest.fixtures import fixture
+33. from _pytest.fixtures import FixtureRequest
+34. from _pytest.main import Session
+35. from _pytest.stash import StashKey
+36. from _pytest.terminal import TerminalReporter
+37. 
+38. if TYPE_CHECKING:
+39.     logging_StreamHandler = logging.StreamHandler[StringIO]
+40. else:
+41.     logging_StreamHandler = logging.StreamHandler
+42. 
+43. 
+44. DEFAULT_LOG_FORMAT = "%(levelname)-8s %(name)s:%(filename)s:%(lineno)d %(message)s"
+45. DEFAULT_LOG_DATE_FORMAT = "%H:%M:%S"
+46. _ANSI_ESCAPE_SEQ = re.compile(r"\x1b\[[\d;]+m")
+47. caplog_handler_key = StashKey["LogCaptureHandler"]()
+48. caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()
+49. 
+50. 
+51. def _remove_ansi_escape_sequences(text: str) -> str:
+52.     return _ANSI_ESCAPE_SEQ.sub("", text)
+53. 
+54. 
+55. class ColoredLevelFormatter(logging.Formatter):
+56.     """A logging formatter which colorizes the %(levelname)..s part of the
+57.     log format passed to __init__."""
+58. 
+59.     LOGLEVEL_COLOROPTS: Mapping[int, AbstractSet[str]] = {
+60.         logging.CRITICAL: {"red"},
+61.         logging.ERROR: {"red", "bold"},
+62.         logging.WARNING: {"yellow"},
+63.         logging.WARN: {"yellow"},
+64.         logging.INFO: {"green"},
+65.         logging.DEBUG: {"purple"},
+66.         logging.NOTSET: set(),
+67.     }
+68.     LEVELNAME_FMT_REGEX = re.compile(r"%\(levelname\)([+-.]?\d*(?:\.\d+)?s)")
+69. 
+70.     def __init__(self, terminalwriter: TerminalWriter, *args, **kwargs) -> None:
+71.         super().__init__(*args, **kwargs)
+72.         self._terminalwriter = terminalwriter
+73.         self._original_fmt = self._style._fmt
+74.         self._level_to_fmt_mapping: Dict[int, str] = {}
+75. 
+76.         for level, color_opts in self.LOGLEVEL_COLOROPTS.items():
+77.             self.add_color_level(level, *color_opts)
+78. 
+79.     def add_color_level(self, level: int, *color_opts: str) -> None:
+80.         """Add or update color opts for a log level.
+81. 
+82.         :param level:
+83.             Log level to apply a style to, e.g. ``logging.INFO``.
+84.         :param color_opts:
+85.             ANSI escape sequence color options. Capitalized colors indicates
+86.             background color, i.e. ``'green', 'Yellow', 'bold'`` will give bold
+87.             green text on yellow background.
+88. 
+89.         .. warning::
+90.             This is an experimental API.
+91.         """
+92. 
+93.         assert self._fmt is not None
+94.         levelname_fmt_match = self.LEVELNAME_FMT_REGEX.search(self._fmt)
+95.         if not levelname_fmt_match:
+96.             return
+97.         levelname_fmt = levelname_fmt_match.group()
+98. 
+99.         formatted_levelname = levelname_fmt % {"levelname": logging.getLevelName(level)}
+100. 
+101.         # add ANSI escape sequences around the formatted levelname
+102.         color_kwargs = {name: True for name in color_opts}
+103.         colorized_formatted_levelname = self._terminalwriter.markup(
+104.             formatted_levelname, **color_kwargs
+105.         )
+106.         self._level_to_fmt_mapping[level] = self.LEVELNAME_FMT_REGEX.sub(
+107.             colorized_formatted_levelname, self._fmt
+108.         )
+109. 
+110.     def format(self, record: logging.LogRecord) -> str:
+111.         fmt = self._level_to_fmt_mapping.get(record.levelno, self._original_fmt)
+112.         self._style._fmt = fmt
+113.         return super().format(record)
+114. 
+115. 
+116. class PercentStyleMultiline(logging.PercentStyle):
+117.     """A logging style with special support for multiline messages.
+118. 
+119.     If the message of a record consists of multiple lines, this style
+120.     formats the message as if each line were logged separately.
+121.     """
+122. 
+123.     def __init__(self, fmt: str, auto_indent: Union[int, str, bool, None]) -> None:
+124.         super().__init__(fmt)
+125.         self._auto_indent = self._get_auto_indent(auto_indent)
+126. 
+127.     @staticmethod
+128.     def _get_auto_indent(auto_indent_option: Union[int, str, bool, None]) -> int:
+129.         """Determine the current auto indentation setting.
+130. 
+131.         Specify auto indent behavior (on/off/fixed) by passing in
+132.         extra={"auto_indent": [value]} to the call to logging.log() or
+133.         using a --log-auto-indent [value] command line or the
+134.         log_auto_indent [value] config option.
+135. 
+136.         Default behavior is auto-indent off.
+137. 
+138.         Using the string "True" or "on" or the boolean True as the value
+139.         turns auto indent on, using the string "False" or "off" or the
+140.         boolean False or the int 0 turns it off, and specifying a
+141.         positive integer fixes the indentation position to the value
+142.         specified.
+143. 
+144.         Any other values for the option are invalid, and will silently be
+145.         converted to the default.
+146. 
+147.         :param None|bool|int|str auto_indent_option:
+148.             User specified option for indentation from command line, config
+149.             or extra kwarg. Accepts int, bool or str. str option accepts the
+150.             same range of values as boolean config options, as well as
+151.             positive integers represented in str form.
+152. 
+153.         :returns:
+154.             Indentation value, which can be
+155.             -1 (automatically determine indentation) or
+156.             0 (auto-indent turned off) or
+157.             >0 (explicitly set indentation position).
+158.         """
+159. 
+160.         if auto_indent_option is None:
+161.             return 0
+162.         elif isinstance(auto_indent_option, bool):
+163.             if auto_indent_option:
+164.                 return -1
+165.             else:
+166.                 return 0
+167.         elif isinstance(auto_indent_option, int):
+168.             return int(auto_indent_option)
+169.         elif isinstance(auto_indent_option, str):
+170.             try:
+171.                 return int(auto_indent_option)
+172.             except ValueError:
+173.                 pass
+174.             try:
+175.                 if _strtobool(auto_indent_option):
+176.                     return -1
+177.             except ValueError:
+178.                 return 0
+179. 
+180.         return 0
+181. 
+182.     def format(self, record: logging.LogRecord) -> str:
+183.         if "\n" in record.message:
+184.             if hasattr(record, "auto_indent"):
+185.                 # Passed in from the "extra={}" kwarg on the call to logging.log().
+186.                 auto_indent = self._get_auto_indent(record.auto_indent)  # type: ignore[attr-defined]
+187.             else:
+188.                 auto_indent = self._auto_indent
+189. 
+190.             if auto_indent:
+191.                 lines = record.message.splitlines()
+192.                 formatted = self._fmt % {**record.__dict__, "message": lines[0]}
+193. 
+194.                 if auto_indent < 0:
+195.                     indentation = _remove_ansi_escape_sequences(formatted).find(
+196.                         lines[0]
+197.                     )
+198.                 else:
+199.                     # Optimizes logging by allowing a fixed indentation.
+200.                     indentation = auto_indent
+201.                 lines[0] = formatted
+202.                 return ("\n" + " " * indentation).join(lines)
+203.         return self._fmt % record.__dict__
+204. 
+205. 
+206. def get_option_ini(config: Config, *names: str):
+207.     for name in names:
+208.         ret = config.getoption(name)  # 'default' arg won't work as expected
+209.         if ret is None:
+210.             ret = config.getini(name)
+211.         if ret:
+212.             return ret
+213. 
+214. 
+215. def pytest_addoption(parser: Parser) -> None:
+216.     """Add options to control log capturing."""
+217.     group = parser.getgroup("logging")
+218. 
+219.     def add_option_ini(option, dest, default=None, type=None, **kwargs):
+220.         parser.addini(
+221.             dest, default=default, type=type, help="Default value for " + option
+222.         )
+223.         group.addoption(option, dest=dest, **kwargs)
+224. 
+225.     add_option_ini(
+226.         "--log-level",
+227.         dest="log_level",
+228.         default=None,
+229.         metavar="LEVEL",
+230.         help=(
+231.             "Level of messages to catch/display."
+232.             " Not set by default, so it depends on the root/parent log handler's"
+233.             ' effective level, where it is "WARNING" by default.'
+234.         ),
+235.     )
+236.     add_option_ini(
+237.         "--log-format",
+238.         dest="log_format",
+239.         default=DEFAULT_LOG_FORMAT,
+240.         help="Log format used by the logging module",
+241.     )
+242.     add_option_ini(
+243.         "--log-date-format",
+244.         dest="log_date_format",
+245.         default=DEFAULT_LOG_DATE_FORMAT,
+246.         help="Log date format used by the logging module",
+247.     )
+248.     parser.addini(
+249.         "log_cli",
+250.         default=False,
+251.         type="bool",
+252.         help='Enable log display during test run (also known as "live logging")',
+253.     )
+254.     add_option_ini(
+255.         "--log-cli-level", dest="log_cli_level", default=None, help="CLI logging level"
+256.     )
+257.     add_option_ini(
+258.         "--log-cli-format",
+259.         dest="log_cli_format",
+260.         default=None,
+261.         help="Log format used by the logging module",
+262.     )
+263.     add_option_ini(
+264.         "--log-cli-date-format",
+265.         dest="log_cli_date_format",
+266.         default=None,
+267.         help="Log date format used by the logging module",
+268.     )
+269.     add_option_ini(
+270.         "--log-file",
+271.         dest="log_file",
+272.         default=None,
+273.         help="Path to a file when logging will be written to",
+274.     )
+275.     add_option_ini(
+276.         "--log-file-level",
+277.         dest="log_file_level",
+278.         default=None,
+279.         help="Log file logging level",
+280.     )
+281.     add_option_ini(
+282.         "--log-file-format",
+283.         dest="log_file_format",
+284.         default=DEFAULT_LOG_FORMAT,
+285.         help="Log format used by the logging module",
+286.     )
+287.     add_option_ini(
+288.         "--log-file-date-format",
+289.         dest="log_file_date_format",
+290.         default=DEFAULT_LOG_DATE_FORMAT,
+291.         help="Log date format used by the logging module",
+292.     )
+293.     add_option_ini(
+294.         "--log-auto-indent",
+295.         dest="log_auto_indent",
+296.         default=None,
+297.         help="Auto-indent multiline messages passed to the logging module. Accepts true|on, false|off or an integer.",
+298.     )
+299. 
+300. 
+301. _HandlerType = TypeVar("_HandlerType", bound=logging.Handler)
+302. 
+303. 
+304. # Not using @contextmanager for performance reasons.
+305. class catching_logs:
+306.     """Context manager that prepares the whole logging machinery properly."""
+307. 
+308.     __slots__ = ("handler", "level", "orig_level")
+309. 
+310.     def __init__(self, handler: _HandlerType, level: Optional[int] = None) -> None:
+311.         self.handler = handler
+312.         self.level = level
+313. 
+314.     def __enter__(self):
+315.         root_logger = logging.getLogger()
+316.         if self.level is not None:
+317.             self.handler.setLevel(self.level)
+318.         root_logger.addHandler(self.handler)
+319.         if self.level is not None:
+320.             self.orig_level = root_logger.level
+321.             root_logger.setLevel(min(self.orig_level, self.level))
+322.         return self.handler
+323. 
+324.     def __exit__(self, type, value, traceback):
+325.         root_logger = logging.getLogger()
+326.         if self.level is not None:
+327.             root_logger.setLevel(self.orig_level)
+328.         root_logger.removeHandler(self.handler)
+329. 
+330. 
+331. class LogCaptureHandler(logging_StreamHandler):
+332.     """A logging handler that stores log records and the log text."""
+333. 
+334.     def __init__(self) -> None:
+335.         """Create a new log handler."""
+336.         super().__init__(StringIO())
+337.         self.records: List[logging.LogRecord] = []
+338. 
+339.     def emit(self, record: logging.LogRecord) -> None:
+340.         """Keep the log records in a list in addition to the log text."""
+341.         self.records.append(record)
+342.         super().emit(record)
+343. 
+344.     def reset(self) -> None:
+345.         self.records = []
+346.         self.stream = StringIO()
+347. 
+348.     def handleError(self, record: logging.LogRecord) -> None:
+349.         if logging.raiseExceptions:
+350.             # Fail the test if the log message is bad (emit failed).
+351.             # The default behavior of logging is to print "Logging error"
+352.             # to stderr with the call stack and some extra details.
+353.             # pytest wants to make such mistakes visible during testing.
+354.             raise
+355. 
+356. 
+357. @final
+358. class LogCaptureFixture:
+359.     """Provides access and control of log capturing."""
+360. 
+361.     def __init__(self, item: nodes.Node, *, _ispytest: bool = False) -> None:
+362.         check_ispytest(_ispytest)
+363.         self._item = item
+364.         self._initial_handler_level: Optional[int] = None
+365.         # Dict of log name -> log level.
+366.         self._initial_logger_levels: Dict[Optional[str], int] = {}
+367. 
+368.     def _finalize(self) -> None:
+369.         """Finalize the fixture.
+370. 
+371.         This restores the log levels changed by :meth:`set_level`.
+372.         """
+373.         # Restore log levels.
+374.         if self._initial_handler_level is not None:
+375.             self.handler.setLevel(self._initial_handler_level)
+376.         for logger_name, level in self._initial_logger_levels.items():
+377.             logger = logging.getLogger(logger_name)
+378.             logger.setLevel(level)
+379. 
+380.     @property
+381.     def handler(self) -> LogCaptureHandler:
+382.         """Get the logging handler used by the fixture.
+383. 
+384.         :rtype: LogCaptureHandler
+385.         """
+386.         return self._item.stash[caplog_handler_key]
+387. 
+388.     def get_records(self, when: str) -> List[logging.LogRecord]:
+389.         """Get the logging records for one of the possible test phases.
+390. 
+391.         :param str when:
+392.             Which test phase to obtain the records from. Valid values are: "setup", "call" and "teardown".
+393. 
+394.         :returns: The list of captured records at the given stage.
+395.         :rtype: List[logging.LogRecord]
+396. 
+397.         .. versionadded:: 3.4
+398.         """
+399.         return self._item.stash[caplog_records_key].get(when, [])
+400. 
+401.     @property
+402.     def text(self) -> str:
+403.         """The formatted log text."""
+404.         return _remove_ansi_escape_sequences(self.handler.stream.getvalue())
+405. 
+406.     @property
+407.     def records(self) -> List[logging.LogRecord]:
+408.         """The list of log records."""
+409.         return self.handler.records
+410. 
+411.     @property
+412.     def record_tuples(self) -> List[Tuple[str, int, str]]:
+413.         """A list of a stripped down version of log records intended
+414.         for use in assertion comparison.
+415. 
+416.         The format of the tuple is:
+417. 
+418.             (logger_name, log_level, message)
+419.         """
+420.         return [(r.name, r.levelno, r.getMessage()) for r in self.records]
+421. 
+422.     @property
+423.     def messages(self) -> List[str]:
+424.         """A list of format-interpolated log messages.
+425. 
+426.         Unlike 'records', which contains the format string and parameters for
+427.         interpolation, log messages in this list are all interpolated.
+428. 
+429.         Unlike 'text', which contains the output from the handler, log
+430.         messages in this list are unadorned with levels, timestamps, etc,
+431.         making exact comparisons more reliable.
+432. 
+433.         Note that traceback or stack info (from :func:`logging.exception` or
+434.         the `exc_info` or `stack_info` arguments to the logging functions) is
+435.         not included, as this is added by the formatter in the handler.
+436. 
+437.         .. versionadded:: 3.7
+438.         """
+439.         return [r.getMessage() for r in self.records]
+440. 
+441.     def clear(self) -> None:
+442.         """Reset the list of log records and the captured log text."""
+443.         self.handler.reset()
+444. 
+445.     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:
+446.         """Set the level of a logger for the duration of a test.
+447. 
+448.         .. versionchanged:: 3.4
+449.             The levels of the loggers changed by this function will be
+450.             restored to their initial values at the end of the test.
+451. 
+452.         :param int level: The level.
+453.         :param str logger: The logger to update. If not given, the root logger.
+454.         """
+455.         logger_obj = logging.getLogger(logger)
+456.         # Save the original log-level to restore it during teardown.
+457.         self._initial_logger_levels.setdefault(logger, logger_obj.level)
+458.         logger_obj.setLevel(level)
+459.         if self._initial_handler_level is None:
+460.             self._initial_handler_level = self.handler.level
+461.         self.handler.setLevel(level)
+462. 
+463.     @contextmanager
+464.     def at_level(
+465.         self, level: Union[int, str], logger: Optional[str] = None
+466.     ) -> Generator[None, None, None]:
+467.         """Context manager that sets the level for capturing of logs. After
+468.         the end of the 'with' statement the level is restored to its original
+469.         value.
+470. 
+471.         :param int level: The level.
+472.         :param str logger: The logger to update. If not given, the root logger.
+473.         """
+474.         logger_obj = logging.getLogger(logger)
+475.         orig_level = logger_obj.level
+476.         logger_obj.setLevel(level)
+477.         handler_orig_level = self.handler.level
+478.         self.handler.setLevel(level)
+479.         try:
+480.             yield
+481.         finally:
+482.             logger_obj.setLevel(orig_level)
+483.             self.handler.setLevel(handler_orig_level)
+484. 
+485. 
+486. @fixture
+487. def caplog(request: FixtureRequest) -> Generator[LogCaptureFixture, None, None]:
+488.     """Access and control log capturing.
+489. 
+490.     Captured logs are available through the following properties/methods::
+491. 
+492.     * caplog.messages        -> list of format-interpolated log messages
+493.     * caplog.text            -> string containing formatted log output
+494.     * caplog.records         -> list of logging.LogRecord instances
+495.     * caplog.record_tuples   -> list of (logger_name, level, message) tuples
+496.     * caplog.clear()         -> clear captured records and formatted log output string
+497.     """
+498.     result = LogCaptureFixture(request.node, _ispytest=True)
+499.     yield result
+500.     result._finalize()
+
+
+File: src/_pytest/logging.py
+Line number range: 697 - 714
+Content:
+697.             caplog_handler.reset()
+698.             report_handler.reset()
+699.             item.stash[caplog_records_key][when] = caplog_handler.records
+700.             item.stash[caplog_handler_key] = caplog_handler
+701. 
+702.             yield
+703. 
+704.             log = report_handler.stream.getvalue().strip()
+705.             item.add_report_section(when, "log", log)
+706. 
+707.     @hookimpl(hookwrapper=True)
+708.     def pytest_runtest_setup(self, item: nodes.Item) -> Generator[None, None, None]:
+709.         self.log_cli_handler.set_when("setup")
+710. 
+711.         empty: Dict[str, List[logging.LogRecord]] = {}
+712.         item.stash[caplog_records_key] = empty
+713.         yield from self._runtest_for(item, "setup")
+714. 
+
+
+File: src/_pytest/logging.py
+Line number range: 716 - 722
+Content:
+716.     def pytest_runtest_call(self, item: nodes.Item) -> Generator[None, None, None]:
+717.         self.log_cli_handler.set_when("call")
+718. 
+719.         yield from self._runtest_for(item, "call")
+720. 
+721.     @hookimpl(hookwrapper=True)
+722.     def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None, None, None]:
+
+
+File: src/_pytest/logging.py
+Line number range: 724 - 728
+Content:
+724. 
+725.         yield from self._runtest_for(item, "teardown")
+726.         del item.stash[caplog_records_key]
+727.         del item.stash[caplog_handler_key]
+728. 
+
+
+File: src/_pytest/logging.py
+Line number range: 730 - 736
+Content:
+730.     def pytest_runtest_logfinish(self) -> None:
+731.         self.log_cli_handler.set_when("finish")
+732. 
+733.     @hookimpl(hookwrapper=True, tryfirst=True)
+734.     def pytest_sessionfinish(self) -> Generator[None, None, None]:
+735.         self.log_cli_handler.set_when("sessionfinish")
+736. 
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-23 09:51:54,220 - thread-131122390365888.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='The provided context is sufficient to understand the issue. The code in `src/_pytest/logging.py` shows the implementation of `LogCaptureFixture`, `LogCaptureHandler`, and the test hooks. I can see how `_runtest_for` stashes a reference to the `records` list for each phase. I can also see that `caplog.clear()` calls `handler.reset()`, which creates a new list, thus breaking the stashed reference. This is enough to understand why the inconsistency occurs and why the patch, which clears the list in-place, is the correct solution. No further context is needed.' query='' extra_requirements='' purpose=''
+2025-12-23 09:51:54,221 - thread-131122390365888.prometheus_context_collector - INFO - Successfully retrieved 5 context snippets

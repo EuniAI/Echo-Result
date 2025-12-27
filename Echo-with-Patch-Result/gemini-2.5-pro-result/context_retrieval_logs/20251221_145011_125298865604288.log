@@ -1,0 +1,1419 @@
+2025-12-21 14:50:11,579 - thread-125298865604288.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: requests.get is ALWAYS sending content length
+
+Description: Hi,
+
+It seems like that request.get always adds 'content-length' header to the request.
+I think that the right behavior is not to add this header automatically in GET requests or add the possibility to not send it.
+
+For example http://amazon.com returns 503 for every get request that contains 'content-length' header.
+
+Thanks,
+
+Oren
+
+
+Patch information:
+diff --git a/requests/models.py b/requests/models.py
+index 99260453..422359f7 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -386,13 +386,42 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         self.body = body
+ 
+     def prepare_content_length(self, body):
+-        self.headers['Content-Length'] = '0'
++        # Only set Content-Length when appropriate.
++        # If body length is known, set it (including 0). Otherwise:
++        # - For GET/HEAD with no body, do not set Content-Length.
++        # - For other methods with no body, set Content-Length: 0 if not already provided.
++        length = None
+         if hasattr(body, 'seek') and hasattr(body, 'tell'):
++            try:
++                pos = body.tell()
++            except Exception:
++                pos = None
+             body.seek(0, 2)
+-            self.headers['Content-Length'] = str(body.tell())
+-            body.seek(0, 0)
++            length = body.tell()
++            try:
++                body.seek(0 if pos is None else pos, 0)
++            except Exception:
++                body.seek(0, 0)
+         elif body is not None:
+-            self.headers['Content-Length'] = str(len(body))
++            try:
++                length = len(body)
++            except (TypeError, AttributeError):
++                length = None
++
++        if length is not None:
++            # Prefer the computed length when available.
++            self.headers['Content-Length'] = str(length)
++            return
++
++        # No body or unknown length
++        if body is None:
++            method = (self.method or '').upper() if self.method else ''
++            if method in ('GET', 'HEAD'):
++                # Do not set Content-Length for GET/HEAD with no body
++                return
++            # For other methods, explicitly set zero if not provided.
++            if 'content-length' not in self.headers:
++                self.headers['Content-Length'] = '0'
+ 
+     def prepare_auth(self, auth):
+         """Prepares the given HTTP auth data."""
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-21 14:50:11,633 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── .travis.yml
+├── AUTHORS.rst
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── support.rst
+|   |   └── updates.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── internals.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── __init__.py
+|   |   ├── charade
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   └── ntlmpool.py
+|   |       ├── exceptions.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: requests.get is ALWAYS sending content length
+
+Description: Hi,
+
+It seems like that request.get always adds 'content-length' header to the request.
+I think that the right behavior is not to add this header automatically in GET requests or add the possibility to not send it.
+
+For example http://amazon.com returns 503 for every get request that contains 'content-length' header.
+
+Thanks,
+
+Oren
+
+
+Patch information:
+diff --git a/requests/models.py b/requests/models.py
+index 99260453..422359f7 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -386,13 +386,42 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         self.body = body
+ 
+     def prepare_content_length(self, body):
+-        self.headers['Content-Length'] = '0'
++        # Only set Content-Length when appropriate.
++        # If body length is known, set it (including 0). Otherwise:
++        # - For GET/HEAD with no body, do not set Content-Length.
++        # - For other methods with no body, set Content-Length: 0 if not already provided.
++        length = None
+         if hasattr(body, 'seek') and hasattr(body, 'tell'):
++            try:
++                pos = body.tell()
++            except Exception:
++                pos = None
+             body.seek(0, 2)
+-            self.headers['Content-Length'] = str(body.tell())
+-            body.seek(0, 0)
++            length = body.tell()
++            try:
++                body.seek(0 if pos is None else pos, 0)
++            except Exception:
++                body.seek(0, 0)
+         elif body is not None:
+-            self.headers['Content-Length'] = str(len(body))
++            try:
++                length = len(body)
++            except (TypeError, AttributeError):
++                length = None
++
++        if length is not None:
++            # Prefer the computed length when available.
++            self.headers['Content-Length'] = str(length)
++            return
++
++        # No body or unknown length
++        if body is None:
++            method = (self.method or '').upper() if self.method else ''
++            if method in ('GET', 'HEAD'):
++                # Do not set Content-Length for GET/HEAD with no body
++                return
++            # For other methods, explicitly set zero if not provided.
++            if 'content-length' not in self.headers:
++                self.headers['Content-Length'] = '0'
+ 
+     def prepare_auth(self, auth):
+         """Prepares the given HTTP auth data."""
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 14:50:20,937 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user wants to find relevant test cases for a bug related to the 'Content-Length' header in GET requests. The file `test_requests.py` is the most likely location for these tests, but its content is not available in the current context. To find the required test cases, I need to examine the code within this test file." query='Please provide the full content of the `test_requests.py` file.' extra_requirements='' purpose="I need to analyze the tests within `test_requests.py` to identify three test cases relevant to the handling of the 'Content-Length' header in HTTP requests, as described in the bug report."
+2025-12-21 14:50:20,939 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of the `test_requests.py` file.
+2025-12-21 14:50:20,939 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 14:50:20,939 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 14:50:20,940 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 14:50:20,940 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of the `test_requests.py` file.
+Purpose: I need to analyze the tests within `test_requests.py` to identify three test cases relevant to the handling of the 'Content-Length' header in HTTP requests, as described in the bug report.
+2025-12-21 14:50:24,173 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I will first locate the `test_requests.py` file and then retrieve its entire content. This will allow for a comprehensive analysis of all the tests within the file.' additional_kwargs={'function_call': {'name': 'find_file_node_with_basename', 'arguments': '{"basename": "test_requests.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2060, 'candidates_token_count': 50, 'total_token_count': 2265, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2060}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 50}], 'thoughts_token_count': 155, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.30757957458496094, 'model_name': 'gemini-2.5-pro'} id='run--7d04bada-bcfd-4b64-badb-fcfefc6f6218-0' tool_calls=[{'name': 'find_file_node_with_basename', 'args': {'basename': 'test_requests.py'}, 'id': '489dcbd5-3d2e-4f2c-b1c0-3a32fd067dc9', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2060, 'output_tokens': 50, 'total_tokens': 2265, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 155}}
+2025-12-21 14:50:26,248 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have located the `test_requests.py` file. Now, I will proceed to read the entire content of this file to provide you with the necessary information for your analysis.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "test_requests.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2164, 'candidates_token_count': 56, 'total_token_count': 2274, 'cached_content_token_count': 1457, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2164}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1457}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 56}], 'thoughts_token_count': 54}, 'finish_reason': 'STOP', 'avg_logprobs': -0.08962459223611015, 'model_name': 'gemini-2.5-pro'} id='run--22bd8fa8-567f-45c6-8f0a-275e7db852e0-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'test_requests.py'}, 'id': 'b076417e-7609-4012-b699-01516ffa0b3a', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2164, 'output_tokens': 56, 'total_tokens': 2274, 'input_token_details': {'cache_read': 1457}, 'output_token_details': {'reasoning': 54}}
+2025-12-21 14:50:28,623 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have successfully retrieved the entire content of the `test_requests.py` file. I will now proceed to search for occurrences of "Content-Length" within this file to pinpoint the test cases relevant to your bug report.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_basename', 'arguments': '{"basename": "test_requests.py", "text": "Content-Length"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6547, 'candidates_token_count': 73, 'total_token_count': 6677, 'cached_content_token_count': 1755, 'prompt_tokens_details': [{'modality': 1, 'token_count': 6547}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1755}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 73}], 'thoughts_token_count': 57}, 'finish_reason': 'STOP', 'avg_logprobs': -0.14265247240458448, 'model_name': 'gemini-2.5-pro'} id='run--11bdb1a0-ec88-4a79-9a0b-56a594c63f86-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_basename', 'args': {'basename': 'test_requests.py', 'text': 'Content-Length'}, 'id': 'd437e1ec-b5fc-4442-adb6-0eda4ea84e58', 'type': 'tool_call'}] usage_metadata={'input_tokens': 6547, 'output_tokens': 73, 'total_tokens': 6677, 'input_token_details': {'cache_read': 1755}, 'output_token_details': {'reasoning': 57}}
+2025-12-21 14:50:36,812 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the content of `test_requests.py` and an initial search for "Content-Length" yielded no direct results. I will now try a broader search for just "Length" to see if that reveals any relevant test cases where the header might be referenced with different casing or as part of a larger string.' additional_kwargs={'function_call': {'name': 'find_ast_node_with_text_in_file_with_basename', 'arguments': '{"basename": "test_requests.py", "text": "Length"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6650, 'candidates_token_count': 91, 'total_token_count': 7325, 'cached_content_token_count': 5255, 'prompt_tokens_details': [{'modality': 1, 'token_count': 6650}], 'cache_tokens_details': [{'modality': 1, 'token_count': 5255}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 91}], 'thoughts_token_count': 584}, 'finish_reason': 'STOP', 'avg_logprobs': -0.7987485613141742, 'model_name': 'gemini-2.5-pro'} id='run--12360059-3699-4b1a-b91e-07fb27bf5ef8-0' tool_calls=[{'name': 'find_ast_node_with_text_in_file_with_basename', 'args': {'basename': 'test_requests.py', 'text': 'Length'}, 'id': '76ec6bb8-c2d7-4c6e-9e44-13a356fde157', 'type': 'tool_call'}] usage_metadata={'input_tokens': 6650, 'output_tokens': 91, 'total_tokens': 7325, 'input_token_details': {'cache_read': 5255}, 'output_token_details': {'reasoning': 584}}
+2025-12-21 14:50:53,563 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='After retrieving the full content of `test_requests.py`, my searches for "Content-Length" and "Length" did not yield any direct results. I then manually analyzed the file\'s code to identify test cases relevant to the handling of the \'Content-Length\' header. Based on this analysis, I have identified the following three test cases that are most relevant to your query: `test_basic_building`, `test_POSTBIN_GET_POST_FILES`, and `test_POSTBIN_GET_POST_FILES_WITH_DATA`, as they all involve POSTing data and files, which implicitly tests the handling of the \'Content-Length\' header.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 6771, 'candidates_token_count': 139, 'total_token_count': 8472, 'prompt_tokens_details': [{'modality': 1, 'token_count': 6771}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 139}], 'thoughts_token_count': 1562, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -1.0820279567361735, 'model_name': 'gemini-2.5-pro'} id='run--b318256e-53a2-40a4-8782-c9770cd58036-0' usage_metadata={'input_tokens': 6771, 'output_tokens': 139, 'total_tokens': 8472, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 1562}}
+2025-12-21 14:50:53,565 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of the `test_requests.py` file.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to analyze the tests within `test_requests.py` to identify three test cases relevant to the handling of the 'Content-Length' header in HTTP requests, as described in the bug report.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: test_requests.py
+Line number range: 1 - 284
+Content:
+1. #!/usr/bin/env python
+2. # -*- coding: utf-8 -*-
+3. 
+4. """Tests for Requests."""
+5. 
+6. import json
+7. import os
+8. import unittest
+9. 
+10. import requests
+11. from requests.auth import HTTPDigestAuth
+12. from requests.compat import str
+13. 
+14. try:
+15.     import StringIO
+16. except ImportError:
+17.     import io as StringIO
+18. 
+19. HTTPBIN = os.environ.get('HTTPBIN_URL', 'http://httpbin.org/')
+20. 
+21. def httpbin(*suffix):
+22.     """Returns url for HTTPBIN resource."""
+23.     return HTTPBIN + '/'.join(suffix)
+24. 
+25. class RequestsTestCase(unittest.TestCase):
+26. 
+27.     _multiprocess_can_split_ = True
+28. 
+29.     def setUp(self):
+30.         """Create simple data set with headers."""
+31.         pass
+32. 
+33.     def tearDown(self):
+34.         """Teardown."""
+35.         pass
+36. 
+37.     def test_entry_points(self):
+38. 
+39.         requests.session
+40.         requests.session().get
+41.         requests.session().head
+42.         requests.get
+43.         requests.head
+44.         requests.put
+45.         requests.patch
+46.         requests.post
+47. 
+48.     def test_invalid_url(self):
+49.         self.assertRaises(ValueError, requests.get, 'hiwpefhipowhefopw')
+50. 
+51.     def test_basic_building(self):
+52.         req = requests.Request()
+53.         req.url = 'http://kennethreitz.org/'
+54.         req.data = {'life': '42'}
+55. 
+56.         pr = req.prepare()
+57.         assert pr.url == req.url
+58.         assert pr.body == 'life=42'
+59. 
+60. 
+61.     def test_path_is_not_double_encoded(self):
+62.         request = requests.Request('GET', "http://0.0.0.0/get/test case").prepare()
+63. 
+64.         self.assertEqual(request.path_url, "/get/test%20case")
+65. 
+66.     def test_params_are_added_before_fragment(self):
+67.         request = requests.Request('GET',
+68.             "http://example.com/path#fragment", params={"a": "b"}).prepare()
+69.         self.assertEqual(request.url,
+70.             "http://example.com/path?a=b#fragment")
+71.         request = requests.Request('GET',
+72.             "http://example.com/path?key=value#fragment", params={"a": "b"}).prepare()
+73.         self.assertEqual(request.url,
+74.             "http://example.com/path?key=value&a=b#fragment")
+75. 
+76.     def test_HTTP_200_OK_GET_ALTERNATIVE(self):
+77.         r = requests.Request('GET', httpbin('get'))
+78.         s = requests.Session()
+79. 
+80.         r = s.send(r.prepare())
+81. 
+82.         self.assertEqual(r.status_code, 200)
+83. 
+84.     def test_HTTP_302_ALLOW_REDIRECT_GET(self):
+85.         r = requests.get(httpbin('redirect', '1'))
+86.         self.assertEqual(r.status_code, 200)
+87. 
+88.     # def test_HTTP_302_ALLOW_REDIRECT_POST(self):
+89.     #     r = requests.post(httpbin('status', '302'), data={'some': 'data'})
+90.     #     self.assertEqual(r.status_code, 200)
+91. 
+92.     def test_HTTP_200_OK_GET_WITH_PARAMS(self):
+93.         heads = {'User-agent': 'Mozilla/5.0'}
+94. 
+95.         r = requests.get(httpbin('user-agent'), headers=heads)
+96. 
+97.         self.assertTrue(heads['User-agent'] in r.text)
+98.         self.assertEqual(r.status_code, 200)
+99. 
+100.     def test_HTTP_200_OK_GET_WITH_MIXED_PARAMS(self):
+101.         heads = {'User-agent': 'Mozilla/5.0'}
+102. 
+103.         r = requests.get(httpbin('get') + '?test=true', params={'q': 'test'}, headers=heads)
+104.         self.assertEqual(r.status_code, 200)
+105. 
+106.     def test_user_agent_transfers(self):
+107. 
+108.         heads = {
+109.             'User-agent':
+110.                 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+111.         }
+112. 
+113.         r = requests.get(httpbin('user-agent'), headers=heads)
+114.         self.assertTrue(heads['User-agent'] in r.text)
+115. 
+116.         heads = {
+117.             'user-agent':
+118.                 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+119.         }
+120. 
+121.         r = requests.get(httpbin('user-agent'), headers=heads)
+122.         self.assertTrue(heads['user-agent'] in r.text)
+123. 
+124.     def test_HTTP_200_OK_HEAD(self):
+125.         r = requests.head(httpbin('get'))
+126.         self.assertEqual(r.status_code, 200)
+127. 
+128.     def test_HTTP_200_OK_PUT(self):
+129.         r = requests.put(httpbin('put'))
+130.         self.assertEqual(r.status_code, 200)
+131. 
+132.     def test_BASICAUTH_TUPLE_HTTP_200_OK_GET(self):
+133.         auth = ('user', 'pass')
+134.         url = httpbin('basic-auth', 'user', 'pass')
+135. 
+136.         r = requests.get(url, auth=auth)
+137.         self.assertEqual(r.status_code, 200)
+138. 
+139.         r = requests.get(url)
+140.         self.assertEqual(r.status_code, 401)
+141. 
+142.         s = requests.session()
+143.         s.auth = auth
+144.         r = s.get(url)
+145.         self.assertEqual(r.status_code, 200)
+146. 
+147.     def test_DIGEST_HTTP_200_OK_GET(self):
+148. 
+149.         auth = HTTPDigestAuth('user', 'pass')
+150.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+151. 
+152.         r = requests.get(url, auth=auth)
+153.         self.assertEqual(r.status_code, 200)
+154. 
+155.         r = requests.get(url)
+156.         self.assertEqual(r.status_code, 401)
+157. 
+158.         s = requests.session()
+159.         s.auth = auth
+160.         r = s.get(url)
+161.         self.assertEqual(r.status_code, 200)
+162. 
+163.     def test_DIGESTAUTH_WRONG_HTTP_401_GET(self):
+164. 
+165.         auth = HTTPDigestAuth('user', 'wrongpass')
+166.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+167. 
+168.         r = requests.get(url, auth=auth)
+169.         self.assertEqual(r.status_code, 401)
+170. 
+171.         r = requests.get(url)
+172.         self.assertEqual(r.status_code, 401)
+173. 
+174.         s = requests.session()
+175.         s.auth = auth
+176.         r = s.get(url)
+177.         self.assertEqual(r.status_code, 401)
+178. 
+179.     def test_POSTBIN_GET_POST_FILES(self):
+180. 
+181.         url = httpbin('post')
+182.         post1 = requests.post(url).raise_for_status()
+183. 
+184.         post1 = requests.post(url, data={'some': 'data'})
+185.         self.assertEqual(post1.status_code, 200)
+186. 
+187.         with open('requirements.txt') as f:
+188.             post2 = requests.post(url, files={'some': f})
+189.         self.assertEqual(post2.status_code, 200)
+190. 
+191.         post4 = requests.post(url, data='[{"some": "json"}]')
+192.         self.assertEqual(post4.status_code, 200)
+193. 
+194.         try:
+195.             requests.post(url, files=['bad file data'])
+196.         except ValueError:
+197.             pass
+198. 
+199.     def test_POSTBIN_GET_POST_FILES_WITH_DATA(self):
+200. 
+201.         url = httpbin('post')
+202.         post1 = requests.post(url).raise_for_status()
+203. 
+204.         post1 = requests.post(url, data={'some': 'data'})
+205.         self.assertEqual(post1.status_code, 200)
+206. 
+207.         with open('requirements.txt') as f:
+208.             post2 = requests.post(url, data={'some': 'data'}, files={'some': f})
+209.         self.assertEqual(post2.status_code, 200)
+210. 
+211.         post4 = requests.post(url, data='[{"some": "json"}]')
+212.         self.assertEqual(post4.status_code, 200)
+213. 
+214.         try:
+215.             requests.post(url, files=['bad file data'])
+216.         except ValueError:
+217.             pass
+218. 
+219.     def test_request_ok_set(self):
+220.         r = requests.get(httpbin('status', '404'))
+221.         self.assertEqual(r.ok, False)
+222. 
+223.     def test_status_raising(self):
+224.         r = requests.get(httpbin('status', '404'))
+225.         self.assertRaises(requests.exceptions.HTTPError, r.raise_for_status)
+226. 
+227.         r = requests.get(httpbin('status', '500'))
+228.         self.assertFalse(r.ok)
+229. 
+230.     def test_decompress_gzip(self):
+231.         r = requests.get(httpbin('gzip'))
+232.         r.content.decode('ascii')
+233. 
+234.     def test_unicode_get(self):
+235.         url = httpbin('/get')
+236.         requests.get(url, params={'foo': 'føø'})
+237.         requests.get(url, params={'føø': 'føø'})
+238.         requests.get(url, params={'føø': 'føø'})
+239.         requests.get(url, params={'foo': 'foo'})
+240.         requests.get(httpbin('ø'), params={'foo': 'foo'})
+241. 
+242.     def test_urlencoded_get_query_multivalued_param(self):
+243. 
+244.         r = requests.get(httpbin('get'), params=dict(test=['foo', 'baz']))
+245.         self.assertEqual(r.status_code, 200)
+246.         self.assertEqual(r.url, httpbin('get?test=foo&test=baz'))
+247. 
+248.     def test_different_encodings_dont_break_post(self):
+249.         r = requests.post(httpbin('post'),
+250.                           data={'stuff': json.dumps({'a': 123})},
+251.                           params={'blah': 'asdf1234'},
+252.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+253.         self.assertEqual(r.status_code, 200)
+254. 
+255.     def test_custom_content_type(self):
+256.         r = requests.post(httpbin('post'),
+257.                           data={'stuff': json.dumps({'a': 123})},
+258.                           files={'file1': ('test_requests.py', open(__file__, 'rb')),
+259.                                  'file2': ('test_requests', open(__file__, 'rb'),
+260.                                            'text/py-content-type')})
+261.         self.assertEqual(r.status_code, 200)
+262.         self.assertTrue(b"text/py-content-type" in r.request.body)
+263. 
+264.     def test_prepared_request_hook(self):
+265.         def hook(resp):
+266.             resp.hook_working = True
+267.             return resp
+268. 
+269.         req = requests.Request('GET', HTTPBIN, hooks={'response': hook})
+270.         prep = req.prepare()
+271. 
+272.         s = requests.Session()
+273.         resp = s.send(prep)
+274. 
+275.         self.assertTrue(hasattr(resp, 'hook_working'))
+276. 
+277.     def test_links(self):
+278.         url = 'https://api.github.com/users/kennethreitz/repos?page=1&per_page=10'
+279.         r = requests.head(url=url)
+280.         self.assertEqual(r.links['next']['rel'], 'next')
+281. 
+282. 
+283. if __name__ == '__main__':
+284.     unittest.main()
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 14:50:58,763 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="1. Query requirement analysis:\n   - The user explicitly requested the 'full content of the `test_requests.py` file'.\n2. Extended relevance:\n   - The provided context contains the entire content of the `test_requests.py` file, from line 1 to 284. This directly and completely fulfills the user's request.", relative_path='test_requests.py', start_line=1, end_line=284)]
+2025-12-21 14:50:58,765 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of the `test_requests.py` file.
+2025-12-21 14:50:58,765 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 14:50:58,765 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 14:50:58,765 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 14:50:58,765 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 14:50:58,766 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+requests
+├── .travis.yml
+├── AUTHORS.rst
+├── HISTORY.rst
+├── README.rst
+├── docs
+|   ├── _static
+|   ├── _templates
+|   |   ├── sidebarintro.html
+|   |   └── sidebarlogo.html
+|   ├── _themes
+|   |   ├── README.rst
+|   |   ├── flask_theme_support.py
+|   |   ├── kr
+|   |   |   ├── layout.html
+|   |   |   ├── relations.html
+|   |   |   └── static
+|   |   └── kr_small
+|   |       ├── layout.html
+|   |       └── static
+|   ├── api.rst
+|   ├── community
+|   |   ├── faq.rst
+|   |   ├── out-there.rst
+|   |   ├── support.rst
+|   |   └── updates.rst
+|   ├── conf.py
+|   ├── dev
+|   |   ├── authors.rst
+|   |   ├── internals.rst
+|   |   ├── philosophy.rst
+|   |   └── todo.rst
+|   ├── index.rst
+|   └── user
+|       ├── advanced.rst
+|       ├── authentication.rst
+|       ├── install.rst
+|       ├── intro.rst
+|       └── quickstart.rst
+├── ext
+├── requests
+|   ├── __init__.py
+|   ├── adapters.py
+|   ├── api.py
+|   ├── auth.py
+|   ├── certs.py
+|   ├── compat.py
+|   ├── cookies.py
+|   ├── exceptions.py
+|   ├── hooks.py
+|   ├── models.py
+|   ├── packages
+|   |   ├── __init__.py
+|   |   ├── charade
+|   |   |   ├── __init__.py
+|   |   |   ├── big5freq.py
+|   |   |   ├── big5prober.py
+|   |   |   ├── chardistribution.py
+|   |   |   ├── charsetgroupprober.py
+|   |   |   ├── charsetprober.py
+|   |   |   ├── codingstatemachine.py
+|   |   |   ├── compat.py
+|   |   |   ├── constants.py
+|   |   |   ├── escprober.py
+|   |   |   ├── escsm.py
+|   |   |   ├── eucjpprober.py
+|   |   |   ├── euckrfreq.py
+|   |   |   ├── euckrprober.py
+|   |   |   ├── euctwfreq.py
+|   |   |   ├── euctwprober.py
+|   |   |   ├── gb2312freq.py
+|   |   |   ├── gb2312prober.py
+|   |   |   ├── hebrewprober.py
+|   |   |   ├── jisfreq.py
+|   |   |   ├── jpcntx.py
+|   |   |   ├── langbulgarianmodel.py
+|   |   |   ├── langcyrillicmodel.py
+|   |   |   ├── langgreekmodel.py
+|   |   |   ├── langhebrewmodel.py
+|   |   |   ├── langhungarianmodel.py
+|   |   |   ├── langthaimodel.py
+|   |   |   ├── latin1prober.py
+|   |   |   ├── mbcharsetprober.py
+|   |   |   ├── mbcsgroupprober.py
+|   |   |   ├── mbcssm.py
+|   |   |   ├── sbcharsetprober.py
+|   |   |   ├── sbcsgroupprober.py
+|   |   |   ├── sjisprober.py
+|   |   |   ├── universaldetector.py
+|   |   |   └── utf8prober.py
+|   |   └── urllib3
+|   |       ├── __init__.py
+|   |       ├── _collections.py
+|   |       ├── connectionpool.py
+|   |       ├── contrib
+|   |       |   ├── __init__.py
+|   |       |   └── ntlmpool.py
+|   |       ├── exceptions.py
+|   |       ├── filepost.py
+|   |       ├── packages
+|   |       |   ├── __init__.py
+|   |       |   ├── ordered_dict.py
+|   |       |   ├── six.py
+|   |       |   └── ssl_match_hostname
+|   |       ├── poolmanager.py
+|   |       ├── request.py
+|   |       ├── response.py
+|   |       └── util.py
+|   ├── sessions.py
+|   ├── status_codes.py
+|   ├── structures.py
+|   └── utils.py
+├── requirements.txt
+├── setup.py
+└── test_requests.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: requests.get is ALWAYS sending content length
+
+Description: Hi,
+
+It seems like that request.get always adds 'content-length' header to the request.
+I think that the right behavior is not to add this header automatically in GET requests or add the possibility to not send it.
+
+For example http://amazon.com returns 503 for every get request that contains 'content-length' header.
+
+Thanks,
+
+Oren
+
+
+Patch information:
+diff --git a/requests/models.py b/requests/models.py
+index 99260453..422359f7 100644
+--- a/requests/models.py
++++ b/requests/models.py
+@@ -386,13 +386,42 @@ class PreparedRequest(RequestEncodingMixin, RequestHooksMixin):
+         self.body = body
+ 
+     def prepare_content_length(self, body):
+-        self.headers['Content-Length'] = '0'
++        # Only set Content-Length when appropriate.
++        # If body length is known, set it (including 0). Otherwise:
++        # - For GET/HEAD with no body, do not set Content-Length.
++        # - For other methods with no body, set Content-Length: 0 if not already provided.
++        length = None
+         if hasattr(body, 'seek') and hasattr(body, 'tell'):
++            try:
++                pos = body.tell()
++            except Exception:
++                pos = None
+             body.seek(0, 2)
+-            self.headers['Content-Length'] = str(body.tell())
+-            body.seek(0, 0)
++            length = body.tell()
++            try:
++                body.seek(0 if pos is None else pos, 0)
++            except Exception:
++                body.seek(0, 0)
+         elif body is not None:
+-            self.headers['Content-Length'] = str(len(body))
++            try:
++                length = len(body)
++            except (TypeError, AttributeError):
++                length = None
++
++        if length is not None:
++            # Prefer the computed length when available.
++            self.headers['Content-Length'] = str(length)
++            return
++
++        # No body or unknown length
++        if body is None:
++            method = (self.method or '').upper() if self.method else ''
++            if method in ('GET', 'HEAD'):
++                # Do not set Content-Length for GET/HEAD with no body
++                return
++            # For other methods, explicitly set zero if not provided.
++            if 'content-length' not in self.headers:
++                self.headers['Content-Length'] = '0'
+ 
+     def prepare_auth(self, auth):
+         """Prepares the given HTTP auth data."""
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of the `test_requests.py` file.
+Extra Requirements: 
+Purpose: I need to analyze the tests within `test_requests.py` to identify three test cases relevant to the handling of the 'Content-Length' header in HTTP requests, as described in the bug report.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: test_requests.py
+Line number range: 1 - 284
+Content:
+1. #!/usr/bin/env python
+2. # -*- coding: utf-8 -*-
+3. 
+4. """Tests for Requests."""
+5. 
+6. import json
+7. import os
+8. import unittest
+9. 
+10. import requests
+11. from requests.auth import HTTPDigestAuth
+12. from requests.compat import str
+13. 
+14. try:
+15.     import StringIO
+16. except ImportError:
+17.     import io as StringIO
+18. 
+19. HTTPBIN = os.environ.get('HTTPBIN_URL', 'http://httpbin.org/')
+20. 
+21. def httpbin(*suffix):
+22.     """Returns url for HTTPBIN resource."""
+23.     return HTTPBIN + '/'.join(suffix)
+24. 
+25. class RequestsTestCase(unittest.TestCase):
+26. 
+27.     _multiprocess_can_split_ = True
+28. 
+29.     def setUp(self):
+30.         """Create simple data set with headers."""
+31.         pass
+32. 
+33.     def tearDown(self):
+34.         """Teardown."""
+35.         pass
+36. 
+37.     def test_entry_points(self):
+38. 
+39.         requests.session
+40.         requests.session().get
+41.         requests.session().head
+42.         requests.get
+43.         requests.head
+44.         requests.put
+45.         requests.patch
+46.         requests.post
+47. 
+48.     def test_invalid_url(self):
+49.         self.assertRaises(ValueError, requests.get, 'hiwpefhipowhefopw')
+50. 
+51.     def test_basic_building(self):
+52.         req = requests.Request()
+53.         req.url = 'http://kennethreitz.org/'
+54.         req.data = {'life': '42'}
+55. 
+56.         pr = req.prepare()
+57.         assert pr.url == req.url
+58.         assert pr.body == 'life=42'
+59. 
+60. 
+61.     def test_path_is_not_double_encoded(self):
+62.         request = requests.Request('GET', "http://0.0.0.0/get/test case").prepare()
+63. 
+64.         self.assertEqual(request.path_url, "/get/test%20case")
+65. 
+66.     def test_params_are_added_before_fragment(self):
+67.         request = requests.Request('GET',
+68.             "http://example.com/path#fragment", params={"a": "b"}).prepare()
+69.         self.assertEqual(request.url,
+70.             "http://example.com/path?a=b#fragment")
+71.         request = requests.Request('GET',
+72.             "http://example.com/path?key=value#fragment", params={"a": "b"}).prepare()
+73.         self.assertEqual(request.url,
+74.             "http://example.com/path?key=value&a=b#fragment")
+75. 
+76.     def test_HTTP_200_OK_GET_ALTERNATIVE(self):
+77.         r = requests.Request('GET', httpbin('get'))
+78.         s = requests.Session()
+79. 
+80.         r = s.send(r.prepare())
+81. 
+82.         self.assertEqual(r.status_code, 200)
+83. 
+84.     def test_HTTP_302_ALLOW_REDIRECT_GET(self):
+85.         r = requests.get(httpbin('redirect', '1'))
+86.         self.assertEqual(r.status_code, 200)
+87. 
+88.     # def test_HTTP_302_ALLOW_REDIRECT_POST(self):
+89.     #     r = requests.post(httpbin('status', '302'), data={'some': 'data'})
+90.     #     self.assertEqual(r.status_code, 200)
+91. 
+92.     def test_HTTP_200_OK_GET_WITH_PARAMS(self):
+93.         heads = {'User-agent': 'Mozilla/5.0'}
+94. 
+95.         r = requests.get(httpbin('user-agent'), headers=heads)
+96. 
+97.         self.assertTrue(heads['User-agent'] in r.text)
+98.         self.assertEqual(r.status_code, 200)
+99. 
+100.     def test_HTTP_200_OK_GET_WITH_MIXED_PARAMS(self):
+101.         heads = {'User-agent': 'Mozilla/5.0'}
+102. 
+103.         r = requests.get(httpbin('get') + '?test=true', params={'q': 'test'}, headers=heads)
+104.         self.assertEqual(r.status_code, 200)
+105. 
+106.     def test_user_agent_transfers(self):
+107. 
+108.         heads = {
+109.             'User-agent':
+110.                 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+111.         }
+112. 
+113.         r = requests.get(httpbin('user-agent'), headers=heads)
+114.         self.assertTrue(heads['User-agent'] in r.text)
+115. 
+116.         heads = {
+117.             'user-agent':
+118.                 'Mozilla/5.0 (github.com/kennethreitz/requests)'
+119.         }
+120. 
+121.         r = requests.get(httpbin('user-agent'), headers=heads)
+122.         self.assertTrue(heads['user-agent'] in r.text)
+123. 
+124.     def test_HTTP_200_OK_HEAD(self):
+125.         r = requests.head(httpbin('get'))
+126.         self.assertEqual(r.status_code, 200)
+127. 
+128.     def test_HTTP_200_OK_PUT(self):
+129.         r = requests.put(httpbin('put'))
+130.         self.assertEqual(r.status_code, 200)
+131. 
+132.     def test_BASICAUTH_TUPLE_HTTP_200_OK_GET(self):
+133.         auth = ('user', 'pass')
+134.         url = httpbin('basic-auth', 'user', 'pass')
+135. 
+136.         r = requests.get(url, auth=auth)
+137.         self.assertEqual(r.status_code, 200)
+138. 
+139.         r = requests.get(url)
+140.         self.assertEqual(r.status_code, 401)
+141. 
+142.         s = requests.session()
+143.         s.auth = auth
+144.         r = s.get(url)
+145.         self.assertEqual(r.status_code, 200)
+146. 
+147.     def test_DIGEST_HTTP_200_OK_GET(self):
+148. 
+149.         auth = HTTPDigestAuth('user', 'pass')
+150.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+151. 
+152.         r = requests.get(url, auth=auth)
+153.         self.assertEqual(r.status_code, 200)
+154. 
+155.         r = requests.get(url)
+156.         self.assertEqual(r.status_code, 401)
+157. 
+158.         s = requests.session()
+159.         s.auth = auth
+160.         r = s.get(url)
+161.         self.assertEqual(r.status_code, 200)
+162. 
+163.     def test_DIGESTAUTH_WRONG_HTTP_401_GET(self):
+164. 
+165.         auth = HTTPDigestAuth('user', 'wrongpass')
+166.         url = httpbin('digest-auth', 'auth', 'user', 'pass')
+167. 
+168.         r = requests.get(url, auth=auth)
+169.         self.assertEqual(r.status_code, 401)
+170. 
+171.         r = requests.get(url)
+172.         self.assertEqual(r.status_code, 401)
+173. 
+174.         s = requests.session()
+175.         s.auth = auth
+176.         r = s.get(url)
+177.         self.assertEqual(r.status_code, 401)
+178. 
+179.     def test_POSTBIN_GET_POST_FILES(self):
+180. 
+181.         url = httpbin('post')
+182.         post1 = requests.post(url).raise_for_status()
+183. 
+184.         post1 = requests.post(url, data={'some': 'data'})
+185.         self.assertEqual(post1.status_code, 200)
+186. 
+187.         with open('requirements.txt') as f:
+188.             post2 = requests.post(url, files={'some': f})
+189.         self.assertEqual(post2.status_code, 200)
+190. 
+191.         post4 = requests.post(url, data='[{"some": "json"}]')
+192.         self.assertEqual(post4.status_code, 200)
+193. 
+194.         try:
+195.             requests.post(url, files=['bad file data'])
+196.         except ValueError:
+197.             pass
+198. 
+199.     def test_POSTBIN_GET_POST_FILES_WITH_DATA(self):
+200. 
+201.         url = httpbin('post')
+202.         post1 = requests.post(url).raise_for_status()
+203. 
+204.         post1 = requests.post(url, data={'some': 'data'})
+205.         self.assertEqual(post1.status_code, 200)
+206. 
+207.         with open('requirements.txt') as f:
+208.             post2 = requests.post(url, data={'some': 'data'}, files={'some': f})
+209.         self.assertEqual(post2.status_code, 200)
+210. 
+211.         post4 = requests.post(url, data='[{"some": "json"}]')
+212.         self.assertEqual(post4.status_code, 200)
+213. 
+214.         try:
+215.             requests.post(url, files=['bad file data'])
+216.         except ValueError:
+217.             pass
+218. 
+219.     def test_request_ok_set(self):
+220.         r = requests.get(httpbin('status', '404'))
+221.         self.assertEqual(r.ok, False)
+222. 
+223.     def test_status_raising(self):
+224.         r = requests.get(httpbin('status', '404'))
+225.         self.assertRaises(requests.exceptions.HTTPError, r.raise_for_status)
+226. 
+227.         r = requests.get(httpbin('status', '500'))
+228.         self.assertFalse(r.ok)
+229. 
+230.     def test_decompress_gzip(self):
+231.         r = requests.get(httpbin('gzip'))
+232.         r.content.decode('ascii')
+233. 
+234.     def test_unicode_get(self):
+235.         url = httpbin('/get')
+236.         requests.get(url, params={'foo': 'føø'})
+237.         requests.get(url, params={'føø': 'føø'})
+238.         requests.get(url, params={'føø': 'føø'})
+239.         requests.get(url, params={'foo': 'foo'})
+240.         requests.get(httpbin('ø'), params={'foo': 'foo'})
+241. 
+242.     def test_urlencoded_get_query_multivalued_param(self):
+243. 
+244.         r = requests.get(httpbin('get'), params=dict(test=['foo', 'baz']))
+245.         self.assertEqual(r.status_code, 200)
+246.         self.assertEqual(r.url, httpbin('get?test=foo&test=baz'))
+247. 
+248.     def test_different_encodings_dont_break_post(self):
+249.         r = requests.post(httpbin('post'),
+250.                           data={'stuff': json.dumps({'a': 123})},
+251.                           params={'blah': 'asdf1234'},
+252.                           files={'file': ('test_requests.py', open(__file__, 'rb'))})
+253.         self.assertEqual(r.status_code, 200)
+254. 
+255.     def test_custom_content_type(self):
+256.         r = requests.post(httpbin('post'),
+257.                           data={'stuff': json.dumps({'a': 123})},
+258.                           files={'file1': ('test_requests.py', open(__file__, 'rb')),
+259.                                  'file2': ('test_requests', open(__file__, 'rb'),
+260.                                            'text/py-content-type')})
+261.         self.assertEqual(r.status_code, 200)
+262.         self.assertTrue(b"text/py-content-type" in r.request.body)
+263. 
+264.     def test_prepared_request_hook(self):
+265.         def hook(resp):
+266.             resp.hook_working = True
+267.             return resp
+268. 
+269.         req = requests.Request('GET', HTTPBIN, hooks={'response': hook})
+270.         prep = req.prepare()
+271. 
+272.         s = requests.Session()
+273.         resp = s.send(prep)
+274. 
+275.         self.assertTrue(hasattr(resp, 'hook_working'))
+276. 
+277.     def test_links(self):
+278.         url = 'https://api.github.com/users/kennethreitz/repos?page=1&per_page=10'
+279.         r = requests.head(url=url)
+280.         self.assertEqual(r.links['next']['rel'], 'next')
+281. 
+282. 
+283. if __name__ == '__main__':
+284.     unittest.main()
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 14:51:27,420 - thread-125298865604288.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user wants to find 3 relevant test cases for a bug related to the `Content-Length` header in GET requests. I have analyzed the provided `test_requests.py` file. The file contains tests that exercise the code paths relevant to the bug fix, even if they don't have explicit assertions on the `Content-Length` header. Specifically, I have identified `test_HTTP_200_OK_GET_ALTERNATIVE` (for GET requests), `test_HTTP_200_OK_HEAD` (for HEAD requests), and a case within `test_POSTBIN_GET_POST_FILES` (for POST requests with no body). The provided file content is sufficient to extract these three test cases, including all necessary imports and setup. Therefore, I do not need additional context." query='' extra_requirements='' purpose=''
+2025-12-21 14:51:27,421 - thread-125298865604288.prometheus_context_collector - INFO - Successfully retrieved 1 context snippets

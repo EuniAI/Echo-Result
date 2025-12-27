@@ -1,0 +1,3954 @@
+2025-12-21 01:40:39,106 - thread-135818941302464.prometheus_context_collector - INFO - Starting context retrieval for query: 
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+2025-12-21 01:40:39,166 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1316.breaking.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4677.bugfix.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7255.feature.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── start_doc_server.sh
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 01:40:51,321 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="The user wants to find relevant test cases for a bug in `src/_pytest/mark/expression.py`. The most relevant test file is likely `testing/test_mark_expression.py`. I need the content of this file to identify test cases that cover marker expression parsing and evaluation, which is at the core of the user's request." query='Please provide the full content of `testing/test_mark_expression.py`.' extra_requirements='' purpose="I need to analyze the tests for marker expression handling to find existing tests relevant to the bug concerning the parsing of 'True', 'False', and 'None'."
+2025-12-21 01:40:51,322 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `testing/test_mark_expression.py`.
+2025-12-21 01:40:51,322 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 01:40:51,323 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 01:40:51,324 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 01:40:51,324 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `testing/test_mark_expression.py`.
+Purpose: I need to analyze the tests for marker expression handling to find existing tests relevant to the bug concerning the parsing of 'True', 'False', and 'None'.
+2025-12-21 01:40:53,524 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/test_mark_expression.py"}'}, '__gemini_function_call_thought_signatures__': {'efa1d9d6-8897-4cda-a002-48692b0e0451': 'CrcFAY89a1/9svK/4Zt0fxNp8sruVfLiinGy1yH6eMiELr5U9A1kiR5Bov92lLAFnRgqX2hT9lhRH2LJXPZVNw0JWTyyff5plugYLrVILqQoTYSa+1laReb8F8BcAP9P3DFtXi/3oDXZzfzT3C37ERReJfRd1SRLOd+f5fIero3VMZwr2Xa9HSTjdVpD5PMJedEXhXRqHerpdjS5eSeBRMOvBHyB14zkeo6QWdGnrcBvWWQH6pX0HFij846XeaVPvApTcyXAp/MKrXRrKDvGCXSuC4fgmJ+Gfw9W+MuEr+U6vczR/tIX/djOczOTyLwUhio3nfG//nfrPqhJ4sT4b/0n+0cg2TskLNE/FrTVYWt8pu5HrR8Mmfc0JBEyFgEGfTKoIAJjprEezZF5lFnKPXmNvIIo9yJXlXgoFZmmDJjPz+86xLFGp4kYzAYkPSsPYx9q5tmy4W6DjZfqAY5FaNwbeiN+NPxovhyJ9U69774BlP2xz/vxBa+1tEYCge858/16fYnGGt7le1BoVEcRmnJ98o01mEjD6yULvLVJR/ky92Xpz9/yYTZPfgT9D+iZYKceJm7mdyOwdy6V4dEskmeJjTjf1wc/0fIApYvQLL+PPXE8/A0MOkTEh7TLOhbAKogeIBd6aeI5nEgEFHBKSUiUtQlyUSJ3pYdlANsgCpGc79w6b9ttM7/Sc/mTii4om2QkLnSRVRbRpmrPQrc7LBaKGhf6Jrw4s8Sq6w7szrUybN1nMr/JNTj+iwcEuxDM8f/mHgFnQKByMwMrsu1mIzA0mokIH5KUYZNSFbEr61z+m+jrWYVy1TqGQZDa/sY9nI1OG6tTB6Losl+nLeBRmN3Sf+Kt+Q53144dpsubBtf624HXtChFFdRhsFlFz5DG853iK/ok1CHGw8VVpYnf+5w4wrGG51T/E88='}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2058, 'candidates_token_count': 23, 'total_token_count': 2246, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2058}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 23}], 'thoughts_token_count': 165, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.34640596223914105, 'model_name': 'gemini-2.5-pro'} id='run--55956564-8eee-4b27-b451-6946794433b7-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/test_mark_expression.py'}, 'id': 'efa1d9d6-8897-4cda-a002-48692b0e0451', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2058, 'output_tokens': 23, 'total_tokens': 2246, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 165}}
+2025-12-21 01:40:56,653 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have retrieved the full content of `testing/test_mark_expression.py` for you to analyze. A quick review of the file shows a test named `test_valid_idents`, which seems particularly relevant to your query as it includes tests for "True" and "False" as valid identifiers. You should examine this test and others in the file to understand the existing test coverage for marker expression handling.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 4138, 'candidates_token_count': 84, 'total_token_count': 4380, 'cached_content_token_count': 1670, 'prompt_tokens_details': [{'modality': 1, 'token_count': 4303}], 'cache_tokens_details': [{'modality': 1, 'token_count': 1670}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 84}], 'thoughts_token_count': 158}, 'finish_reason': 'STOP', 'avg_logprobs': -0.28722392945062547, 'model_name': 'gemini-2.5-pro'} id='run--a47be30f-4451-45f5-8947-3b832b2f9f55-0' usage_metadata={'input_tokens': 4138, 'output_tokens': 84, 'total_tokens': 4380, 'input_token_details': {'cache_read': 1670}, 'output_token_details': {'reasoning': 158}}
+2025-12-21 01:40:56,655 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `testing/test_mark_expression.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to analyze the tests for marker expression handling to find existing tests relevant to the bug concerning the parsing of 'True', 'False', and 'None'.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/test_mark_expression.py
+Line number range: 1 - 168
+Content:
+1. from typing import Callable
+2. 
+3. import pytest
+4. from _pytest.mark.expression import Expression
+5. from _pytest.mark.expression import ParseError
+6. 
+7. 
+8. def evaluate(input: str, matcher: Callable[[str], bool]) -> bool:
+9.     return Expression.compile(input).evaluate(matcher)
+10. 
+11. 
+12. def test_empty_is_false() -> None:
+13.     assert not evaluate("", lambda ident: False)
+14.     assert not evaluate("", lambda ident: True)
+15.     assert not evaluate("   ", lambda ident: False)
+16.     assert not evaluate("\t", lambda ident: False)
+17. 
+18. 
+19. @pytest.mark.parametrize(
+20.     ("expr", "expected"),
+21.     (
+22.         ("true", True),
+23.         ("true", True),
+24.         ("false", False),
+25.         ("not true", False),
+26.         ("not false", True),
+27.         ("not not true", True),
+28.         ("not not false", False),
+29.         ("true and true", True),
+30.         ("true and false", False),
+31.         ("false and true", False),
+32.         ("true and true and true", True),
+33.         ("true and true and false", False),
+34.         ("true and true and not true", False),
+35.         ("false or false", False),
+36.         ("false or true", True),
+37.         ("true or true", True),
+38.         ("true or true or false", True),
+39.         ("true and true or false", True),
+40.         ("not true or true", True),
+41.         ("(not true) or true", True),
+42.         ("not (true or true)", False),
+43.         ("true and true or false and false", True),
+44.         ("true and (true or false) and false", False),
+45.         ("true and (true or (not (not false))) and false", False),
+46.     ),
+47. )
+48. def test_basic(expr: str, expected: bool) -> None:
+49.     matcher = {"true": True, "false": False}.__getitem__
+50.     assert evaluate(expr, matcher) is expected
+51. 
+52. 
+53. @pytest.mark.parametrize(
+54.     ("expr", "expected"),
+55.     (
+56.         ("               true           ", True),
+57.         ("               ((((((true))))))           ", True),
+58.         ("     (         ((\t  (((true)))))  \t   \t)", True),
+59.         ("(     true     and   (((false))))", False),
+60.         ("not not not not true", True),
+61.         ("not not not not not true", False),
+62.     ),
+63. )
+64. def test_syntax_oddeties(expr: str, expected: bool) -> None:
+65.     matcher = {"true": True, "false": False}.__getitem__
+66.     assert evaluate(expr, matcher) is expected
+67. 
+68. 
+69. @pytest.mark.parametrize(
+70.     ("expr", "column", "message"),
+71.     (
+72.         ("(", 2, "expected not OR left parenthesis OR identifier; got end of input"),
+73.         (" (", 3, "expected not OR left parenthesis OR identifier; got end of input",),
+74.         (
+75.             ")",
+76.             1,
+77.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+78.         ),
+79.         (
+80.             ") ",
+81.             1,
+82.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+83.         ),
+84.         ("not", 4, "expected not OR left parenthesis OR identifier; got end of input",),
+85.         (
+86.             "not not",
+87.             8,
+88.             "expected not OR left parenthesis OR identifier; got end of input",
+89.         ),
+90.         (
+91.             "(not)",
+92.             5,
+93.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+94.         ),
+95.         ("and", 1, "expected not OR left parenthesis OR identifier; got and"),
+96.         (
+97.             "ident and",
+98.             10,
+99.             "expected not OR left parenthesis OR identifier; got end of input",
+100.         ),
+101.         ("ident and or", 11, "expected not OR left parenthesis OR identifier; got or",),
+102.         ("ident ident", 7, "expected end of input; got identifier"),
+103.     ),
+104. )
+105. def test_syntax_errors(expr: str, column: int, message: str) -> None:
+106.     with pytest.raises(ParseError) as excinfo:
+107.         evaluate(expr, lambda ident: True)
+108.     assert excinfo.value.column == column
+109.     assert excinfo.value.message == message
+110. 
+111. 
+112. @pytest.mark.parametrize(
+113.     "ident",
+114.     (
+115.         ".",
+116.         "...",
+117.         ":::",
+118.         "a:::c",
+119.         "a+-b",
+120.         "אבגד",
+121.         "aaאבגדcc",
+122.         "a[bcd]",
+123.         "1234",
+124.         "1234abcd",
+125.         "1234and",
+126.         "notandor",
+127.         "not_and_or",
+128.         "not[and]or",
+129.         "1234+5678",
+130.         "123.232",
+131.         "True",
+132.         "False",
+133.         "if",
+134.         "else",
+135.         "while",
+136.     ),
+137. )
+138. def test_valid_idents(ident: str) -> None:
+139.     assert evaluate(ident, {ident: True}.__getitem__)
+140. 
+141. 
+142. @pytest.mark.parametrize(
+143.     "ident",
+144.     (
+145.         "/",
+146.         "\\",
+147.         "^",
+148.         "*",
+149.         "=",
+150.         "&",
+151.         "%",
+152.         "$",
+153.         "#",
+154.         "@",
+155.         "!",
+156.         "~",
+157.         "{",
+158.         "}",
+159.         '"',
+160.         "'",
+161.         "|",
+162.         ";",
+163.         "←",
+164.     ),
+165. )
+166. def test_invalid_idents(ident: str) -> None:
+167.     with pytest.raises(ParseError):
+168.         evaluate(ident, lambda ident: True)
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 01:41:00,471 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning="The user has requested the full content of the file `testing/test_mark_expression.py`. The provided context is exactly this file, so the entire content is relevant to fulfill the user's request.", relative_path='testing/test_mark_expression.py', start_line=1, end_line=168)]
+2025-12-21 01:41:00,472 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `testing/test_mark_expression.py`.
+2025-12-21 01:41:00,472 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 01:41:00,472 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 01:41:00,472 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 0 existing contexts
+2025-12-21 01:41:00,473 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 1 total contexts (removed 0 duplicates)
+2025-12-21 01:41:00,473 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1316.breaking.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4677.bugfix.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7255.feature.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── start_doc_server.sh
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `testing/test_mark_expression.py`.
+Extra Requirements: 
+Purpose: I need to analyze the tests for marker expression handling to find existing tests relevant to the bug concerning the parsing of 'True', 'False', and 'None'.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/test_mark_expression.py
+Line number range: 1 - 168
+Content:
+1. from typing import Callable
+2. 
+3. import pytest
+4. from _pytest.mark.expression import Expression
+5. from _pytest.mark.expression import ParseError
+6. 
+7. 
+8. def evaluate(input: str, matcher: Callable[[str], bool]) -> bool:
+9.     return Expression.compile(input).evaluate(matcher)
+10. 
+11. 
+12. def test_empty_is_false() -> None:
+13.     assert not evaluate("", lambda ident: False)
+14.     assert not evaluate("", lambda ident: True)
+15.     assert not evaluate("   ", lambda ident: False)
+16.     assert not evaluate("\t", lambda ident: False)
+17. 
+18. 
+19. @pytest.mark.parametrize(
+20.     ("expr", "expected"),
+21.     (
+22.         ("true", True),
+23.         ("true", True),
+24.         ("false", False),
+25.         ("not true", False),
+26.         ("not false", True),
+27.         ("not not true", True),
+28.         ("not not false", False),
+29.         ("true and true", True),
+30.         ("true and false", False),
+31.         ("false and true", False),
+32.         ("true and true and true", True),
+33.         ("true and true and false", False),
+34.         ("true and true and not true", False),
+35.         ("false or false", False),
+36.         ("false or true", True),
+37.         ("true or true", True),
+38.         ("true or true or false", True),
+39.         ("true and true or false", True),
+40.         ("not true or true", True),
+41.         ("(not true) or true", True),
+42.         ("not (true or true)", False),
+43.         ("true and true or false and false", True),
+44.         ("true and (true or false) and false", False),
+45.         ("true and (true or (not (not false))) and false", False),
+46.     ),
+47. )
+48. def test_basic(expr: str, expected: bool) -> None:
+49.     matcher = {"true": True, "false": False}.__getitem__
+50.     assert evaluate(expr, matcher) is expected
+51. 
+52. 
+53. @pytest.mark.parametrize(
+54.     ("expr", "expected"),
+55.     (
+56.         ("               true           ", True),
+57.         ("               ((((((true))))))           ", True),
+58.         ("     (         ((\t  (((true)))))  \t   \t)", True),
+59.         ("(     true     and   (((false))))", False),
+60.         ("not not not not true", True),
+61.         ("not not not not not true", False),
+62.     ),
+63. )
+64. def test_syntax_oddeties(expr: str, expected: bool) -> None:
+65.     matcher = {"true": True, "false": False}.__getitem__
+66.     assert evaluate(expr, matcher) is expected
+67. 
+68. 
+69. @pytest.mark.parametrize(
+70.     ("expr", "column", "message"),
+71.     (
+72.         ("(", 2, "expected not OR left parenthesis OR identifier; got end of input"),
+73.         (" (", 3, "expected not OR left parenthesis OR identifier; got end of input",),
+74.         (
+75.             ")",
+76.             1,
+77.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+78.         ),
+79.         (
+80.             ") ",
+81.             1,
+82.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+83.         ),
+84.         ("not", 4, "expected not OR left parenthesis OR identifier; got end of input",),
+85.         (
+86.             "not not",
+87.             8,
+88.             "expected not OR left parenthesis OR identifier; got end of input",
+89.         ),
+90.         (
+91.             "(not)",
+92.             5,
+93.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+94.         ),
+95.         ("and", 1, "expected not OR left parenthesis OR identifier; got and"),
+96.         (
+97.             "ident and",
+98.             10,
+99.             "expected not OR left parenthesis OR identifier; got end of input",
+100.         ),
+101.         ("ident and or", 11, "expected not OR left parenthesis OR identifier; got or",),
+102.         ("ident ident", 7, "expected end of input; got identifier"),
+103.     ),
+104. )
+105. def test_syntax_errors(expr: str, column: int, message: str) -> None:
+106.     with pytest.raises(ParseError) as excinfo:
+107.         evaluate(expr, lambda ident: True)
+108.     assert excinfo.value.column == column
+109.     assert excinfo.value.message == message
+110. 
+111. 
+112. @pytest.mark.parametrize(
+113.     "ident",
+114.     (
+115.         ".",
+116.         "...",
+117.         ":::",
+118.         "a:::c",
+119.         "a+-b",
+120.         "אבגד",
+121.         "aaאבגדcc",
+122.         "a[bcd]",
+123.         "1234",
+124.         "1234abcd",
+125.         "1234and",
+126.         "notandor",
+127.         "not_and_or",
+128.         "not[and]or",
+129.         "1234+5678",
+130.         "123.232",
+131.         "True",
+132.         "False",
+133.         "if",
+134.         "else",
+135.         "while",
+136.     ),
+137. )
+138. def test_valid_idents(ident: str) -> None:
+139.     assert evaluate(ident, {ident: True}.__getitem__)
+140. 
+141. 
+142. @pytest.mark.parametrize(
+143.     "ident",
+144.     (
+145.         "/",
+146.         "\\",
+147.         "^",
+148.         "*",
+149.         "=",
+150.         "&",
+151.         "%",
+152.         "$",
+153.         "#",
+154.         "@",
+155.         "!",
+156.         "~",
+157.         "{",
+158.         "}",
+159.         '"',
+160.         "'",
+161.         "|",
+162.         ";",
+163.         "←",
+164.     ),
+165. )
+166. def test_invalid_idents(ident: str) -> None:
+167.     with pytest.raises(ParseError):
+168.         evaluate(ident, lambda ident: True)
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 01:41:20,693 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning='I have analyzed the provided `testing/test_mark_expression.py` and found two relevant test cases (`test_valid_idents` and `test_basic`). To find a third, more integrated test case, I need to see how marker expressions are used for test selection. The file `testing/test_mark.py` is likely to contain tests for the `-m` command-line option, which uses these expressions.' query='Please provide the full content of `testing/test_mark.py`.' extra_requirements='' purpose='I need to find a test case that uses marker expressions with the `-m` option to demonstrate the end-to-end functionality affected by the bug.'
+2025-12-21 01:41:20,694 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - INFO - Retrieving contexts from memory for query: Please provide the full content of `testing/test_mark.py`.
+2025-12-21 01:41:20,694 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_retrieval_node - ERROR - Failed to retrieve from memory: Athena memory client is not configured.
+2025-12-21 01:41:20,695 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.reset_messages_node - DEBUG - Resetting context_provider_messages in state.
+2025-12-21 01:41:20,696 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - INFO - Creating context provider message from refined query
+2025-12-21 01:41:20,696 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_context_refined_query_message_node - DEBUG - Query message: Essential query: Please provide the full content of `testing/test_mark.py`.
+Purpose: I need to find a test case that uses marker expressions with the `-m` option to demonstrate the end-to-end functionality affected by the bug.
+2025-12-21 01:41:23,437 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have read the full content of `testing/test_mark.py` to help you find a test case using marker expressions with the `-m` option. This will allow you to examine the end-to-end functionality related to the bug you are investigating.' additional_kwargs={'function_call': {'name': 'read_file_with_knowledge_graph_data', 'arguments': '{"relative_path": "testing/test_mark.py"}'}} response_metadata={'is_blocked': False, 'safety_ratings': [], 'usage_metadata': {'prompt_token_count': 2055, 'candidates_token_count': 75, 'total_token_count': 2305, 'prompt_tokens_details': [{'modality': 1, 'token_count': 2055}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 75}], 'thoughts_token_count': 175, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.13488886515299478, 'model_name': 'gemini-2.5-pro'} id='run--c50ec0ee-27ea-4119-8490-d659bc1438ec-0' tool_calls=[{'name': 'read_file_with_knowledge_graph_data', 'args': {'relative_path': 'testing/test_mark.py'}, 'id': 'f21d71e5-14ea-45cd-87c6-7fb68585d0c5', 'type': 'tool_call'}] usage_metadata={'input_tokens': 2055, 'output_tokens': 75, 'total_tokens': 2305, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 175}}
+2025-12-21 01:41:32,045 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_provider_node - DEBUG - content='I have read the file `testing/test_mark.py` and found several test cases that use marker expressions with the `-m` option. The `test_mark_option` function demonstrates basic marker selection with expressions like "xyz" and "xyz or xyz2". Additionally, `test_mark_option_custom` shows how to use custom markers, and `test_ini_markers_whitespace` illustrates how markers can be defined in the `pytest.ini` file and then used with the `-m` option to selectively run tests.' additional_kwargs={} response_metadata={'is_blocked': False, 'safety_ratings': [], 'citation_metadata': {'citations': [{'start_index': 592, 'end_index': 1188, 'uri': 'https://github.com/pytest-dev/pytest', 'title': '', 'license_': ''}, {'start_index': 1781, 'end_index': 2131, 'uri': 'https://github.com/pytest-dev/pytest', 'title': '', 'license_': ''}, {'start_index': 2122, 'end_index': 2529, 'uri': 'https://github.com/pytest-dev/pytest', 'title': '', 'license_': ''}, {'start_index': 2753, 'end_index': 3105, 'uri': 'https://github.com/pytest-dev/pytest', 'license_': 'MIT', 'title': ''}]}, 'usage_metadata': {'prompt_token_count': 8582, 'candidates_token_count': 112, 'total_token_count': 9808, 'prompt_tokens_details': [{'modality': 1, 'token_count': 8582}], 'candidates_tokens_details': [{'modality': 1, 'token_count': 112}], 'thoughts_token_count': 1114, 'cached_content_token_count': 0, 'cache_tokens_details': []}, 'finish_reason': 'STOP', 'avg_logprobs': -0.5687615190233503, 'model_name': 'gemini-2.5-pro'} id='run--3838fb22-6ae6-4f01-9b84-919f3e2a7f2c-0' usage_metadata={'input_tokens': 8582, 'output_tokens': 112, 'total_tokens': 9808, 'input_token_details': {'cache_read': 0}, 'output_token_details': {'reasoning': 1114}}
+2025-12-21 01:41:32,046 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - This is the query you need to answer:
+
+--- BEGIN QUERY ---
+Please provide the full content of `testing/test_mark.py`.
+--- END QUERY ---
+
+
+
+--- BEGIN PURPOSE ---
+I need to find a test case that uses marker expressions with the `-m` option to demonstrate the end-to-end functionality affected by the bug.
+--- END PURPOSE ---
+
+The context or file content that you have seen so far (Some of the context may be IRRELEVANT to the query!!!):
+
+--- BEGIN CONTEXT ---
+File: testing/test_mark.py
+Line number range: 1 - 500
+Content:
+1. import os
+2. import sys
+3. from unittest import mock
+4. 
+5. import pytest
+6. from _pytest.config import ExitCode
+7. from _pytest.mark import EMPTY_PARAMETERSET_OPTION
+8. from _pytest.mark import MarkGenerator as Mark
+9. from _pytest.nodes import Collector
+10. from _pytest.nodes import Node
+11. 
+12. 
+13. class TestMark:
+14.     @pytest.mark.parametrize("attr", ["mark", "param"])
+15.     @pytest.mark.parametrize("modulename", ["py.test", "pytest"])
+16.     def test_pytest_exists_in_namespace_all(self, attr: str, modulename: str) -> None:
+17.         module = sys.modules[modulename]
+18.         assert attr in module.__all__  # type: ignore
+19. 
+20.     def test_pytest_mark_notcallable(self) -> None:
+21.         mark = Mark()
+22.         with pytest.raises(TypeError):
+23.             mark()  # type: ignore[operator] # noqa: F821
+24. 
+25.     def test_mark_with_param(self):
+26.         def some_function(abc):
+27.             pass
+28. 
+29.         class SomeClass:
+30.             pass
+31. 
+32.         assert pytest.mark.foo(some_function) is some_function
+33.         marked_with_args = pytest.mark.foo.with_args(some_function)
+34.         assert marked_with_args is not some_function  # type: ignore[comparison-overlap] # noqa: F821
+35. 
+36.         assert pytest.mark.foo(SomeClass) is SomeClass
+37.         assert pytest.mark.foo.with_args(SomeClass) is not SomeClass  # type: ignore[comparison-overlap] # noqa: F821
+38. 
+39.     def test_pytest_mark_name_starts_with_underscore(self):
+40.         mark = Mark()
+41.         with pytest.raises(AttributeError):
+42.             mark._some_name
+43. 
+44. 
+45. def test_marked_class_run_twice(testdir):
+46.     """Test fails file is run twice that contains marked class.
+47.     See issue#683.
+48.     """
+49.     py_file = testdir.makepyfile(
+50.         """
+51.     import pytest
+52.     @pytest.mark.parametrize('abc', [1, 2, 3])
+53.     class Test1(object):
+54.         def test_1(self, abc):
+55.             assert abc in [1, 2, 3]
+56.     """
+57.     )
+58.     file_name = os.path.basename(py_file.strpath)
+59.     rec = testdir.inline_run(file_name, file_name)
+60.     rec.assertoutcome(passed=6)
+61. 
+62. 
+63. def test_ini_markers(testdir):
+64.     testdir.makeini(
+65.         """
+66.         [pytest]
+67.         markers =
+68.             a1: this is a webtest marker
+69.             a2: this is a smoke marker
+70.     """
+71.     )
+72.     testdir.makepyfile(
+73.         """
+74.         def test_markers(pytestconfig):
+75.             markers = pytestconfig.getini("markers")
+76.             print(markers)
+77.             assert len(markers) >= 2
+78.             assert markers[0].startswith("a1:")
+79.             assert markers[1].startswith("a2:")
+80.     """
+81.     )
+82.     rec = testdir.inline_run()
+83.     rec.assertoutcome(passed=1)
+84. 
+85. 
+86. def test_markers_option(testdir):
+87.     testdir.makeini(
+88.         """
+89.         [pytest]
+90.         markers =
+91.             a1: this is a webtest marker
+92.             a1some: another marker
+93.             nodescription
+94.     """
+95.     )
+96.     result = testdir.runpytest("--markers")
+97.     result.stdout.fnmatch_lines(
+98.         ["*a1*this is a webtest*", "*a1some*another marker", "*nodescription*"]
+99.     )
+100. 
+101. 
+102. def test_ini_markers_whitespace(testdir):
+103.     testdir.makeini(
+104.         """
+105.         [pytest]
+106.         markers =
+107.             a1 : this is a whitespace marker
+108.     """
+109.     )
+110.     testdir.makepyfile(
+111.         """
+112.         import pytest
+113. 
+114.         @pytest.mark.a1
+115.         def test_markers():
+116.             assert True
+117.     """
+118.     )
+119.     rec = testdir.inline_run("--strict-markers", "-m", "a1")
+120.     rec.assertoutcome(passed=1)
+121. 
+122. 
+123. def test_marker_without_description(testdir):
+124.     testdir.makefile(
+125.         ".cfg",
+126.         setup="""
+127.         [tool:pytest]
+128.         markers=slow
+129.     """,
+130.     )
+131.     testdir.makeconftest(
+132.         """
+133.         import pytest
+134.         pytest.mark.xfail('FAIL')
+135.     """
+136.     )
+137.     ftdir = testdir.mkdir("ft1_dummy")
+138.     testdir.tmpdir.join("conftest.py").move(ftdir.join("conftest.py"))
+139.     rec = testdir.runpytest("--strict-markers")
+140.     rec.assert_outcomes()
+141. 
+142. 
+143. def test_markers_option_with_plugin_in_current_dir(testdir):
+144.     testdir.makeconftest('pytest_plugins = "flip_flop"')
+145.     testdir.makepyfile(
+146.         flip_flop="""\
+147.         def pytest_configure(config):
+148.             config.addinivalue_line("markers", "flip:flop")
+149. 
+150.         def pytest_generate_tests(metafunc):
+151.             try:
+152.                 mark = metafunc.function.flipper
+153.             except AttributeError:
+154.                 return
+155.             metafunc.parametrize("x", (10, 20))"""
+156.     )
+157.     testdir.makepyfile(
+158.         """\
+159.         import pytest
+160.         @pytest.mark.flipper
+161.         def test_example(x):
+162.             assert x"""
+163.     )
+164. 
+165.     result = testdir.runpytest("--markers")
+166.     result.stdout.fnmatch_lines(["*flip*flop*"])
+167. 
+168. 
+169. def test_mark_on_pseudo_function(testdir):
+170.     testdir.makepyfile(
+171.         """
+172.         import pytest
+173. 
+174.         @pytest.mark.r(lambda x: 0/0)
+175.         def test_hello():
+176.             pass
+177.     """
+178.     )
+179.     reprec = testdir.inline_run()
+180.     reprec.assertoutcome(passed=1)
+181. 
+182. 
+183. @pytest.mark.parametrize("option_name", ["--strict-markers", "--strict"])
+184. def test_strict_prohibits_unregistered_markers(testdir, option_name):
+185.     testdir.makepyfile(
+186.         """
+187.         import pytest
+188.         @pytest.mark.unregisteredmark
+189.         def test_hello():
+190.             pass
+191.     """
+192.     )
+193.     result = testdir.runpytest(option_name)
+194.     assert result.ret != 0
+195.     result.stdout.fnmatch_lines(
+196.         ["'unregisteredmark' not found in `markers` configuration option"]
+197.     )
+198. 
+199. 
+200. @pytest.mark.parametrize(
+201.     ("expr", "expected_passed"),
+202.     [
+203.         ("xyz", ["test_one"]),
+204.         ("(((  xyz))  )", ["test_one"]),
+205.         ("not not xyz", ["test_one"]),
+206.         ("xyz and xyz2", []),
+207.         ("xyz2", ["test_two"]),
+208.         ("xyz or xyz2", ["test_one", "test_two"]),
+209.     ],
+210. )
+211. def test_mark_option(expr: str, expected_passed: str, testdir) -> None:
+212.     testdir.makepyfile(
+213.         """
+214.         import pytest
+215.         @pytest.mark.xyz
+216.         def test_one():
+217.             pass
+218.         @pytest.mark.xyz2
+219.         def test_two():
+220.             pass
+221.     """
+222.     )
+223.     rec = testdir.inline_run("-m", expr)
+224.     passed, skipped, fail = rec.listoutcomes()
+225.     passed = [x.nodeid.split("::")[-1] for x in passed]
+226.     assert passed == expected_passed
+227. 
+228. 
+229. @pytest.mark.parametrize(
+230.     ("expr", "expected_passed"),
+231.     [("interface", ["test_interface"]), ("not interface", ["test_nointer"])],
+232. )
+233. def test_mark_option_custom(expr: str, expected_passed: str, testdir) -> None:
+234.     testdir.makeconftest(
+235.         """
+236.         import pytest
+237.         def pytest_collection_modifyitems(items):
+238.             for item in items:
+239.                 if "interface" in item.nodeid:
+240.                     item.add_marker(pytest.mark.interface)
+241.     """
+242.     )
+243.     testdir.makepyfile(
+244.         """
+245.         def test_interface():
+246.             pass
+247.         def test_nointer():
+248.             pass
+249.     """
+250.     )
+251.     rec = testdir.inline_run("-m", expr)
+252.     passed, skipped, fail = rec.listoutcomes()
+253.     passed = [x.nodeid.split("::")[-1] for x in passed]
+254.     assert passed == expected_passed
+255. 
+256. 
+257. @pytest.mark.parametrize(
+258.     ("expr", "expected_passed"),
+259.     [
+260.         ("interface", ["test_interface"]),
+261.         ("not interface", ["test_nointer", "test_pass", "test_1", "test_2"]),
+262.         ("pass", ["test_pass"]),
+263.         ("not pass", ["test_interface", "test_nointer", "test_1", "test_2"]),
+264.         ("not not not (pass)", ["test_interface", "test_nointer", "test_1", "test_2"]),
+265.         ("1 or 2", ["test_1", "test_2"]),
+266.         ("not (1 or 2)", ["test_interface", "test_nointer", "test_pass"]),
+267.     ],
+268. )
+269. def test_keyword_option_custom(expr: str, expected_passed: str, testdir) -> None:
+270.     testdir.makepyfile(
+271.         """
+272.         def test_interface():
+273.             pass
+274.         def test_nointer():
+275.             pass
+276.         def test_pass():
+277.             pass
+278.         def test_1():
+279.             pass
+280.         def test_2():
+281.             pass
+282.     """
+283.     )
+284.     rec = testdir.inline_run("-k", expr)
+285.     passed, skipped, fail = rec.listoutcomes()
+286.     passed = [x.nodeid.split("::")[-1] for x in passed]
+287.     assert passed == expected_passed
+288. 
+289. 
+290. def test_keyword_option_considers_mark(testdir):
+291.     testdir.copy_example("marks/marks_considered_keywords")
+292.     rec = testdir.inline_run("-k", "foo")
+293.     passed = rec.listoutcomes()[0]
+294.     assert len(passed) == 1
+295. 
+296. 
+297. @pytest.mark.parametrize(
+298.     ("expr", "expected_passed"),
+299.     [
+300.         ("None", ["test_func[None]"]),
+301.         ("[1.3]", ["test_func[1.3]"]),
+302.         ("2-3", ["test_func[2-3]"]),
+303.     ],
+304. )
+305. def test_keyword_option_parametrize(expr: str, expected_passed: str, testdir) -> None:
+306.     testdir.makepyfile(
+307.         """
+308.         import pytest
+309.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+310.         def test_func(arg):
+311.             pass
+312.     """
+313.     )
+314.     rec = testdir.inline_run("-k", expr)
+315.     passed, skipped, fail = rec.listoutcomes()
+316.     passed = [x.nodeid.split("::")[-1] for x in passed]
+317.     assert passed == expected_passed
+318. 
+319. 
+320. def test_parametrize_with_module(testdir):
+321.     testdir.makepyfile(
+322.         """
+323.         import pytest
+324.         @pytest.mark.parametrize("arg", [pytest,])
+325.         def test_func(arg):
+326.             pass
+327.     """
+328.     )
+329.     rec = testdir.inline_run()
+330.     passed, skipped, fail = rec.listoutcomes()
+331.     expected_id = "test_func[" + pytest.__name__ + "]"
+332.     assert passed[0].nodeid.split("::")[-1] == expected_id
+333. 
+334. 
+335. @pytest.mark.parametrize(
+336.     ("expr", "expected_error"),
+337.     [
+338.         (
+339.             "foo or",
+340.             "at column 7: expected not OR left parenthesis OR identifier; got end of input",
+341.         ),
+342.         (
+343.             "foo or or",
+344.             "at column 8: expected not OR left parenthesis OR identifier; got or",
+345.         ),
+346.         ("(foo", "at column 5: expected right parenthesis; got end of input",),
+347.         ("foo bar", "at column 5: expected end of input; got identifier",),
+348.         (
+349.             "or or",
+350.             "at column 1: expected not OR left parenthesis OR identifier; got or",
+351.         ),
+352.         (
+353.             "not or",
+354.             "at column 5: expected not OR left parenthesis OR identifier; got or",
+355.         ),
+356.     ],
+357. )
+358. def test_keyword_option_wrong_arguments(
+359.     expr: str, expected_error: str, testdir, capsys
+360. ) -> None:
+361.     testdir.makepyfile(
+362.         """
+363.             def test_func(arg):
+364.                 pass
+365.         """
+366.     )
+367.     testdir.inline_run("-k", expr)
+368.     err = capsys.readouterr().err
+369.     assert expected_error in err
+370. 
+371. 
+372. def test_parametrized_collected_from_command_line(testdir):
+373.     """Parametrized test not collected if test named specified
+374.        in command line issue#649.
+375.     """
+376.     py_file = testdir.makepyfile(
+377.         """
+378.         import pytest
+379.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+380.         def test_func(arg):
+381.             pass
+382.     """
+383.     )
+384.     file_name = os.path.basename(py_file.strpath)
+385.     rec = testdir.inline_run(file_name + "::" + "test_func")
+386.     rec.assertoutcome(passed=3)
+387. 
+388. 
+389. def test_parametrized_collect_with_wrong_args(testdir):
+390.     """Test collect parametrized func with wrong number of args."""
+391.     py_file = testdir.makepyfile(
+392.         """
+393.         import pytest
+394. 
+395.         @pytest.mark.parametrize('foo, bar', [(1, 2, 3)])
+396.         def test_func(foo, bar):
+397.             pass
+398.     """
+399.     )
+400. 
+401.     result = testdir.runpytest(py_file)
+402.     result.stdout.fnmatch_lines(
+403.         [
+404.             'test_parametrized_collect_with_wrong_args.py::test_func: in "parametrize" the number of names (2):',
+405.             "  ['foo', 'bar']",
+406.             "must be equal to the number of values (3):",
+407.             "  (1, 2, 3)",
+408.         ]
+409.     )
+410. 
+411. 
+412. def test_parametrized_with_kwargs(testdir):
+413.     """Test collect parametrized func with wrong number of args."""
+414.     py_file = testdir.makepyfile(
+415.         """
+416.         import pytest
+417. 
+418.         @pytest.fixture(params=[1,2])
+419.         def a(request):
+420.             return request.param
+421. 
+422.         @pytest.mark.parametrize(argnames='b', argvalues=[1, 2])
+423.         def test_func(a, b):
+424.             pass
+425.     """
+426.     )
+427. 
+428.     result = testdir.runpytest(py_file)
+429.     assert result.ret == 0
+430. 
+431. 
+432. def test_parametrize_iterator(testdir):
+433.     """parametrize should work with generators (#5354)."""
+434.     py_file = testdir.makepyfile(
+435.         """\
+436.         import pytest
+437. 
+438.         def gen():
+439.             yield 1
+440.             yield 2
+441.             yield 3
+442. 
+443.         @pytest.mark.parametrize('a', gen())
+444.         def test(a):
+445.             assert a >= 1
+446.         """
+447.     )
+448.     result = testdir.runpytest(py_file)
+449.     assert result.ret == 0
+450.     # should not skip any tests
+451.     result.stdout.fnmatch_lines(["*3 passed*"])
+452. 
+453. 
+454. class TestFunctional:
+455.     def test_merging_markers_deep(self, testdir):
+456.         # issue 199 - propagate markers into nested classes
+457.         p = testdir.makepyfile(
+458.             """
+459.             import pytest
+460.             class TestA(object):
+461.                 pytestmark = pytest.mark.a
+462.                 def test_b(self):
+463.                     assert True
+464.                 class TestC(object):
+465.                     # this one didn't get marked
+466.                     def test_d(self):
+467.                         assert True
+468.         """
+469.         )
+470.         items, rec = testdir.inline_genitems(p)
+471.         for item in items:
+472.             print(item, item.keywords)
+473.             assert [x for x in item.iter_markers() if x.name == "a"]
+474. 
+475.     def test_mark_decorator_subclass_does_not_propagate_to_base(self, testdir):
+476.         p = testdir.makepyfile(
+477.             """
+478.             import pytest
+479. 
+480.             @pytest.mark.a
+481.             class Base(object): pass
+482. 
+483.             @pytest.mark.b
+484.             class Test1(Base):
+485.                 def test_foo(self): pass
+486. 
+487.             class Test2(Base):
+488.                 def test_bar(self): pass
+489.         """
+490.         )
+491.         items, rec = testdir.inline_genitems(p)
+492.         self.assert_markers(items, test_foo=("a", "b"), test_bar=("a",))
+493. 
+494.     def test_mark_should_not_pass_to_siebling_class(self, testdir):
+495.         """#568"""
+496.         p = testdir.makepyfile(
+497.             """
+498.             import pytest
+499. 
+500.             class TestBase(object):
+
+--- END CONTEXT ---
+
+REMEMBER: Your task is to summarize the relevant contexts to the given query and return it in the specified format!
+
+2025-12-21 01:41:35,673 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_extraction_node - DEBUG - Model response: context=[ContextOutput(reasoning='The user wants the full content of `testing/test_mark.py`. The provided context is exactly that file, so the entire content is relevant.', relative_path='testing/test_mark.py', start_line=1, end_line=500)]
+2025-12-21 01:41:35,674 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Storing 1 contexts to memory for query: Please provide the full content of `testing/test_mark.py`.
+2025-12-21 01:41:35,674 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_storage_node - ERROR - Failed to store to memory: Athena memory client is not configured.
+2025-12-21 01:41:35,674 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.memory_storage_node - INFO - Successfully stored contexts to memory
+2025-12-21 01:41:35,675 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - Adding 1 new contexts to 1 existing contexts
+2025-12-21 01:41:35,675 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.add_result_context_node - INFO - After deduplication: 2 total contexts (removed 0 duplicates)
+2025-12-21 01:41:35,675 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - This is the codebase structure:
+--- BEGIN FILE TREE ---
+pytest
+├── .github
+|   ├── FUNDING.yml
+|   ├── ISSUE_TEMPLATE.md
+|   ├── PULL_REQUEST_TEMPLATE.md
+|   ├── config.yml
+|   └── workflows
+|       ├── main.yml
+|       └── release-on-comment.yml
+├── .pre-commit-config.yaml
+├── .travis.yml
+├── CHANGELOG.rst
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.rst
+├── OPENCOLLECTIVE.rst
+├── README.rst
+├── RELEASING.rst
+├── TIDELIFT.rst
+├── bench
+|   ├── bench.py
+|   ├── bench_argcomplete.py
+|   ├── empty.py
+|   ├── manyparam.py
+|   └── skip.py
+├── changelog
+|   ├── 1316.breaking.rst
+|   ├── 4375.improvement.rst
+|   ├── 4391.improvement.rst
+|   ├── 4583.bugfix.rst
+|   ├── 4677.bugfix.rst
+|   ├── 6240.bugfix.rst
+|   ├── 6285.feature.rst
+|   ├── 6428.bugfix.rst
+|   ├── 6433.feature.rst
+|   ├── 6755.bugfix.rst
+|   ├── 6817.improvement.rst
+|   ├── 6856.feature.rst
+|   ├── 6871.bugfix.rst
+|   ├── 6903.breaking.rst
+|   ├── 6909.bugfix.rst
+|   ├── 6910.bugfix.rst
+|   ├── 6924.bugfix.rst
+|   ├── 6925.bugfix.rst
+|   ├── 6940.improvement.rst
+|   ├── 6947.bugfix.rst
+|   ├── 6951.bugfix.rst
+|   ├── 6956.bugfix.rst
+|   ├── 6981.deprecation.rst
+|   ├── 6991.bugfix.rst
+|   ├── 6991.improvement.rst
+|   ├── 6992.bugfix.rst
+|   ├── 7035.trivial.rst
+|   ├── 7040.breaking.rst
+|   ├── 7061.bugfix.rst
+|   ├── 7076.bugfix.rst
+|   ├── 7091.improvement.rst
+|   ├── 7097.deprecation.rst
+|   ├── 7110.bugfix.rst
+|   ├── 7122.breaking.rst
+|   ├── 7126.bugfix.rst
+|   ├── 7128.improvement.rst
+|   ├── 7135.breaking.rst
+|   ├── 7143.bugfix.rst
+|   ├── 7145.bugfix.rst
+|   ├── 7150.bugfix.rst
+|   ├── 7180.bugfix.rst
+|   ├── 7202.doc.rst
+|   ├── 7210.deprecation.rst
+|   ├── 7215.bugfix.rst
+|   ├── 7224.breaking.rst
+|   ├── 7226.breaking.rst
+|   ├── 7233.doc.rst
+|   ├── 7253.bugfix.rst
+|   ├── 7255.feature.rst
+|   ├── 7264.improvement.rst
+|   ├── 7291.trivial.rst
+|   ├── README.rst
+|   └── _template.rst
+├── codecov.yml
+├── doc
+|   └── en
+|       ├── _templates
+|       |   ├── globaltoc.html
+|       |   ├── links.html
+|       |   ├── relations.html
+|       |   ├── sidebarintro.html
+|       |   └── slim_searchbox.html
+|       ├── adopt.rst
+|       ├── announce
+|       |   ├── index.rst
+|       |   ├── release-2.0.0.rst
+|       |   ├── release-2.0.1.rst
+|       |   ├── release-2.0.2.rst
+|       |   ├── release-2.0.3.rst
+|       |   ├── release-2.1.0.rst
+|       |   ├── release-2.1.1.rst
+|       |   ├── release-2.1.2.rst
+|       |   ├── release-2.1.3.rst
+|       |   ├── release-2.2.0.rst
+|       |   ├── release-2.2.1.rst
+|       |   ├── release-2.2.2.rst
+|       |   ├── release-2.2.4.rst
+|       |   ├── release-2.3.0.rst
+|       |   ├── release-2.3.1.rst
+|       |   ├── release-2.3.2.rst
+|       |   ├── release-2.3.3.rst
+|       |   ├── release-2.3.4.rst
+|       |   ├── release-2.3.5.rst
+|       |   ├── release-2.4.0.rst
+|       |   ├── release-2.4.1.rst
+|       |   ├── release-2.4.2.rst
+|       |   ├── release-2.5.0.rst
+|       |   ├── release-2.5.1.rst
+|       |   ├── release-2.5.2.rst
+|       |   ├── release-2.6.0.rst
+|       |   ├── release-2.6.1.rst
+|       |   ├── release-2.6.2.rst
+|       |   ├── release-2.6.3.rst
+|       |   ├── release-2.7.0.rst
+|       |   ├── release-2.7.1.rst
+|       |   ├── release-2.7.2.rst
+|       |   ├── release-2.8.2.rst
+|       |   ├── release-2.8.3.rst
+|       |   ├── release-2.8.4.rst
+|       |   ├── release-2.8.5.rst
+|       |   ├── release-2.8.6.rst
+|       |   ├── release-2.8.7.rst
+|       |   ├── release-2.9.0.rst
+|       |   ├── release-2.9.1.rst
+|       |   ├── release-2.9.2.rst
+|       |   ├── release-3.0.0.rst
+|       |   ├── release-3.0.1.rst
+|       |   ├── release-3.0.2.rst
+|       |   ├── release-3.0.3.rst
+|       |   ├── release-3.0.4.rst
+|       |   ├── release-3.0.5.rst
+|       |   ├── release-3.0.6.rst
+|       |   ├── release-3.0.7.rst
+|       |   ├── release-3.1.0.rst
+|       |   ├── release-3.1.1.rst
+|       |   ├── release-3.1.2.rst
+|       |   ├── release-3.1.3.rst
+|       |   ├── release-3.10.0.rst
+|       |   ├── release-3.10.1.rst
+|       |   ├── release-3.2.0.rst
+|       |   ├── release-3.2.1.rst
+|       |   ├── release-3.2.2.rst
+|       |   ├── release-3.2.3.rst
+|       |   ├── release-3.2.4.rst
+|       |   ├── release-3.2.5.rst
+|       |   ├── release-3.3.0.rst
+|       |   ├── release-3.3.1.rst
+|       |   ├── release-3.3.2.rst
+|       |   ├── release-3.4.0.rst
+|       |   ├── release-3.4.1.rst
+|       |   ├── release-3.4.2.rst
+|       |   ├── release-3.5.0.rst
+|       |   ├── release-3.5.1.rst
+|       |   ├── release-3.6.0.rst
+|       |   ├── release-3.6.1.rst
+|       |   ├── release-3.6.2.rst
+|       |   ├── release-3.6.3.rst
+|       |   ├── release-3.6.4.rst
+|       |   ├── release-3.7.0.rst
+|       |   ├── release-3.7.1.rst
+|       |   ├── release-3.7.2.rst
+|       |   ├── release-3.7.3.rst
+|       |   ├── release-3.7.4.rst
+|       |   ├── release-3.8.0.rst
+|       |   ├── release-3.8.1.rst
+|       |   ├── release-3.8.2.rst
+|       |   ├── release-3.9.0.rst
+|       |   ├── release-3.9.1.rst
+|       |   ├── release-3.9.2.rst
+|       |   ├── release-3.9.3.rst
+|       |   ├── release-4.0.0.rst
+|       |   ├── release-4.0.1.rst
+|       |   ├── release-4.0.2.rst
+|       |   ├── release-4.1.0.rst
+|       |   ├── release-4.1.1.rst
+|       |   ├── release-4.2.0.rst
+|       |   ├── release-4.2.1.rst
+|       |   ├── release-4.3.0.rst
+|       |   ├── release-4.3.1.rst
+|       |   ├── release-4.4.0.rst
+|       |   ├── release-4.4.1.rst
+|       |   ├── release-4.4.2.rst
+|       |   ├── release-4.5.0.rst
+|       |   ├── release-4.6.0.rst
+|       |   ├── release-4.6.1.rst
+|       |   ├── release-4.6.2.rst
+|       |   ├── release-4.6.3.rst
+|       |   ├── release-4.6.4.rst
+|       |   ├── release-4.6.5.rst
+|       |   ├── release-4.6.6.rst
+|       |   ├── release-4.6.7.rst
+|       |   ├── release-4.6.8.rst
+|       |   ├── release-4.6.9.rst
+|       |   ├── release-5.0.0.rst
+|       |   ├── release-5.0.1.rst
+|       |   ├── release-5.1.0.rst
+|       |   ├── release-5.1.1.rst
+|       |   ├── release-5.1.2.rst
+|       |   ├── release-5.1.3.rst
+|       |   ├── release-5.2.0.rst
+|       |   ├── release-5.2.1.rst
+|       |   ├── release-5.2.2.rst
+|       |   ├── release-5.2.3.rst
+|       |   ├── release-5.2.4.rst
+|       |   ├── release-5.3.0.rst
+|       |   ├── release-5.3.1.rst
+|       |   ├── release-5.3.2.rst
+|       |   ├── release-5.3.3.rst
+|       |   ├── release-5.3.4.rst
+|       |   ├── release-5.3.5.rst
+|       |   ├── release-5.4.0.rst
+|       |   ├── release-5.4.1.rst
+|       |   ├── release-5.4.2.rst
+|       |   ├── release-5.4.3.rst
+|       |   └── sprint2016.rst
+|       ├── assert.rst
+|       ├── backwards-compatibility.rst
+|       ├── bash-completion.rst
+|       ├── builtin.rst
+|       ├── cache.rst
+|       ├── capture.rst
+|       ├── changelog.rst
+|       ├── conf.py
+|       ├── conftest.py
+|       ├── contact.rst
+|       ├── contents.rst
+|       ├── contributing.rst
+|       ├── customize.rst
+|       ├── deprecations.rst
+|       ├── development_guide.rst
+|       ├── doctest.rst
+|       ├── example
+|       |   ├── assertion
+|       |   |   ├── failure_demo.py
+|       |   |   ├── global_testmodule_config
+|       |   |   ├── test_failures.py
+|       |   |   └── test_setup_flow_example.py
+|       |   ├── attic.rst
+|       |   ├── conftest.py
+|       |   ├── fixtures
+|       |   |   └── test_fixtures_order.py
+|       |   ├── index.rst
+|       |   ├── markers.rst
+|       |   ├── multipython.py
+|       |   ├── nonpython
+|       |   |   ├── __init__.py
+|       |   |   ├── conftest.py
+|       |   |   └── test_simple.yaml
+|       |   ├── nonpython.rst
+|       |   ├── parametrize.rst
+|       |   ├── pythoncollection.py
+|       |   ├── pythoncollection.rst
+|       |   ├── reportingdemo.rst
+|       |   ├── simple.rst
+|       |   ├── special.rst
+|       |   └── xfail_demo.py
+|       ├── existingtestsuite.rst
+|       ├── faq.rst
+|       ├── fixture.rst
+|       ├── flaky.rst
+|       ├── funcarg_compare.rst
+|       ├── funcargs.rst
+|       ├── getting-started.rst
+|       ├── goodpractices.rst
+|       ├── historical-notes.rst
+|       ├── img
+|       ├── index.rst
+|       ├── license.rst
+|       ├── logging.rst
+|       ├── mark.rst
+|       ├── monkeypatch.rst
+|       ├── naming20.rst
+|       ├── nose.rst
+|       ├── parametrize.rst
+|       ├── plugins.rst
+|       ├── projects.rst
+|       ├── proposals
+|       |   └── parametrize_with_fixtures.rst
+|       ├── py27-py34-deprecation.rst
+|       ├── pythonpath.rst
+|       ├── recwarn.rst
+|       ├── reference.rst
+|       ├── requirements.txt
+|       ├── skipping.rst
+|       ├── sponsor.rst
+|       ├── start_doc_server.sh
+|       ├── talks.rst
+|       ├── tidelift.rst
+|       ├── tmpdir.rst
+|       ├── unittest.rst
+|       ├── usage.rst
+|       ├── warnings.rst
+|       ├── writing_plugins.rst
+|       ├── xunit_setup.rst
+|       └── yieldfixture.rst
+├── extra
+|   ├── get_issues.py
+|   └── setup-py.test
+|       └── setup.py
+├── scripts
+|   ├── append_codecov_token.py
+|   ├── publish-gh-release-notes.py
+|   ├── release-on-comment.py
+|   ├── release.minor.rst
+|   ├── release.patch.rst
+|   ├── release.py
+|   ├── report-coverage.sh
+|   └── towncrier-draft-to-file.py
+├── setup.py
+├── src
+|   ├── _pytest
+|   |   ├── __init__.py
+|   |   ├── _argcomplete.py
+|   |   ├── _code
+|   |   |   ├── __init__.py
+|   |   |   ├── code.py
+|   |   |   └── source.py
+|   |   ├── _io
+|   |   |   ├── __init__.py
+|   |   |   ├── saferepr.py
+|   |   |   ├── terminalwriter.py
+|   |   |   └── wcwidth.py
+|   |   ├── assertion
+|   |   |   ├── __init__.py
+|   |   |   ├── rewrite.py
+|   |   |   ├── truncate.py
+|   |   |   └── util.py
+|   |   ├── cacheprovider.py
+|   |   ├── capture.py
+|   |   ├── compat.py
+|   |   ├── config
+|   |   |   ├── __init__.py
+|   |   |   ├── argparsing.py
+|   |   |   ├── exceptions.py
+|   |   |   └── findpaths.py
+|   |   ├── debugging.py
+|   |   ├── deprecated.py
+|   |   ├── doctest.py
+|   |   ├── faulthandler.py
+|   |   ├── fixtures.py
+|   |   ├── freeze_support.py
+|   |   ├── helpconfig.py
+|   |   ├── hookspec.py
+|   |   ├── junitxml.py
+|   |   ├── logging.py
+|   |   ├── main.py
+|   |   ├── mark
+|   |   |   ├── __init__.py
+|   |   |   ├── evaluate.py
+|   |   |   ├── expression.py
+|   |   |   └── structures.py
+|   |   ├── monkeypatch.py
+|   |   ├── nodes.py
+|   |   ├── nose.py
+|   |   ├── outcomes.py
+|   |   ├── pastebin.py
+|   |   ├── pathlib.py
+|   |   ├── pytester.py
+|   |   ├── python.py
+|   |   ├── python_api.py
+|   |   ├── recwarn.py
+|   |   ├── reports.py
+|   |   ├── resultlog.py
+|   |   ├── runner.py
+|   |   ├── setuponly.py
+|   |   ├── setupplan.py
+|   |   ├── skipping.py
+|   |   ├── stepwise.py
+|   |   ├── store.py
+|   |   ├── terminal.py
+|   |   ├── timing.py
+|   |   ├── tmpdir.py
+|   |   ├── unittest.py
+|   |   ├── warning_types.py
+|   |   └── warnings.py
+|   └── pytest
+|       ├── __init__.py
+|       ├── __main__.py
+|       └── collect.py
+└── testing
+    ├── acceptance_test.py
+    ├── code
+    |   ├── test_code.py
+    |   ├── test_excinfo.py
+    |   └── test_source.py
+    ├── conftest.py
+    ├── deprecated_test.py
+    ├── example_scripts
+    |   ├── README.rst
+    |   ├── acceptance
+    |   |   └── fixture_mock_integration.py
+    |   ├── collect
+    |   |   ├── collect_init_tests
+    |   |   |   └── tests
+    |   |   ├── package_infinite_recursion
+    |   |   |   ├── conftest.py
+    |   |   |   └── tests
+    |   |   └── package_init_given_as_arg
+    |   |       └── pkg
+    |   ├── config
+    |   |   └── collect_pytest_prefix
+    |   |       ├── conftest.py
+    |   |       └── test_foo.py
+    |   ├── conftest_usageerror
+    |   |   └── conftest.py
+    |   ├── dataclasses
+    |   |   ├── test_compare_dataclasses.py
+    |   |   ├── test_compare_dataclasses_field_comparison_off.py
+    |   |   ├── test_compare_dataclasses_verbose.py
+    |   |   └── test_compare_two_different_dataclasses.py
+    |   ├── fixtures
+    |   |   ├── custom_item
+    |   |   |   ├── conftest.py
+    |   |   |   └── foo
+    |   |   ├── fill_fixtures
+    |   |   |   ├── test_conftest_funcargs_only_available_in_subdir
+    |   |   |   ├── test_detect_recursive_dependency_error.py
+    |   |   |   ├── test_extend_fixture_conftest_conftest
+    |   |   |   ├── test_extend_fixture_conftest_module
+    |   |   |   ├── test_extend_fixture_module_class.py
+    |   |   |   ├── test_funcarg_basic.py
+    |   |   |   ├── test_funcarg_lookup_classlevel.py
+    |   |   |   ├── test_funcarg_lookup_modulelevel.py
+    |   |   |   └── test_funcarg_lookupfails.py
+    |   |   ├── test_fixture_named_request.py
+    |   |   └── test_getfixturevalue_dynamic.py
+    |   ├── issue88_initial_file_multinodes
+    |   |   ├── conftest.py
+    |   |   └── test_hello.py
+    |   ├── issue_519.py
+    |   ├── marks
+    |   |   └── marks_considered_keywords
+    |   |       ├── conftest.py
+    |   |       └── test_marks_as_keywords.py
+    |   ├── perf_examples
+    |   |   └── collect_stats
+    |   |       ├── generate_folders.py
+    |   |       └── template_test.py
+    |   ├── tmpdir
+    |   |   └── tmpdir_fixture.py
+    |   ├── unittest
+    |   |   ├── test_parametrized_fixture_error_message.py
+    |   |   ├── test_setup_skip.py
+    |   |   ├── test_setup_skip_class.py
+    |   |   ├── test_setup_skip_module.py
+    |   |   ├── test_unittest_asyncio.py
+    |   |   └── test_unittest_asynctest.py
+    |   └── warnings
+    |       ├── test_group_warnings_by_message.py
+    |       └── test_group_warnings_by_message_summary
+    |           ├── test_1.py
+    |           └── test_2.py
+    ├── examples
+    |   └── test_issue519.py
+    ├── freeze
+    |   ├── create_executable.py
+    |   ├── runtests_script.py
+    |   ├── tests
+    |   |   ├── test_doctest.txt
+    |   |   └── test_trivial.py
+    |   └── tox_run.py
+    ├── io
+    |   ├── test_saferepr.py
+    |   ├── test_terminalwriter.py
+    |   └── test_wcwidth.py
+    ├── logging
+    |   ├── test_fixture.py
+    |   ├── test_formatter.py
+    |   └── test_reporting.py
+    ├── python
+    |   ├── approx.py
+    |   ├── collect.py
+    |   ├── fixtures.py
+    |   ├── integration.py
+    |   ├── metafunc.py
+    |   ├── raises.py
+    |   └── show_fixtures_per_test.py
+    ├── test_argcomplete.py
+    ├── test_assertion.py
+    ├── test_assertrewrite.py
+    ├── test_cacheprovider.py
+    ├── test_capture.py
+    ├── test_collection.py
+    ├── test_compat.py
+    ├── test_config.py
+    ├── test_conftest.py
+    ├── test_debugging.py
+    ├── test_doctest.py
+    ├── test_entry_points.py
+    ├── test_error_diffs.py
+    ├── test_faulthandler.py
+    ├── test_helpconfig.py
+    ├── test_junitxml.py
+    ├── test_main.py
+    ├── test_mark.py
+    ├── test_mark_expression.py
+    ├── test_meta.py
+    ├── test_monkeypatch.py
+    ├── test_nodes.py
+    ├── test_nose.py
+    ├── test_parseopt.py
+    ├── test_pastebin.py
+    ├── test_pathlib.py
+    ├── test_pluginmanager.py
+    ├── test_pytester.py
+    ├── test_recwarn.py
+    ├── test_reports.py
+    ├── test_resultlog.py
+    ├── test_runner.py
+    ├── test_runner_xunit.py
+    ├── test_session.py
+    ├── test_setuponly.py
+    ├── test_setupplan.py
+    ├── test_skipping.py
+    ├── test_stepwise.py
+    ├── test_store.py
+    ├── test_terminal.py
+    ├── test_tmpdir.py
+    ├── test_unittest.py
+    ├── test_warning_types.py
+    └── test_warnings.py
+--- END FILE TREE ---
+    
+This is the original user query:
+--- BEGIN ORIGINAL QUERY ---
+
+Issue: Pytest crashes the interpreter on debug build for 3.8+
+
+Description: Short reproducer
+```py
+>>> Expression.compile("False")
+python: Python/compile.c:3559: compiler_nameop: Assertion `!_PyUnicode_EqualToASCIIString(name, "None") && !_PyUnicode_EqualToASCIIString(name, "True") && !_PyUnicode_EqualToASCIIString(name, "False")' failed.
+[1]    29440 abort (core dumped)  python
+```
+
+Related issue for improvement of this behavior: [bpo-40870](https://bugs.python.org/issue40870)
+
+Patch information:
+diff --git a/doc/en/example/markers.rst b/doc/en/example/markers.rst
+index e791f489d..d6e6484ab 100644
+--- a/doc/en/example/markers.rst
++++ b/doc/en/example/markers.rst
+@@ -198,7 +198,7 @@ Or to select "http" and "quick" tests:
+ 
+     ===================== 2 passed, 2 deselected in 0.12s ======================
+ 
+-You can use ``and``, ``or``, ``not`` and parentheses.
++You can use ``and``, ``or``, ``not`` and parentheses. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ 
+ Registering markers
+diff --git a/doc/en/usage.rst b/doc/en/usage.rst
+index 02457d015..ecc21551d 100644
+--- a/doc/en/usage.rst
++++ b/doc/en/usage.rst
+@@ -95,7 +95,7 @@ Pytest supports several ways to run and select tests from the command-line.
+     pytest -k "MyClass and not method"
+ 
+ This will run tests which contain names that match the given *string expression* (case-insensitive),
+-which can include Python operators that use filenames, class names and function names as variables.
++which can include Python operators that use filenames, class names and function names as variables. The exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ The example above will run ``TestMyClass.test_something``  but not ``TestMyClass.test_method_simple``.
+ 
+ .. _nodeids:
+@@ -124,7 +124,7 @@ Another example specifying a test method in the command line:
+ 
+     pytest -m slow
+ 
+-Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator.
++Will run all tests which are decorated with the ``@pytest.mark.slow`` decorator. Marker expressions accept boolean operators such as ``and``, ``or``, ``not`` and parentheses; the exact names ``True``, ``False``, and ``None`` are treated as their corresponding Python constants and are not matched as identifiers.
+ 
+ For more information see :ref:`marks <mark>`.
+ 
+diff --git a/src/_pytest/mark/expression.py b/src/_pytest/mark/expression.py
+index 04c73411a..343fae266 100644
+--- a/src/_pytest/mark/expression.py
++++ b/src/_pytest/mark/expression.py
+@@ -161,6 +161,13 @@ def not_expr(s: Scanner) -> ast.expr:
+         return ret
+     ident = s.accept(TokenType.IDENT)
+     if ident:
++        # Avoid creating ast.Name nodes for reserved keywords which must be constants.
++        if ident.value == "True":
++            return ast.NameConstant(True)
++        if ident.value == "False":
++            return ast.NameConstant(False)
++        if ident.value == "None":
++            return ast.NameConstant(None)
+         return ast.Name(ident.value, ast.Load())
+     s.reject((TokenType.NOT, TokenType.LPAREN, TokenType.IDENT))
+ 
+
+
+OBJECTIVE: Find 3 relevant existing test cases that demonstrates similar functionality to the reported bug,
+including ALL necessary imports, test setup, mocking, assertions, and any test method used in the test case.
+
+<reasoning>
+1. Analyze bug characteristics:
+   - Core functionality being tested
+   - Input parameters and configurations
+   - Expected error conditions
+   - Environmental dependencies
+
+2. Search requirements:
+   - Required imports and dependencies
+   - Test files exercising similar functionality
+   - Mock/fixture setup patterns
+   - Assertion styles
+   - Error handling tests
+
+3. Focus areas:
+   - All necessary imports (standard library, testing frameworks, mocking utilities)
+   - Dependencies and third-party packages
+   - Test setup and teardown
+   - Mock object configuration
+   - Network/external service simulation
+   - Error condition verification
+</reasoning>
+
+REQUIREMENTS:
+- Return 3 complete, self-contained test cases most similar to bug scenario
+- Must include ALL necessary imports at the start of each test file
+- Must include full test method implementation
+- Must include ALL mock/fixture setup
+- Must include helper functions used by test
+- Must preserve exact file paths and line numbers
+
+<examples>
+<example id="database-timeout">
+<bug>
+db.execute("SELECT * FROM users").fetchall() 
+raises ConnectionTimeout when load is high
+</bug>
+
+<ideal_test_match>
+# File: tests/test_database.py
+import pytest
+from unittest.mock import Mock, patch
+from database.exceptions import ConnectionTimeout
+from database.models import QueryResult
+from database.client import DatabaseClient
+
+class TestDatabaseTimeout:
+    @pytest.fixture
+    def mock_db_connection(self):
+        conn = Mock()
+        conn.execute.side_effect = [
+            ConnectionTimeout("Connection timed out"),
+            QueryResult(["user1", "user2"])  # Second try succeeds
+        ]
+        return conn
+        
+    def test_handle_timeout_during_query(self, mock_db_connection):
+        # Complete test showing timeout scenario
+        # Including retry logic verification
+        # With all necessary assertions
+</ideal_test_match>
+</example>
+
+<example id="file-permission">
+<bug>
+FileProcessor('/root/data.txt').process() 
+fails with PermissionError
+</bug>
+
+<ideal_test_match>
+# File: tests/test_file_processor.py
+import os
+import pytest
+from unittest.mock import patch, mock_open
+from file_processor import FileProcessor
+from file_processor.exceptions import ProcessingError
+
+class TestFilePermissions:
+    @patch('os.access')
+    @patch('builtins.open')
+    def test_file_permission_denied(self, mock_open, mock_access):
+        # Full test setup with mocked file system
+        # Permission denial simulation
+        # Error handling verification
+</ideal_test_match>
+</example>
+
+Search priority:
+1. Tests of exact same functionality (including import patterns)
+2. Tests with similar error conditions
+3. Tests with comparable mocking patterns
+4. Tests demonstrating similar assertions
+
+Find the 3 most relevant test cases with complete context, ensuring ALL necessary imports are included at the start of each test file.
+
+--- END ORIGINAL QUERY ---
+
+These are the previously asked refined queries:
+--- BEGIN PREVIOUS QUERY ---
+Previous refined query 1:
+Essential Query: Please provide the full content of `testing/test_mark_expression.py`.
+Extra Requirements: 
+Purpose: I need to analyze the tests for marker expression handling to find existing tests relevant to the bug concerning the parsing of 'True', 'False', and 'None'.
+
+Previous refined query 2:
+Essential Query: Please provide the full content of `testing/test_mark.py`.
+Extra Requirements: 
+Purpose: I need to find a test case that uses marker expressions with the `-m` option to demonstrate the end-to-end functionality affected by the bug.
+--- END PREVIOUS QUERY ---
+
+All aggregated context for the queries:
+--- BEGIN AGGREGATED CONTEXT ---
+File: testing/test_mark.py
+Line number range: 1 - 500
+Content:
+1. import os
+2. import sys
+3. from unittest import mock
+4. 
+5. import pytest
+6. from _pytest.config import ExitCode
+7. from _pytest.mark import EMPTY_PARAMETERSET_OPTION
+8. from _pytest.mark import MarkGenerator as Mark
+9. from _pytest.nodes import Collector
+10. from _pytest.nodes import Node
+11. 
+12. 
+13. class TestMark:
+14.     @pytest.mark.parametrize("attr", ["mark", "param"])
+15.     @pytest.mark.parametrize("modulename", ["py.test", "pytest"])
+16.     def test_pytest_exists_in_namespace_all(self, attr: str, modulename: str) -> None:
+17.         module = sys.modules[modulename]
+18.         assert attr in module.__all__  # type: ignore
+19. 
+20.     def test_pytest_mark_notcallable(self) -> None:
+21.         mark = Mark()
+22.         with pytest.raises(TypeError):
+23.             mark()  # type: ignore[operator] # noqa: F821
+24. 
+25.     def test_mark_with_param(self):
+26.         def some_function(abc):
+27.             pass
+28. 
+29.         class SomeClass:
+30.             pass
+31. 
+32.         assert pytest.mark.foo(some_function) is some_function
+33.         marked_with_args = pytest.mark.foo.with_args(some_function)
+34.         assert marked_with_args is not some_function  # type: ignore[comparison-overlap] # noqa: F821
+35. 
+36.         assert pytest.mark.foo(SomeClass) is SomeClass
+37.         assert pytest.mark.foo.with_args(SomeClass) is not SomeClass  # type: ignore[comparison-overlap] # noqa: F821
+38. 
+39.     def test_pytest_mark_name_starts_with_underscore(self):
+40.         mark = Mark()
+41.         with pytest.raises(AttributeError):
+42.             mark._some_name
+43. 
+44. 
+45. def test_marked_class_run_twice(testdir):
+46.     """Test fails file is run twice that contains marked class.
+47.     See issue#683.
+48.     """
+49.     py_file = testdir.makepyfile(
+50.         """
+51.     import pytest
+52.     @pytest.mark.parametrize('abc', [1, 2, 3])
+53.     class Test1(object):
+54.         def test_1(self, abc):
+55.             assert abc in [1, 2, 3]
+56.     """
+57.     )
+58.     file_name = os.path.basename(py_file.strpath)
+59.     rec = testdir.inline_run(file_name, file_name)
+60.     rec.assertoutcome(passed=6)
+61. 
+62. 
+63. def test_ini_markers(testdir):
+64.     testdir.makeini(
+65.         """
+66.         [pytest]
+67.         markers =
+68.             a1: this is a webtest marker
+69.             a2: this is a smoke marker
+70.     """
+71.     )
+72.     testdir.makepyfile(
+73.         """
+74.         def test_markers(pytestconfig):
+75.             markers = pytestconfig.getini("markers")
+76.             print(markers)
+77.             assert len(markers) >= 2
+78.             assert markers[0].startswith("a1:")
+79.             assert markers[1].startswith("a2:")
+80.     """
+81.     )
+82.     rec = testdir.inline_run()
+83.     rec.assertoutcome(passed=1)
+84. 
+85. 
+86. def test_markers_option(testdir):
+87.     testdir.makeini(
+88.         """
+89.         [pytest]
+90.         markers =
+91.             a1: this is a webtest marker
+92.             a1some: another marker
+93.             nodescription
+94.     """
+95.     )
+96.     result = testdir.runpytest("--markers")
+97.     result.stdout.fnmatch_lines(
+98.         ["*a1*this is a webtest*", "*a1some*another marker", "*nodescription*"]
+99.     )
+100. 
+101. 
+102. def test_ini_markers_whitespace(testdir):
+103.     testdir.makeini(
+104.         """
+105.         [pytest]
+106.         markers =
+107.             a1 : this is a whitespace marker
+108.     """
+109.     )
+110.     testdir.makepyfile(
+111.         """
+112.         import pytest
+113. 
+114.         @pytest.mark.a1
+115.         def test_markers():
+116.             assert True
+117.     """
+118.     )
+119.     rec = testdir.inline_run("--strict-markers", "-m", "a1")
+120.     rec.assertoutcome(passed=1)
+121. 
+122. 
+123. def test_marker_without_description(testdir):
+124.     testdir.makefile(
+125.         ".cfg",
+126.         setup="""
+127.         [tool:pytest]
+128.         markers=slow
+129.     """,
+130.     )
+131.     testdir.makeconftest(
+132.         """
+133.         import pytest
+134.         pytest.mark.xfail('FAIL')
+135.     """
+136.     )
+137.     ftdir = testdir.mkdir("ft1_dummy")
+138.     testdir.tmpdir.join("conftest.py").move(ftdir.join("conftest.py"))
+139.     rec = testdir.runpytest("--strict-markers")
+140.     rec.assert_outcomes()
+141. 
+142. 
+143. def test_markers_option_with_plugin_in_current_dir(testdir):
+144.     testdir.makeconftest('pytest_plugins = "flip_flop"')
+145.     testdir.makepyfile(
+146.         flip_flop="""\
+147.         def pytest_configure(config):
+148.             config.addinivalue_line("markers", "flip:flop")
+149. 
+150.         def pytest_generate_tests(metafunc):
+151.             try:
+152.                 mark = metafunc.function.flipper
+153.             except AttributeError:
+154.                 return
+155.             metafunc.parametrize("x", (10, 20))"""
+156.     )
+157.     testdir.makepyfile(
+158.         """\
+159.         import pytest
+160.         @pytest.mark.flipper
+161.         def test_example(x):
+162.             assert x"""
+163.     )
+164. 
+165.     result = testdir.runpytest("--markers")
+166.     result.stdout.fnmatch_lines(["*flip*flop*"])
+167. 
+168. 
+169. def test_mark_on_pseudo_function(testdir):
+170.     testdir.makepyfile(
+171.         """
+172.         import pytest
+173. 
+174.         @pytest.mark.r(lambda x: 0/0)
+175.         def test_hello():
+176.             pass
+177.     """
+178.     )
+179.     reprec = testdir.inline_run()
+180.     reprec.assertoutcome(passed=1)
+181. 
+182. 
+183. @pytest.mark.parametrize("option_name", ["--strict-markers", "--strict"])
+184. def test_strict_prohibits_unregistered_markers(testdir, option_name):
+185.     testdir.makepyfile(
+186.         """
+187.         import pytest
+188.         @pytest.mark.unregisteredmark
+189.         def test_hello():
+190.             pass
+191.     """
+192.     )
+193.     result = testdir.runpytest(option_name)
+194.     assert result.ret != 0
+195.     result.stdout.fnmatch_lines(
+196.         ["'unregisteredmark' not found in `markers` configuration option"]
+197.     )
+198. 
+199. 
+200. @pytest.mark.parametrize(
+201.     ("expr", "expected_passed"),
+202.     [
+203.         ("xyz", ["test_one"]),
+204.         ("(((  xyz))  )", ["test_one"]),
+205.         ("not not xyz", ["test_one"]),
+206.         ("xyz and xyz2", []),
+207.         ("xyz2", ["test_two"]),
+208.         ("xyz or xyz2", ["test_one", "test_two"]),
+209.     ],
+210. )
+211. def test_mark_option(expr: str, expected_passed: str, testdir) -> None:
+212.     testdir.makepyfile(
+213.         """
+214.         import pytest
+215.         @pytest.mark.xyz
+216.         def test_one():
+217.             pass
+218.         @pytest.mark.xyz2
+219.         def test_two():
+220.             pass
+221.     """
+222.     )
+223.     rec = testdir.inline_run("-m", expr)
+224.     passed, skipped, fail = rec.listoutcomes()
+225.     passed = [x.nodeid.split("::")[-1] for x in passed]
+226.     assert passed == expected_passed
+227. 
+228. 
+229. @pytest.mark.parametrize(
+230.     ("expr", "expected_passed"),
+231.     [("interface", ["test_interface"]), ("not interface", ["test_nointer"])],
+232. )
+233. def test_mark_option_custom(expr: str, expected_passed: str, testdir) -> None:
+234.     testdir.makeconftest(
+235.         """
+236.         import pytest
+237.         def pytest_collection_modifyitems(items):
+238.             for item in items:
+239.                 if "interface" in item.nodeid:
+240.                     item.add_marker(pytest.mark.interface)
+241.     """
+242.     )
+243.     testdir.makepyfile(
+244.         """
+245.         def test_interface():
+246.             pass
+247.         def test_nointer():
+248.             pass
+249.     """
+250.     )
+251.     rec = testdir.inline_run("-m", expr)
+252.     passed, skipped, fail = rec.listoutcomes()
+253.     passed = [x.nodeid.split("::")[-1] for x in passed]
+254.     assert passed == expected_passed
+255. 
+256. 
+257. @pytest.mark.parametrize(
+258.     ("expr", "expected_passed"),
+259.     [
+260.         ("interface", ["test_interface"]),
+261.         ("not interface", ["test_nointer", "test_pass", "test_1", "test_2"]),
+262.         ("pass", ["test_pass"]),
+263.         ("not pass", ["test_interface", "test_nointer", "test_1", "test_2"]),
+264.         ("not not not (pass)", ["test_interface", "test_nointer", "test_1", "test_2"]),
+265.         ("1 or 2", ["test_1", "test_2"]),
+266.         ("not (1 or 2)", ["test_interface", "test_nointer", "test_pass"]),
+267.     ],
+268. )
+269. def test_keyword_option_custom(expr: str, expected_passed: str, testdir) -> None:
+270.     testdir.makepyfile(
+271.         """
+272.         def test_interface():
+273.             pass
+274.         def test_nointer():
+275.             pass
+276.         def test_pass():
+277.             pass
+278.         def test_1():
+279.             pass
+280.         def test_2():
+281.             pass
+282.     """
+283.     )
+284.     rec = testdir.inline_run("-k", expr)
+285.     passed, skipped, fail = rec.listoutcomes()
+286.     passed = [x.nodeid.split("::")[-1] for x in passed]
+287.     assert passed == expected_passed
+288. 
+289. 
+290. def test_keyword_option_considers_mark(testdir):
+291.     testdir.copy_example("marks/marks_considered_keywords")
+292.     rec = testdir.inline_run("-k", "foo")
+293.     passed = rec.listoutcomes()[0]
+294.     assert len(passed) == 1
+295. 
+296. 
+297. @pytest.mark.parametrize(
+298.     ("expr", "expected_passed"),
+299.     [
+300.         ("None", ["test_func[None]"]),
+301.         ("[1.3]", ["test_func[1.3]"]),
+302.         ("2-3", ["test_func[2-3]"]),
+303.     ],
+304. )
+305. def test_keyword_option_parametrize(expr: str, expected_passed: str, testdir) -> None:
+306.     testdir.makepyfile(
+307.         """
+308.         import pytest
+309.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+310.         def test_func(arg):
+311.             pass
+312.     """
+313.     )
+314.     rec = testdir.inline_run("-k", expr)
+315.     passed, skipped, fail = rec.listoutcomes()
+316.     passed = [x.nodeid.split("::")[-1] for x in passed]
+317.     assert passed == expected_passed
+318. 
+319. 
+320. def test_parametrize_with_module(testdir):
+321.     testdir.makepyfile(
+322.         """
+323.         import pytest
+324.         @pytest.mark.parametrize("arg", [pytest,])
+325.         def test_func(arg):
+326.             pass
+327.     """
+328.     )
+329.     rec = testdir.inline_run()
+330.     passed, skipped, fail = rec.listoutcomes()
+331.     expected_id = "test_func[" + pytest.__name__ + "]"
+332.     assert passed[0].nodeid.split("::")[-1] == expected_id
+333. 
+334. 
+335. @pytest.mark.parametrize(
+336.     ("expr", "expected_error"),
+337.     [
+338.         (
+339.             "foo or",
+340.             "at column 7: expected not OR left parenthesis OR identifier; got end of input",
+341.         ),
+342.         (
+343.             "foo or or",
+344.             "at column 8: expected not OR left parenthesis OR identifier; got or",
+345.         ),
+346.         ("(foo", "at column 5: expected right parenthesis; got end of input",),
+347.         ("foo bar", "at column 5: expected end of input; got identifier",),
+348.         (
+349.             "or or",
+350.             "at column 1: expected not OR left parenthesis OR identifier; got or",
+351.         ),
+352.         (
+353.             "not or",
+354.             "at column 5: expected not OR left parenthesis OR identifier; got or",
+355.         ),
+356.     ],
+357. )
+358. def test_keyword_option_wrong_arguments(
+359.     expr: str, expected_error: str, testdir, capsys
+360. ) -> None:
+361.     testdir.makepyfile(
+362.         """
+363.             def test_func(arg):
+364.                 pass
+365.         """
+366.     )
+367.     testdir.inline_run("-k", expr)
+368.     err = capsys.readouterr().err
+369.     assert expected_error in err
+370. 
+371. 
+372. def test_parametrized_collected_from_command_line(testdir):
+373.     """Parametrized test not collected if test named specified
+374.        in command line issue#649.
+375.     """
+376.     py_file = testdir.makepyfile(
+377.         """
+378.         import pytest
+379.         @pytest.mark.parametrize("arg", [None, 1.3, "2-3"])
+380.         def test_func(arg):
+381.             pass
+382.     """
+383.     )
+384.     file_name = os.path.basename(py_file.strpath)
+385.     rec = testdir.inline_run(file_name + "::" + "test_func")
+386.     rec.assertoutcome(passed=3)
+387. 
+388. 
+389. def test_parametrized_collect_with_wrong_args(testdir):
+390.     """Test collect parametrized func with wrong number of args."""
+391.     py_file = testdir.makepyfile(
+392.         """
+393.         import pytest
+394. 
+395.         @pytest.mark.parametrize('foo, bar', [(1, 2, 3)])
+396.         def test_func(foo, bar):
+397.             pass
+398.     """
+399.     )
+400. 
+401.     result = testdir.runpytest(py_file)
+402.     result.stdout.fnmatch_lines(
+403.         [
+404.             'test_parametrized_collect_with_wrong_args.py::test_func: in "parametrize" the number of names (2):',
+405.             "  ['foo', 'bar']",
+406.             "must be equal to the number of values (3):",
+407.             "  (1, 2, 3)",
+408.         ]
+409.     )
+410. 
+411. 
+412. def test_parametrized_with_kwargs(testdir):
+413.     """Test collect parametrized func with wrong number of args."""
+414.     py_file = testdir.makepyfile(
+415.         """
+416.         import pytest
+417. 
+418.         @pytest.fixture(params=[1,2])
+419.         def a(request):
+420.             return request.param
+421. 
+422.         @pytest.mark.parametrize(argnames='b', argvalues=[1, 2])
+423.         def test_func(a, b):
+424.             pass
+425.     """
+426.     )
+427. 
+428.     result = testdir.runpytest(py_file)
+429.     assert result.ret == 0
+430. 
+431. 
+432. def test_parametrize_iterator(testdir):
+433.     """parametrize should work with generators (#5354)."""
+434.     py_file = testdir.makepyfile(
+435.         """\
+436.         import pytest
+437. 
+438.         def gen():
+439.             yield 1
+440.             yield 2
+441.             yield 3
+442. 
+443.         @pytest.mark.parametrize('a', gen())
+444.         def test(a):
+445.             assert a >= 1
+446.         """
+447.     )
+448.     result = testdir.runpytest(py_file)
+449.     assert result.ret == 0
+450.     # should not skip any tests
+451.     result.stdout.fnmatch_lines(["*3 passed*"])
+452. 
+453. 
+454. class TestFunctional:
+455.     def test_merging_markers_deep(self, testdir):
+456.         # issue 199 - propagate markers into nested classes
+457.         p = testdir.makepyfile(
+458.             """
+459.             import pytest
+460.             class TestA(object):
+461.                 pytestmark = pytest.mark.a
+462.                 def test_b(self):
+463.                     assert True
+464.                 class TestC(object):
+465.                     # this one didn't get marked
+466.                     def test_d(self):
+467.                         assert True
+468.         """
+469.         )
+470.         items, rec = testdir.inline_genitems(p)
+471.         for item in items:
+472.             print(item, item.keywords)
+473.             assert [x for x in item.iter_markers() if x.name == "a"]
+474. 
+475.     def test_mark_decorator_subclass_does_not_propagate_to_base(self, testdir):
+476.         p = testdir.makepyfile(
+477.             """
+478.             import pytest
+479. 
+480.             @pytest.mark.a
+481.             class Base(object): pass
+482. 
+483.             @pytest.mark.b
+484.             class Test1(Base):
+485.                 def test_foo(self): pass
+486. 
+487.             class Test2(Base):
+488.                 def test_bar(self): pass
+489.         """
+490.         )
+491.         items, rec = testdir.inline_genitems(p)
+492.         self.assert_markers(items, test_foo=("a", "b"), test_bar=("a",))
+493. 
+494.     def test_mark_should_not_pass_to_siebling_class(self, testdir):
+495.         """#568"""
+496.         p = testdir.makepyfile(
+497.             """
+498.             import pytest
+499. 
+500.             class TestBase(object):
+
+
+File: testing/test_mark_expression.py
+Line number range: 1 - 168
+Content:
+1. from typing import Callable
+2. 
+3. import pytest
+4. from _pytest.mark.expression import Expression
+5. from _pytest.mark.expression import ParseError
+6. 
+7. 
+8. def evaluate(input: str, matcher: Callable[[str], bool]) -> bool:
+9.     return Expression.compile(input).evaluate(matcher)
+10. 
+11. 
+12. def test_empty_is_false() -> None:
+13.     assert not evaluate("", lambda ident: False)
+14.     assert not evaluate("", lambda ident: True)
+15.     assert not evaluate("   ", lambda ident: False)
+16.     assert not evaluate("\t", lambda ident: False)
+17. 
+18. 
+19. @pytest.mark.parametrize(
+20.     ("expr", "expected"),
+21.     (
+22.         ("true", True),
+23.         ("true", True),
+24.         ("false", False),
+25.         ("not true", False),
+26.         ("not false", True),
+27.         ("not not true", True),
+28.         ("not not false", False),
+29.         ("true and true", True),
+30.         ("true and false", False),
+31.         ("false and true", False),
+32.         ("true and true and true", True),
+33.         ("true and true and false", False),
+34.         ("true and true and not true", False),
+35.         ("false or false", False),
+36.         ("false or true", True),
+37.         ("true or true", True),
+38.         ("true or true or false", True),
+39.         ("true and true or false", True),
+40.         ("not true or true", True),
+41.         ("(not true) or true", True),
+42.         ("not (true or true)", False),
+43.         ("true and true or false and false", True),
+44.         ("true and (true or false) and false", False),
+45.         ("true and (true or (not (not false))) and false", False),
+46.     ),
+47. )
+48. def test_basic(expr: str, expected: bool) -> None:
+49.     matcher = {"true": True, "false": False}.__getitem__
+50.     assert evaluate(expr, matcher) is expected
+51. 
+52. 
+53. @pytest.mark.parametrize(
+54.     ("expr", "expected"),
+55.     (
+56.         ("               true           ", True),
+57.         ("               ((((((true))))))           ", True),
+58.         ("     (         ((\t  (((true)))))  \t   \t)", True),
+59.         ("(     true     and   (((false))))", False),
+60.         ("not not not not true", True),
+61.         ("not not not not not true", False),
+62.     ),
+63. )
+64. def test_syntax_oddeties(expr: str, expected: bool) -> None:
+65.     matcher = {"true": True, "false": False}.__getitem__
+66.     assert evaluate(expr, matcher) is expected
+67. 
+68. 
+69. @pytest.mark.parametrize(
+70.     ("expr", "column", "message"),
+71.     (
+72.         ("(", 2, "expected not OR left parenthesis OR identifier; got end of input"),
+73.         (" (", 3, "expected not OR left parenthesis OR identifier; got end of input",),
+74.         (
+75.             ")",
+76.             1,
+77.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+78.         ),
+79.         (
+80.             ") ",
+81.             1,
+82.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+83.         ),
+84.         ("not", 4, "expected not OR left parenthesis OR identifier; got end of input",),
+85.         (
+86.             "not not",
+87.             8,
+88.             "expected not OR left parenthesis OR identifier; got end of input",
+89.         ),
+90.         (
+91.             "(not)",
+92.             5,
+93.             "expected not OR left parenthesis OR identifier; got right parenthesis",
+94.         ),
+95.         ("and", 1, "expected not OR left parenthesis OR identifier; got and"),
+96.         (
+97.             "ident and",
+98.             10,
+99.             "expected not OR left parenthesis OR identifier; got end of input",
+100.         ),
+101.         ("ident and or", 11, "expected not OR left parenthesis OR identifier; got or",),
+102.         ("ident ident", 7, "expected end of input; got identifier"),
+103.     ),
+104. )
+105. def test_syntax_errors(expr: str, column: int, message: str) -> None:
+106.     with pytest.raises(ParseError) as excinfo:
+107.         evaluate(expr, lambda ident: True)
+108.     assert excinfo.value.column == column
+109.     assert excinfo.value.message == message
+110. 
+111. 
+112. @pytest.mark.parametrize(
+113.     "ident",
+114.     (
+115.         ".",
+116.         "...",
+117.         ":::",
+118.         "a:::c",
+119.         "a+-b",
+120.         "אבגד",
+121.         "aaאבגדcc",
+122.         "a[bcd]",
+123.         "1234",
+124.         "1234abcd",
+125.         "1234and",
+126.         "notandor",
+127.         "not_and_or",
+128.         "not[and]or",
+129.         "1234+5678",
+130.         "123.232",
+131.         "True",
+132.         "False",
+133.         "if",
+134.         "else",
+135.         "while",
+136.     ),
+137. )
+138. def test_valid_idents(ident: str) -> None:
+139.     assert evaluate(ident, {ident: True}.__getitem__)
+140. 
+141. 
+142. @pytest.mark.parametrize(
+143.     "ident",
+144.     (
+145.         "/",
+146.         "\\",
+147.         "^",
+148.         "*",
+149.         "=",
+150.         "&",
+151.         "%",
+152.         "$",
+153.         "#",
+154.         "@",
+155.         "!",
+156.         "~",
+157.         "{",
+158.         "}",
+159.         '"',
+160.         "'",
+161.         "|",
+162.         ";",
+163.         "←",
+164.     ),
+165. )
+166. def test_invalid_idents(ident: str) -> None:
+167.     with pytest.raises(ParseError):
+168.         evaluate(ident, lambda ident: True)
+
+--- END AGGREGATED CONTEXT ---
+
+Analyze if the current context is sufficient to complete the user query by considering:
+1. Do you understand the full scope and requirements of the user query?
+2. Do you have access to all relevant code that needs to be examined or modified?
+3. Are all critical dependencies and their interfaces visible?
+4. Is there enough context about the system architecture and design patterns?
+5. Do you have access to relevant documentation or tests if needed?
+
+Only request additional context if essential information is missing. Ensure you're not requesting:
+- Information already provided in previous queries
+- Nice-to-have but non-essential details
+- Implementation details that aren't relevant to the current task
+
+If additional context is needed:
+- Be specific about what you're looking for
+- Consider both code and documentation that might be relevant
+
+IMPORTANT:
+- Try to avoid asking for the SAME or very similar information as previous queries, because these queries have already been asked and satisfied.
+
+2025-12-21 01:42:20,045 - thread-135818941302464.prometheus_context_collector.lang_graph.nodes.context_refine_node - DEBUG - reasoning="I have analyzed the user's request and the provided context. The user wants to find three existing test cases related to a bug in parsing 'True', 'False', and 'None' in mark expressions. The provided context contains the content of `testing/test_mark_expression.py` and `testing/test_mark.py`. These files contain highly relevant test cases that cover both unit-level and functional-level testing of the affected functionality. Specifically, `test_valid_idents` and `test_basic` from `test_mark_expression.py` and `test_keyword_option_parametrize` from `test_mark.py` are directly related to the bug and the corresponding patch. The context includes the full source code for these tests, along with the necessary imports and helper functions. Therefore, I have sufficient information to fulfill the user's request and do not need additional context." query='' extra_requirements='' purpose=''
+2025-12-21 01:42:20,046 - thread-135818941302464.prometheus_context_collector - INFO - Successfully retrieved 2 context snippets
