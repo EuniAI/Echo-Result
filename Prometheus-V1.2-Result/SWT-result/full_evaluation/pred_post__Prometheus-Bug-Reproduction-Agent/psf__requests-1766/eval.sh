@@ -1,0 +1,246 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 847735553aeda6e6633f2b32e14ba14ba86887a4 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 847735553aeda6e6633f2b32e14ba14ba86887a4
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install .
+git apply -v - <<'EOF_114329324912'
+diff --git a/requests/auth.py b/requests/auth.py
+--- a/requests/auth.py
++++ b/requests/auth.py
+@@ -105,7 +105,7 @@ def sha_utf8(x):
+ 
+         A1 = '%s:%s:%s' % (self.username, realm, self.password)
+         A2 = '%s:%s' % (method, path)
+-        
++
+         HA1 = hash_utf8(A1)
+         HA2 = hash_utf8(A2)
+ 
+@@ -144,7 +144,7 @@ def sha_utf8(x):
+         if entdig:
+             base += ', digest="%s"' % entdig
+         if qop:
+-            base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
++            base += ', qop="auth", nc=%s, cnonce="%s"' % (ncvalue, cnonce)
+ 
+         return 'Digest %s' % (base)
+ 
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/test_requests_auth.py b/test_requests_auth.py
+new file mode 100644
+index 00000000..1075f475
+--- /dev/null
++++ b/test_requests_auth.py
+@@ -0,0 +1,195 @@
++import unittest
++import hashlib
++import time
++import os
++import re
++from urllib.parse import urlparse
++
++# This test case is self-contained and does not require the `requests` library to be installed.
++# Mocks and snippets are provided below to replicate the environment described in the bug report.
++
++# --- Mocked/minimal dependencies for the code under test ---
++
++class AuthBase:
++    """Minimal mock of requests.auth.AuthBase."""
++    def __call__(self, r):
++        raise NotImplementedError('Auth hooks must be callable.')
++
++str = str
++
++def parse_dict_header(value):
++    """
++    Minimal mock of requests.utils.parse_dict_header.
++    This is needed for the full HTTPDigestAuth class snippet to be syntactically valid,
++    as it's called by the handle_401 method. The test itself does not invoke this method.
++    """
++    return {}
++
++
++# --- Code under test: Snippet from requests/auth.py ---
++
++class HTTPDigestAuth(AuthBase):
++    """Attaches HTTP Digest Authentication to the given Request object."""
++    def __init__(self, username, password):
++        self.username = username
++        self.password = password
++        self.last_nonce = ''
++        self.nonce_count = 0
++        self.chal = {}
++        self.pos = None
++
++    def build_digest_header(self, method, url):
++
++        realm = self.chal['realm']
++        nonce = self.chal['nonce']
++        qop = self.chal.get('qop')
++        algorithm = self.chal.get('algorithm')
++        opaque = self.chal.get('opaque')
++
++        if algorithm is None:
++            _algorithm = 'MD5'
++        else:
++            _algorithm = algorithm.upper()
++        # lambdas assume digest modules are imported at the top level
++        if _algorithm == 'MD5' or _algorithm == 'MD5-SESS':
++            def md5_utf8(x):
++                if isinstance(x, str):
++                    x = x.encode('utf-8')
++                return hashlib.md5(x).hexdigest()
++            hash_utf8 = md5_utf8
++        elif _algorithm == 'SHA':
++            def sha_utf8(x):
++                if isinstance(x, str):
++                    x = x.encode('utf-8')
++                return hashlib.sha1(x).hexdigest()
++            hash_utf8 = sha_utf8
++        else:
++            hash_utf8 = None
++
++        KD = lambda s, d: hash_utf8("%s:%s" % (s, d))
++
++        if hash_utf8 is None:
++            return None
++
++        # XXX not implemented yet
++        entdig = None
++        p_parsed = urlparse(url)
++        path = p_parsed.path
++        if p_parsed.query:
++            path += '?' + p_parsed.query
++
++        A1 = '%s:%s:%s' % (self.username, realm, self.password)
++        A2 = '%s:%s' % (method, path)
++
++        HA1 = hash_utf8(A1)
++        HA2 = hash_utf8(A2)
++
++        if nonce == self.last_nonce:
++            self.nonce_count += 1
++        else:
++            self.nonce_count = 1
++        ncvalue = '%08x' % self.nonce_count
++        s = str(self.nonce_count).encode('utf-8')
++        s += nonce.encode('utf-8')
++        s += time.ctime().encode('utf-8')
++        s += os.urandom(8)
++
++        cnonce = (hashlib.sha1(s).hexdigest()[:16])
++        noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop, HA2)
++        if _algorithm == 'MD5-SESS':
++            HA1 = hash_utf8('%s:%s:%s' % (HA1, nonce, cnonce))
++
++        if qop is None:
++            respdig = KD(HA1, "%s:%s" % (nonce, HA2))
++        elif qop == 'auth' or 'auth' in qop.split(','):
++            respdig = KD(HA1, noncebit)
++        else:
++            # XXX handle auth-int.
++            return None
++
++        self.last_nonce = nonce
++
++        # XXX should the partial digests be encoded too?
++        base = 'username="%s", realm="%s", nonce="%s", uri="%s", ' \
++               'response="%s"' % (self.username, realm, nonce, path, respdig)
++        if opaque:
++            base += ', opaque="%s"' % opaque
++        if algorithm:
++            base += ', algorithm="%s"' % algorithm
++        if entdig:
++            base += ', digest="%s"' % entdig
++        if qop:
++            base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
++
++        return 'Digest %s' % (base)
++
++    def handle_401(self, r, **kwargs):
++        """Takes the given response and tries digest-auth, if needed."""
++
++        if self.pos is not None:
++            # Rewind the file position indicator of the body to where
++            # it was to resend the request.
++            r.request.body.seek(self.pos)
++        num_401_calls = getattr(self, 'num_401_calls', 1)
++        s_auth = r.headers.get('www-authenticate', '')
++
++        if 'digest' in s_auth.lower() and num_401_calls < 2:
++
++            setattr(self, 'num_401_calls', num_401_calls + 1)
++            pat = re.compile(r'digest ', flags=re.IGNORECASE)
++            self.chal = parse_dict_header(pat.sub('', s_auth, count=1))
++
++            # Consume content and release the original connection
++            # to allow our new request to reuse the same one.
++            r.content
++            r.raw.release_conn()
++            prep = r.request.copy()
++            prep.prepare_cookies(r.cookies)
++
++            prep.headers['Authorization'] = self.build_digest_header(
++                prep.method, prep.url)
++            _r = r.connection.send(prep, **kwargs)
++            _r.history.append(r)
++            _r.request = prep
++
++            return _r
++
++        setattr(self, 'num_401_calls', 1)
++        return r
++
++    def __call__(self, r):
++        # If we have a saved nonce, skip the 401
++        if self.last_nonce:
++            r.headers['Authorization'] = self.build_digest_header(r.method, r.url)
++        try:
++            self.pos = r.body.tell()
++        except AttributeError:
++            pass
++        r.register_hook('response', self.handle_401)
++        return r
++
++
++# --- Minimal Test Case ---
++
++class TestDigestAuthQop(unittest.TestCase):
++    def test_digest_auth_qop_is_quoted(self):
++        """
++        Tests that the qop directive in a Digest Auth header is properly quoted.
++        
++        Based on RFC2617, the value of the 'qop' directive in the Authorization
++        header should be a quoted string. This test verifies that the header
++        contains 'qop="auth"' instead of the incorrect 'qop=auth'.
++        """
++        auth = HTTPDigestAuth('user', 'pass')
++        # Simulate a server challenge that includes qop support
++        auth.chal = {
++            'realm': 'fake-realm',
++            'nonce': 'a-nonce',
++            'qop': 'auth',
++        }
++
++        header = auth.build_digest_header('GET', '/digest-auth')
++
++        # This assertion will fail with the buggy code, which generates 'qop=auth',
++        # and will pass when the code is fixed to generate 'qop="auth"'.
++        self.assertIn('qop="auth"', header)
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(requests/auth\.py)' -m pytest --no-header -rA  -p no:cacheprovider test_requests_auth.py
+cat coverage.cover
+git checkout 847735553aeda6e6633f2b32e14ba14ba86887a4
+git apply /root/pre_state.patch

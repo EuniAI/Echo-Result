@@ -1,0 +1,57 @@
+diff --git a/tests/filtered_relation/test_exclude_on_annotated_filtered_relation.py b/tests/filtered_relation/test_exclude_on_annotated_filtered_relation.py
+new file mode 100644
+index 0000000000..1c350411e7
+--- /dev/null
++++ b/tests/filtered_relation/test_exclude_on_annotated_filtered_relation.py
+@@ -0,0 +1,51 @@
++from django.db.models import FilteredRelation, Q
++from django.test import TestCase
++
++from .models import Author, Book, Editor
++
++
++class FilteredRelationTests(TestCase):
++
++    @classmethod
++    def setUpTestData(cls):
++        cls.author1 = Author.objects.create(name='Alice')
++        cls.author2 = Author.objects.create(name='Jane')
++        cls.editor_a = Editor.objects.create(name='a')
++        cls.editor_b = Editor.objects.create(name='b')
++        cls.book1 = Book.objects.create(
++            title='Poem by Alice',
++            editor=cls.editor_a,
++            author=cls.author1,
++        )
++        cls.book1.generic_author.set([cls.author2])
++        cls.book2 = Book.objects.create(
++            title='The book by Jane A',
++            editor=cls.editor_b,
++            author=cls.author2,
++        )
++        cls.book3 = Book.objects.create(
++            title='The book by Jane B',
++            editor=cls.editor_b,
++            author=cls.author2,
++        )
++        cls.book4 = Book.objects.create(
++            title='The book by Alice',
++            editor=cls.editor_a,
++            author=cls.author1,
++        )
++        cls.author1.favorite_books.add(cls.book2)
++        cls.author1.favorite_books.add(cls.book3)
++
++    def test_exclude_on_annotated_filtered_relation(self):
++        """
++        exclude() on a queryset with an annotated FilteredRelation shouldn't
++        raise a FieldError.
++        """
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    'book', condition=Q(book__title__iexact='poem by alice')
++                ),
++            ).exclude(book_alice__isnull=False),
++            [self.author2]
++        )

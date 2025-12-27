@@ -1,0 +1,146 @@
+2025-12-07 16:24:44,926 - WARNING - Starting evaluation at 1765124684.926312
+2025-12-07 16:24:44,975 - INFO - Creating container for sphinx-doc__sphinx-9229...
+2025-12-07 16:24:45,011 - INFO - Container for sphinx-doc__sphinx-9229 created: a5a04630174a047588bc8b51422fa5d06385700a923975f20b1dfc46fdbee6db
+2025-12-07 16:24:45,182 - INFO - Container for sphinx-doc__sphinx-9229 started: a5a04630174a047588bc8b51422fa5d06385700a923975f20b1dfc46fdbee6db
+2025-12-07 16:24:45,575 - INFO - Git diff before:
+diff --git a/setup.py b/setup.py
+index b669afc00..0986baec3 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/tox.ini b/tox.ini
+index a363e187f..3b8bc12d0 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:24:45,575 - INFO - Eval script for sphinx-doc__sphinx-9229 written to eval.sh, now applying to container...
+2025-12-07 16:25:10,291 - INFO - Test output for sphinx-doc__sphinx-9229 written to run_instance_swt_logs/full_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/sphinx-doc__sphinx-9229/test_output.txt
+2025-12-07 16:25:10,371 - INFO - Git diff after:
+diff --git a/setup.py b/setup.py
+index b669afc00..0986baec3 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/ext/autodoc/__init__.py b/sphinx/ext/autodoc/__init__.py
+index 1f4c98284..18fb0c92e 100644
+--- a/sphinx/ext/autodoc/__init__.py
++++ b/sphinx/ext/autodoc/__init__.py
+@@ -1676,7 +1676,11 @@ class ClassDocumenter(DocstringSignatureMixin, ModuleLevelDocumenter):  # type:
+     def get_doc(self, ignore: int = None) -> Optional[List[List[str]]]:
+         if self.doc_as_attr:
+             # Don't show the docstring of the class when it is an alias.
+-            return None
++            comment = self.get_variable_comment()
++            if comment:
++                return []
++            else:
++                return None
+ 
+         lines = getattr(self, '_new_docstrings', None)
+         if lines is not None:
+@@ -1721,9 +1725,18 @@ class ClassDocumenter(DocstringSignatureMixin, ModuleLevelDocumenter):  # type:
+         tab_width = self.directive.state.document.settings.tab_width
+         return [prepare_docstring(docstring, ignore, tab_width) for docstring in docstrings]
+ 
++    def get_variable_comment(self) -> Optional[List[str]]:
++        try:
++            key = ('', '.'.join(self.objpath))
++            analyzer = ModuleAnalyzer.for_module(self.get_real_modname())
++            analyzer.analyze()
++            return list(self.analyzer.attr_docs.get(key, []))
++        except PycodeError:
++            return None
++
+     def add_content(self, more_content: Optional[StringList], no_docstring: bool = False
+                     ) -> None:
+-        if self.doc_as_attr:
++        if self.doc_as_attr and not self.get_variable_comment():
+             try:
+                 more_content = StringList([_('alias of %s') % restify(self.object)], source='')
+             except AttributeError:
+diff --git a/tox.ini b/tox.ini
+index a363e187f..3b8bc12d0 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:25:10,371 - INFO - Git diff changed after running eval script
+2025-12-07 16:25:10,371 - INFO - Attempting to stop container exec.eval.x86_64.77d82541416cab86d0d86a.87247d2f4778c94f85db58.124396454026112...
+2025-12-07 16:25:25,659 - INFO - Attempting to remove container exec.eval.x86_64.77d82541416cab86d0d86a.87247d2f4778c94f85db58.124396454026112...
+2025-12-07 16:25:25,781 - INFO - Container exec.eval.x86_64.77d82541416cab86d0d86a.87247d2f4778c94f85db58.124396454026112 removed.
+2025-12-07 16:25:25,782 - WARNING - End of eval at 1765124725.7820864

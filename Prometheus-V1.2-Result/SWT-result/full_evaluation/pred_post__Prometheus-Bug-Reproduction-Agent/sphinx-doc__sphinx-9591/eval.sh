@@ -1,0 +1,123 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 9ed054279aeffd5b1d0642e2d24a8800389de29f >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 9ed054279aeffd5b1d0642e2d24a8800389de29f
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .[test]
+git apply -v - <<'EOF_114329324912'
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -861,7 +861,8 @@ def handle_signature(self, sig: str, signode: desc_signature) -> Tuple[str, str]
+ 
+         typ = self.options.get('type')
+         if typ:
+-            signode += addnodes.desc_annotation(typ, ': ' + typ)
++            annotations = _parse_annotation(typ, self.env)
++            signode += addnodes.desc_annotation(typ, '', nodes.Text(': '), *annotations)
+ 
+         return fullname, prefix
+ 
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_ext_autodoc_autoproperty_typehints.py b/tests/test_ext_autodoc_autoproperty_typehints.py
+new file mode 100644
+index 000000000..78019f8be
+--- /dev/null
++++ b/tests/test_ext_autodoc_autoproperty_typehints.py
+@@ -0,0 +1,80 @@
++
++import pytest
++from unittest.mock import Mock
++from pathlib import Path
++
++from sphinx.ext.autodoc.directive import DocumenterBridge, process_documenter_options
++from sphinx.util.docutils import LoggingReporter
++
++
++def do_autodoc(app, objtype, name, options=None):
++    """
++    Helper function to run an autodoc documenter and get the generated content.
++    """
++    if options is None:
++        options = {}
++    app.env.temp_data.setdefault('docname', 'index')  # set dummy docname
++    doccls = app.registry.documenters[objtype]
++    docoptions = process_documenter_options(doccls, app.config, options)
++    state = Mock()
++    state.document.settings.tab_width = 8
++    bridge = DocumenterBridge(app.env, LoggingReporter(''), docoptions, 1, state)
++    documenter = doccls(bridge, name)
++    documenter.generate()
++    return bridge.result
++
++
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_property_type_annotation_cross_reference(app):
++    """
++    Tests that a documented type in a property's type annotation
++    gets cross-referenced, reproducing bug #9585.
++    """
++    # Create the Python module to be documented in the test's source directory.
++    source_code = '''
++class Point:
++    """
++    A class representing a point.
++
++    Attributes:
++        x: Position X.
++        y: Position Y.
++    """
++    x: int
++    y: int
++
++
++class Square:
++    """A class representing a square figure."""
++    #: Square's start position (top-left corner).
++    start: Point
++    #: Square width.
++    width: int
++    #: Square height.
++    height: int
++
++    @property
++    def end(self) -> Point:
++        """Square's end position (bottom-right corner)."""
++        # The implementation does not matter for static analysis of the type hint.
++        return Point()
++'''
++    # Explicitly convert app.srcdir to a pathlib.Path object to ensure
++    # the correct API is available for file system operations.
++    src_dir = Path(app.srcdir)
++    target_dir = src_dir / 'target'
++    target_dir.mkdir(exist_ok=True)
++    (target_dir / '__init__.py').touch()
++    (target_dir / 'autoproperty_typehint.py').write_text(source_code, encoding='utf-8')
++
++    # Run autodoc on the property and check the output
++    actual = do_autodoc(app, 'property', 'target.autoproperty_typehint.Square.end')
++    assert list(actual) == [
++        '',
++        '.. py:property:: Square.end',
++        '   :module: target.autoproperty_typehint',
++        '   :type: :py:class:`~target.autoproperty_typehint.Point`',
++        '',
++        "   Square's end position (bottom-right corner).",
++        '',
++    ]
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sphinx/domains/python\.py)' -m tox -epy39 -v -- tests/test_ext_autodoc_autoproperty_typehints.py
+cat coverage.cover
+git checkout 9ed054279aeffd5b1d0642e2d24a8800389de29f
+git apply /root/pre_state.patch

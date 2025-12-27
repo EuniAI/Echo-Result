@@ -1,0 +1,54 @@
+diff --git a/tests/prefetch_related/test_defer_prefetch.py b/tests/prefetch_related/test_defer_prefetch.py
+new file mode 100644
+index 0000000000..3aac6f200c
+--- /dev/null
++++ b/tests/prefetch_related/test_defer_prefetch.py
+@@ -0,0 +1,48 @@
++from django.db import models
++from django.db.models import Prefetch
++from django.test import TestCase
++
++# Models defined for this test case based on the bug report
++class User(models.Model):
++    email = models.EmailField()
++    kind = models.CharField(
++        max_length=10, choices=[("ADMIN", "Admin"), ("REGULAR", "Regular")]
++    )
++
++    class Meta:
++        app_label = 'prefetch_related'
++
++
++class Profile(models.Model):
++    full_name = models.CharField(max_length=255)
++    user = models.OneToOneField(
++        User, on_delete=models.CASCADE, related_name='profile'
++    )
++
++    class Meta:
++        app_label = 'prefetch_related'
++
++
++class DeferPrefetchTests(TestCase):
++    def test_only_related_queryset(self):
++        """
++        A nested prefetch shouldn't inherit the deferred fields from its parent
++        prefetch.
++        """
++        user = User.objects.create(
++            email="test@example.com",
++            kind="ADMIN",
++        )
++        Profile.objects.create(user=user, full_name="Test Tester")
++        queryset = User.objects.only("email").prefetch_related(
++            Prefetch(
++                "profile",
++                queryset=Profile.objects.prefetch_related(
++                    Prefetch("user", queryset=User.objects.only("kind"))
++                ),
++            )
++        )
++        with self.assertNumQueries(3):
++            user = queryset.first()
++        with self.assertNumQueries(0):
++            self.assertEqual(user.profile.user.kind, "ADMIN")

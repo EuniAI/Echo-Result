@@ -1,0 +1,41 @@
+diff --git a/xarray/tests/test_swap_dims.py b/xarray/tests/test_swap_dims.py
+new file mode 100644
+index 00000000..ade5683a
+--- /dev/null
++++ b/xarray/tests/test_swap_dims.py
+@@ -0,0 +1,35 @@
++import numpy as np
++import pytest
++import xarray as xr
++
++
++def test_swap_dims_inplace_modification():
++    """
++    Regression test for GH6795, where .swap_dims() can modify
++    the original object in certain cases.
++    """
++    nz = 11
++    ds = xr.Dataset(
++        data_vars={
++            "y": ("z", np.random.rand(nz)),
++            "lev": ("z", np.arange(nz) * 10),
++        },
++    )
++
++    # This sequence of operations, taken from the bug report, creates a
++    # Dataset that looks like the original but triggers the bug.
++    ds2 = (
++        ds.swap_dims(z="lev")
++        .rename_dims(lev="z")
++        .reset_index("lev")
++        .reset_coords()
++    )
++
++    # This call to .swap_dims() should return a new, modified Dataset
++    # and leave `ds2` unchanged.
++    ds2.swap_dims(z="lev")
++
++    # The bug is that the dimensions of the 'lev' DataArray within `ds2`
++    # are modified in place. The assertion checks that the dimensions
++    # remain unchanged.
++    assert ds2["lev"].dims == ("z",)

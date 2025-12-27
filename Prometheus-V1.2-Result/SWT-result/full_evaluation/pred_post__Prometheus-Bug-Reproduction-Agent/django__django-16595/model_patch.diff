@@ -1,0 +1,86 @@
+diff --git a/tests/migrations/test_optimizer_bug.py b/tests/migrations/test_optimizer_bug.py
+new file mode 100644
+index 0000000000..add231a07f
+--- /dev/null
++++ b/tests/migrations/test_optimizer_bug.py
+@@ -0,0 +1,80 @@
++from django.db import migrations, models
++from django.db.migrations.optimizer import MigrationOptimizer
++from django.db.migrations.serializer import serializer_factory
++from django.test import SimpleTestCase
++
++from .models import EmptyManager, UnicodeModel
++
++
++class OptimizerTests(SimpleTestCase):
++    """
++    Tests the migration optimizer.
++    """
++
++    def optimize(self, operations, app_label):
++        """
++        Handy shortcut for getting results + number of loops
++        """
++        optimizer = MigrationOptimizer()
++        return optimizer.optimize(operations, app_label), optimizer._iterations
++
++    def serialize(self, value):
++        return serializer_factory(value).serialize()[0]
++
++    def assertOptimizesTo(
++        self, operations, expected, exact=None, less_than=None, app_label=None
++    ):
++        result, iterations = self.optimize(operations, app_label or "migrations")
++        result = [self.serialize(f) for f in result]
++        expected = [self.serialize(f) for f in expected]
++        self.assertEqual(expected, result)
++        if exact is not None and iterations != exact:
++            raise self.failureException(
++                "Optimization did not take exactly %s iterations (it took %s)"
++                % (exact, iterations)
++            )
++        if less_than is not None and iterations >= less_than:
++            raise self.failureException(
++                "Optimization did not take less than %s iterations (it took %s)"
++                % (less_than, iterations)
++            )
++
++    def assertDoesNotOptimize(self, operations, **kwargs):
++        self.assertOptimizesTo(operations, operations, **kwargs)
++
++    def test_multiple_alter_field(self):
++        """
++        Multiple AlterField operations on the same field should be optimized
++        into a single, final AlterField.
++        """
++        self.assertOptimizesTo(
++            [
++                migrations.AlterField(
++                    model_name="book",
++                    name="title",
++                    field=models.CharField(max_length=128, null=True),
++                ),
++                migrations.AlterField(
++                    model_name="book",
++                    name="title",
++                    field=models.CharField(max_length=128, null=True, help_text="help"),
++                ),
++                migrations.AlterField(
++                    model_name="book",
++                    name="title",
++                    field=models.CharField(
++                        max_length=128, null=True, help_text="help", default=None
++                    ),
++                ),
++            ],
++            [
++                migrations.AlterField(
++                    model_name="book",
++                    name="title",
++                    field=models.CharField(
++                        max_length=128, null=True, help_text="help", default=None
++                    ),
++                ),
++            ],
++            app_label="books",
++        )

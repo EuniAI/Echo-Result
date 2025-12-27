@@ -1,0 +1,36 @@
+diff --git a/testing/test_nodeid_reporting.py b/testing/test_nodeid_reporting.py
+new file mode 100644
+index 000000000..22c57cc0d
+--- /dev/null
++++ b/testing/test_nodeid_reporting.py
+@@ -0,0 +1,30 @@
++import pytest
++
++
++def test_nodeid_special_chars_in_parametrize(testdir):
++    """
++    Tests that node IDs with special characters from parametrization are not
++    incorrectly modified in the report header.
++
++    This is a regression test for a bug where "..[" in a parameter name
++    was being replaced by ".[", causing an incorrect test headline.
++    """
++    testdir.makepyfile(
++        """
++        import pytest
++        @pytest.mark.parametrize("a", ["..["])
++        def test_boo(a):
++            assert 0
++        """
++    )
++    result = testdir.inline_run()
++
++    # The result object contains reports for setup, call, and teardown.
++    # We are interested in the 'call' report, which is the second one.
++    reports = result.getreports("pytest_runtest_logreport")
++    call_report = reports[1]
++
++    # The report's `location` attribute is a tuple (path, lineno, name).
++    # The `name` part is used for the test report headline and is where the bug manifests.
++    # We assert that the name is the expected 'test_boo[..[]' and not the buggy 'test_boo[.[]'.
++    assert call_report.location[2] == "test_boo[..[]"

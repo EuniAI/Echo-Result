@@ -1,0 +1,29 @@
+diff --git a/tests/annotations/test_count_optimization.py b/tests/annotations/test_count_optimization.py
+new file mode 100644
+index 0000000000..2ae5497a67
+--- /dev/null
++++ b/tests/annotations/test_count_optimization.py
+@@ -0,0 +1,23 @@
++from django.db import connection
++from django.db.models import Count
++from django.test import TestCase
++from django.test.utils import CaptureQueriesContext
++
++from .models import Book
++
++
++class AnnotationTests(TestCase):
++    def test_unused_annotation_stripped_from_count(self):
++        """
++        Annotations that aren't referenced elsewhere in the query should be
++        removed from count() queries.
++        """
++        with CaptureQueriesContext(connection) as queries:
++            # The original bug report used Count('chapters'), but the test model
++            # has an 'authors' field which serves the same purpose for this test.
++            Book.objects.annotate(authors_count=Count("authors")).count()
++        # The unoptimized query will contain a JOIN on the authors table,
++        # which is not necessary for a simple count. This assertion will fail
++        # until the bug is fixed.
++        sql = queries[0]["sql"]
++        self.assertNotIn("JOIN", sql)

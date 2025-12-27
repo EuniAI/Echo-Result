@@ -1,0 +1,35 @@
+diff --git a/tests/auth_tests/test_user_model_checks.py b/tests/auth_tests/test_user_model_checks.py
+new file mode 100644
+index 0000000000..da5d553f82
+--- /dev/null
++++ b/tests/auth_tests/test_user_model_checks.py
+@@ -0,0 +1,29 @@
++from django.contrib.auth.checks import check_user_model
++from django.contrib.auth.models import AbstractBaseUser
++from django.core import checks
++from django.db import models
++from django.test import SimpleTestCase, override_settings
++from django.test.utils import isolate_apps, override_system_checks
++
++
++@isolate_apps('auth_tests', attr_name='apps')
++@override_system_checks([check_user_model])
++class UserModelChecksTests(SimpleTestCase):
++    @override_settings(AUTH_USER_MODEL='auth_tests.UserWithUniqueConstraint')
++    def test_username_unique_constraint(self):
++        """
++        auth.E003 should not be raised when USERNAME_FIELD is covered by a
++        UniqueConstraint.
++        """
++        class UserWithUniqueConstraint(AbstractBaseUser):
++            username = models.CharField(max_length=30)
++            USERNAME_FIELD = 'username'
++
++            class Meta:
++                constraints = [
++                    models.UniqueConstraint(fields=['username'], name='user_username_unq'),
++                ]
++                app_label = 'auth_tests'
++
++        errors = checks.run_checks(app_configs=self.apps.get_app_configs())
++        self.assertEqual(errors, [])

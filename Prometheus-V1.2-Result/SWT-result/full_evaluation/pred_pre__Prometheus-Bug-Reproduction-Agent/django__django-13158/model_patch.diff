@@ -1,0 +1,45 @@
+diff --git a/tests/model_forms/test_modelmultiplechoicefield.py b/tests/model_forms/test_modelmultiplechoicefield.py
+new file mode 100644
+index 0000000000..35f7c0827b
+--- /dev/null
++++ b/tests/model_forms/test_modelmultiplechoicefield.py
+@@ -0,0 +1,39 @@
++import datetime
++from django import forms
++from django.test import TestCase, skipUnlessDBFeature
++from .models import Article, Category, Writer
++
++
++class ModelFormValidationTests(TestCase):
++
++    @skipUnlessDBFeature('supports_select_union')
++    def test_model_multiple_choice_field_union_empty_submission(self):
++        """
++        A ModelMultipleChoiceField using a union() queryset should not add all
++        objects when the form is submitted with the field empty.
++        """
++        writer = Writer.objects.create(name='Test Writer')
++        c1 = Category.objects.create(name='cat1', slug='c1', url='u1')
++        Category.objects.create(name='cat2', slug='c2', url='u2')
++        c3 = Category.objects.create(name='cat3', slug='c3', url='u3')
++
++        class ArticleForm(forms.ModelForm):
++            categories = forms.ModelMultipleChoiceField(
++                Category.objects.filter(pk=c1.pk).union(Category.objects.filter(pk=c3.pk)),
++                required=False,
++            )
++
++            class Meta:
++                model = Article
++                fields = ['headline', 'slug', 'pub_date', 'writer', 'categories']
++
++        form_data = {
++            'headline': 'Test',
++            'slug': 'test',
++            'pub_date': datetime.date(2023, 1, 1),
++            'writer': writer.pk,
++        }
++        form = ArticleForm(form_data)
++        self.assertTrue(form.is_valid())
++        article_instance = form.save()
++        self.assertEqual(article_instance.categories.count(), 0)

@@ -1,0 +1,67 @@
+diff --git a/tests/expressions_window/test_lag_decimalfield.py b/tests/expressions_window/test_lag_decimalfield.py
+new file mode 100644
+index 0000000000..abcbda85d7
+--- /dev/null
++++ b/tests/expressions_window/test_lag_decimalfield.py
+@@ -0,0 +1,61 @@
++import datetime
++from decimal import Decimal
++from unittest import skipIf
++
++from django.db import connection, models
++from django.db.models import F, Window
++from django.db.models.functions import Lag
++from django.test import TestCase, skipUnlessDBFeature
++
++
++# Model defined for this test case based on the bug report.
++# It's created temporarily by the test runner.
++class LagTest(models.Model):
++    modified = models.DateField()
++    data = models.FloatField()
++    amount = models.DecimalField(decimal_places=4, max_digits=7)
++
++    class Meta:
++        app_label = 'expressions_window'
++
++
++@skipUnlessDBFeature('supports_over_clause')
++class LagDecimalFieldTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        LagTest.objects.create(
++            modified=datetime.date(2020, 1, 1),
++            data=1.0,
++            amount=Decimal('100.00'),
++        )
++        LagTest.objects.create(
++            modified=datetime.date(2020, 1, 1),
++            data=2.0,
++            amount=Decimal('200.00'),
++        )
++
++    @skipIf(connection.vendor != 'sqlite', 'This is a SQLite-specific bug.')
++    def test_lag_decimalfield_on_sqlite(self):
++        """
++        Test Lag() on a DecimalField with SQLite.
++        This crashed due to a misplaced CAST in the generated SQL.
++        """
++        # This query is based on the bug report.
++        w = Window(
++            expression=Lag('amount', 7),
++            partition_by=[F('modified')],
++            order_by=F('modified').asc(),
++        )
++        queryset = LagTest.objects.annotate(lag_amount=w)
++
++        # The bug raises an OperationalError upon query execution. When fixed,
++        # this should execute without error. The lag amount will be None
++        # because the offset (7) is larger than the partition size (2).
++        self.assertQuerysetEqual(
++            queryset.order_by('amount'),
++            [
++                (Decimal('100.00'), None),
++                (Decimal('200.00'), None),
++            ],
++            transform=lambda row: (row.amount, row.lag_amount)
++        )

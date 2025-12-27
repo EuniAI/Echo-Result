@@ -1,0 +1,66 @@
+diff --git a/tests/user_commands/test_call_command_mutual_exclusion.py b/tests/user_commands/test_call_command_mutual_exclusion.py
+new file mode 100644
+index 0000000000..865f3a374b
+--- /dev/null
++++ b/tests/user_commands/test_call_command_mutual_exclusion.py
+@@ -0,0 +1,60 @@
++from io import StringIO
++from unittest import mock
++
++from django.core import management
++from django.core.management import CommandError
++from django.test import SimpleTestCase, override_settings
++
++# The original command is imported so it can be subclassed.
++from user_commands.management.commands import dance
++
++
++@override_settings(
++    INSTALLED_APPS=[
++        'django.contrib.auth',
++        'django.contrib.contenttypes',
++        'user_commands',
++    ],
++)
++class CallCommandMutualExclusionTest(SimpleTestCase):
++
++    def test_required_mutually_exclusive_group_kwarg_reproduces_bug(self):
++        """
++        Reproduces a bug where call_command fails to process a keyword
++        argument that is part of a required mutually exclusive group.
++
++        This test patches `get_commands` to inject a modified command
++        instance. This is a clean way to control the command object used by
++        `call_command`, ensuring the test setup is correct and correctly
++        exposes the CommandError described in the bug report.
++        """
++        # 1. Define a command subclass with the required mutually exclusive group.
++        class CommandWithMutexGroup(dance.Command):
++            def add_arguments(self, parser):
++                super().add_arguments(parser)
++                group = parser.add_mutually_exclusive_group(required=True)
++                group.add_argument('--shop-id', type=int)
++                group.add_argument('--shop', type=str)
++
++        # 2. Instantiate the modified command.
++        command_instance = CommandWithMutexGroup()
++        out = StringIO()
++
++        # 3. Patch `get_commands` to return a dictionary containing our
++        #    pre-initialized command instance. `fetch_command` is designed
++        #    to handle this case, making this a stable injection point.
++        with mock.patch('django.core.management.get_commands', return_value={'dance': command_instance}):
++            # 4. This call is now expected to fail with a CommandError due to the bug.
++            #    The bug prevents `shop_id=1` from being passed to the
++            #    ArgumentParser, which then complains that a required argument
++            #    is missing. When the bug is fixed, this call will succeed.
++            management.call_command(
++                'dance',
++                shop_id=1,
++                verbosity=1,  # Ensures the handle method prints options
++                stdout=out,
++            )
++
++        # 5. This assertion will only be reached if the bug is fixed. The `dance`
++        #    command prints the options it received, so we check for `shop_id`.
++        self.assertIn('shop_id', out.getvalue())

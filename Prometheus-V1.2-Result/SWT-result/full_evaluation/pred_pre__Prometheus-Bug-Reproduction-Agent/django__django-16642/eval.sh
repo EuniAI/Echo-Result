@@ -1,0 +1,50 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD fbe850106b2e4b85f838219cb9e1df95fba6c164 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff fbe850106b2e4b85f838219cb9e1df95fba6c164
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/responses/test_fileresponse_compressed_content_type.py b/tests/responses/test_fileresponse_compressed_content_type.py
+new file mode 100644
+index 0000000000..0b87f31f4d
+--- /dev/null
++++ b/tests/responses/test_fileresponse_compressed_content_type.py
+@@ -0,0 +1,23 @@
++import tempfile
++
++from django.http import FileResponse
++from django.test import SimpleTestCase
++
++
++class FileResponseTests(SimpleTestCase):
++    def test_compressed_content_type_for_br_and_z_files(self):
++        """
++        FileResponse should correctly guess the Content-Type for .br and .Z
++        files, even with a preceding extension.
++        """
++        test_cases = (
++            (".html.br", "application/brotli"),
++            (".html.Z", "application/x-compress"),
++        )
++        for suffix, expected_content_type in test_cases:
++            with self.subTest(suffix=suffix):
++                with tempfile.NamedTemporaryFile(suffix=suffix) as tmp_file:
++                    response = FileResponse(tmp_file)
++                    self.assertEqual(
++                        response.headers["Content-Type"], expected_content_type
++                    )
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/http/response\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 responses.test_fileresponse_compressed_content_type
+cat coverage.cover
+git checkout fbe850106b2e4b85f838219cb9e1df95fba6c164
+git apply /root/pre_state.patch

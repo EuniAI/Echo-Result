@@ -1,0 +1,60 @@
+diff --git a/tests/migrations/test_add_nullable_one_to_one_field.py b/tests/migrations/test_add_nullable_one_to_one_field.py
+new file mode 100644
+index 0000000000..38f6d8301f
+--- /dev/null
++++ b/tests/migrations/test_add_nullable_one_to_one_field.py
+@@ -0,0 +1,54 @@
++import unittest
++
++from django.db import connection, migrations, models
++from django.db.migrations.state import ProjectState
++from django.test import skipUnlessDBFeature
++
++from .test_base import OperationTestBase
++
++
++class OperationsTests(OperationTestBase):
++    @unittest.skipUnless(connection.vendor == 'sqlite', 'SQLite-specific bug')
++    def test_add_nullable_one_to_one_field(self):
++        """
++        Test AddField operation for a nullable OneToOneField on SQLite.
++        """
++        app_label = 'test_add_nullable_o2o'
++        # Initial state: two models, Author and Book.
++        project_state = self.apply_operations(
++            app_label,
++            ProjectState(),
++            operations=[
++                migrations.CreateModel(
++                    'Author',
++                    [('id', models.AutoField(primary_key=True))],
++                ),
++                migrations.CreateModel(
++                    'Book',
++                    [('id', models.AutoField(primary_key=True))],
++                ),
++            ],
++        )
++
++        # The operation that causes the crash on SQLite.
++        operation = migrations.AddField(
++            model_name='Book',
++            name='author',
++            field=models.OneToOneField(
++                'Author',
++                on_delete=models.SET_NULL,
++                blank=True,
++                null=True,
++            ),
++        )
++
++        # This should raise OperationalError: Cannot add a UNIQUE column on SQLite.
++        # When the bug is fixed, this will pass.
++        new_state = project_state.clone()
++        operation.state_forwards(app_label, new_state)
++        with connection.schema_editor() as editor:
++            operation.database_forwards(app_label, editor, project_state, new_state)
++
++        # The minimal assertion is to check that the column was created. This
++        # will only be reached if the operation doesn't crash.
++        self.assertColumnExists('%s_book' % app_label, 'author_id')

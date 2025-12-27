@@ -1,0 +1,50 @@
+diff --git a/tests/test_runpy.py b/tests/test_runpy.py
+new file mode 100644
+index 000000000..df781e92d
+--- /dev/null
++++ b/tests/test_runpy.py
+@@ -0,0 +1,44 @@
++# Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
++# For details: https://github.com/PyCQA/pylint/blob/main/LICENSE
++# Copyright (c) https://github.com/PyCQA/pylint/blob/main/CONTRIBUTORS.txt
++
++"""
++Regression test for a bug where pylint removes the first entry from sys.path
++when run via `runpy`.
++"""
++
++from __future__ import annotations
++
++import runpy
++import sys
++from unittest.mock import patch
++
++
++def test_runpy_preserves_custom_sys_path_entry() -> None:
++    """
++    Verify that when run with `runpy`, pylint does not remove a custom
++    first entry from `sys.path`.
++
++    Pylint should only remove the first entry if it is an empty string, which
++    is the default behavior when a script is executed. If another tool adds a
++    path and then calls pylint, that path should be preserved.
++    """
++    original_path = sys.path[:]
++    custom_path = "something"
++    sys.path.insert(0, custom_path)
++
++    try:
++        # We patch `pylint.lint.Run` to avoid a full pylint run, and `sys.exit`
++        # because `pylint.__main__` would call it. We are only interested in the
++        # side effect on `sys.path` from `modify_sys_path`.
++        with patch("pylint.lint.Run"), patch("sys.exit"):
++            runpy.run_module("pylint", run_name="__main__", alter_sys=True)
++
++        # The bug is that `modify_sys_path` unconditionally removes the first
++        # element of `sys.path`. This assertion will fail.
++        # With the bug fixed, this assertion will pass.
++        assert sys.path[0] == custom_path
++    finally:
++        # Restore sys.path to its original state to avoid side effects
++        # on other tests.
++        sys.path[:] = original_path

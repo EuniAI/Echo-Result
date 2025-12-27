@@ -1,0 +1,546 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 06107f838c28ab6ca6bfc2cc208e15997fcb2146 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 06107f838c28ab6ca6bfc2cc208e15997fcb2146
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .[test]
+git apply -v - <<'EOF_114329324912'
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -304,7 +304,7 @@ def make_xref(self, rolename: str, domain: str, target: str,
+     def make_xrefs(self, rolename: str, domain: str, target: str,
+                    innernode: Type[TextlikeNode] = nodes.emphasis,
+                    contnode: Node = None, env: BuildEnvironment = None) -> List[Node]:
+-        delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+|\.\.\.)'
++        delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+|\s*\|\s*|\.\.\.)'
+         delims_re = re.compile(delims)
+         sub_targets = re.split(delims, target)
+ 
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_domain_py_pep_604.py b/tests/test_domain_py_pep_604.py
+new file mode 100644
+index 000000000..fb0c5dfe2
+--- /dev/null
++++ b/tests/test_domain_py_pep_604.py
+@@ -0,0 +1,504 @@
++import re
++import sys
++from unittest.mock import Mock
++
++import pytest
++from docutils import nodes
++
++from sphinx import addnodes
++from sphinx.addnodes import (desc, desc_addname, desc_annotation, desc_content, desc_name,
++                             desc_optional, desc_parameter, desc_parameterlist, desc_returns,
++                             desc_sig_name, desc_sig_operator, desc_sig_punctuation,
++                             desc_signature, pending_xref)
++from sphinx.domains import IndexEntry
++from sphinx.domains.python import (PythonDomain, PythonModuleIndex, _parse_annotation,
++                                   _pseudo_parse_arglist, py_sig_re)
++from sphinx.testing import restructuredtext
++from sphinx.testing.util import assert_node
++
++
++def parse(sig):
++    m = py_sig_re.match(sig)
++    if m is None:
++        raise ValueError
++    name_prefix, name, arglist, retann = m.groups()
++    signode = addnodes.desc_signature(sig, '')
++    _pseudo_parse_arglist(signode, arglist)
++    return signode.astext()
++
++
++def test_function_signatures():
++    rv = parse('func(a=1) -> int object')
++    assert rv == '(a=1)'
++
++    rv = parse('func(a=1, [b=None])')
++    assert rv == '(a=1, [b=None])'
++
++    rv = parse('func(a=1[, b=None])')
++    assert rv == '(a=1, [b=None])'
++
++    rv = parse("compile(source : string, filename, symbol='file')")
++    assert rv == "(source : string, filename, symbol='file')"
++
++    rv = parse('func(a=[], [b=None])')
++    assert rv == '(a=[], [b=None])'
++
++    rv = parse('func(a=[][, b=None])')
++    assert rv == '(a=[], [b=None])'
++
++
++@pytest.mark.sphinx('dummy', testroot='domain-py')
++def test_domain_py_xrefs(app, status, warning):
++    """Domain objects have correct prefixes when looking up xrefs"""
++    app.builder.build_all()
++
++    def assert_refnode(node, module_name, class_name, target, reftype=None,
++                       domain='py'):
++        attributes = {
++            'refdomain': domain,
++            'reftarget': target,
++        }
++        if reftype is not None:
++            attributes['reftype'] = reftype
++        if module_name is not False:
++            attributes['py:module'] = module_name
++        if class_name is not False:
++            attributes['py:class'] = class_name
++        assert_node(node, **attributes)
++
++    doctree = app.env.get_doctree('roles')
++    refnodes = list(doctree.traverse(pending_xref))
++    assert_refnode(refnodes[0], None, None, 'TopLevel', 'class')
++    assert_refnode(refnodes[1], None, None, 'top_level', 'meth')
++    assert_refnode(refnodes[2], None, 'NestedParentA', 'child_1', 'meth')
++    assert_refnode(refnodes[3], None, 'NestedParentA', 'NestedChildA.subchild_2', 'meth')
++    assert_refnode(refnodes[4], None, 'NestedParentA', 'child_2', 'meth')
++    assert_refnode(refnodes[5], False, 'NestedParentA', 'any_child', domain='')
++    assert_refnode(refnodes[6], None, 'NestedParentA', 'NestedChildA', 'class')
++    assert_refnode(refnodes[7], None, 'NestedParentA.NestedChildA', 'subchild_2', 'meth')
++    assert_refnode(refnodes[8], None, 'NestedParentA.NestedChildA',
++                   'NestedParentA.child_1', 'meth')
++    assert_refnode(refnodes[9], None, 'NestedParentA', 'NestedChildA.subchild_1', 'meth')
++    assert_refnode(refnodes[10], None, 'NestedParentB', 'child_1', 'meth')
++    assert_refnode(refnodes[11], None, 'NestedParentB', 'NestedParentB', 'class')
++    assert_refnode(refnodes[12], None, None, 'NestedParentA.NestedChildA', 'class')
++    assert len(refnodes) == 13
++
++    doctree = app.env.get_doctree('module')
++    refnodes = list(doctree.traverse(pending_xref))
++    assert_refnode(refnodes[0], 'module_a.submodule', None,
++                   'ModTopLevel', 'class')
++    assert_refnode(refnodes[1], 'module_a.submodule', 'ModTopLevel',
++                   'mod_child_1', 'meth')
++    assert_refnode(refnodes[2], 'module_a.submodule', 'ModTopLevel',
++                   'ModTopLevel.mod_child_1', 'meth')
++    assert_refnode(refnodes[3], 'module_a.submodule', 'ModTopLevel',
++                   'mod_child_2', 'meth')
++    assert_refnode(refnodes[4], 'module_a.submodule', 'ModTopLevel',
++                   'module_a.submodule.ModTopLevel.mod_child_1', 'meth')
++    assert_refnode(refnodes[5], 'module_a.submodule', 'ModTopLevel',
++                   'prop', 'attr')
++    assert_refnode(refnodes[6], 'module_a.submodule', 'ModTopLevel',
++                   'prop', 'meth')
++    assert_refnode(refnodes[7], 'module_b.submodule', None,
++                   'ModTopLevel', 'class')
++    assert_refnode(refnodes[8], 'module_b.submodule', 'ModTopLevel',
++                   'ModNoModule', 'class')
++    assert_refnode(refnodes[9], False, False, 'int', 'class')
++    assert_refnode(refnodes[10], False, False, 'tuple', 'class')
++    assert_refnode(refnodes[11], False, False, 'str', 'class')
++    assert_refnode(refnodes[12], False, False, 'float', 'class')
++    assert_refnode(refnodes[13], False, False, 'list', 'class')
++    assert_refnode(refnodes[14], False, False, 'ModTopLevel', 'class')
++    assert_refnode(refnodes[15], False, False, 'index', 'doc', domain='std')
++    assert len(refnodes) == 16
++
++    doctree = app.env.get_doctree('module_option')
++    refnodes = list(doctree.traverse(pending_xref))
++    print(refnodes)
++    print(refnodes[0])
++    print(refnodes[1])
++    assert_refnode(refnodes[0], 'test.extra', 'B', 'foo', 'meth')
++    assert_refnode(refnodes[1], 'test.extra', 'B', 'foo', 'meth')
++    assert len(refnodes) == 2
++
++
++@pytest.mark.sphinx('html', testroot='domain-py')
++def test_domain_py_xrefs_abbreviations(app, status, warning):
++    app.builder.build_all()
++
++    content = (app.outdir / 'abbr.html').read_text()
++    assert re.search(r'normal: <a .* href="module.html#module_a.submodule.ModTopLevel.'
++                     r'mod_child_1" .*><.*>module_a.submodule.ModTopLevel.mod_child_1\(\)'
++                     r'<.*></a>',
++                     content)
++    assert re.search(r'relative: <a .* href="module.html#module_a.submodule.ModTopLevel.'
++                     r'mod_child_1" .*><.*>ModTopLevel.mod_child_1\(\)<.*></a>',
++                     content)
++    assert re.search(r'short name: <a .* href="module.html#module_a.submodule.ModTopLevel.'
++                     r'mod_child_1" .*><.*>mod_child_1\(\)<.*></a>',
++                     content)
++    assert re.search(r'relative \+ short name: <a .* href="module.html#module_a.submodule.'
++                     r'ModTopLevel.mod_child_1" .*><.*>mod_child_1\(\)<.*></a>',
++                     content)
++    assert re.search(r'short name \+ relative: <a .* href="module.html#module_a.submodule.'
++                     r'ModTopLevel.mod_child_1" .*><.*>mod_child_1\(\)<.*></a>',
++                     content)
++
++
++@pytest.mark.sphinx('dummy', testroot='domain-py')
++def test_domain_py_objects(app, status, warning):
++    app.builder.build_all()
++
++    modules = app.env.domains['py'].data['modules']
++    objects = app.env.domains['py'].data['objects']
++
++    assert 'module_a.submodule' in modules
++    assert 'module_a.submodule' in objects
++    assert 'module_b.submodule' in modules
++    assert 'module_b.submodule' in objects
++
++    assert objects['module_a.submodule.ModTopLevel'][2] == 'class'
++    assert objects['module_a.submodule.ModTopLevel.mod_child_1'][2] == 'method'
++    assert objects['module_a.submodule.ModTopLevel.mod_child_2'][2] == 'method'
++    assert 'ModTopLevel.ModNoModule' not in objects
++    assert objects['ModNoModule'][2] == 'class'
++    assert objects['module_b.submodule.ModTopLevel'][2] == 'class'
++
++    assert objects['TopLevel'][2] == 'class'
++    assert objects['top_level'][2] == 'method'
++    assert objects['NestedParentA'][2] == 'class'
++    assert objects['NestedParentA.child_1'][2] == 'method'
++    assert objects['NestedParentA.any_child'][2] == 'method'
++    assert objects['NestedParentA.NestedChildA'][2] == 'class'
++    assert objects['NestedParentA.NestedChildA.subchild_1'][2] == 'method'
++    assert objects['NestedParentA.NestedChildA.subchild_2'][2] == 'method'
++    assert objects['NestedParentA.child_2'][2] == 'method'
++    assert objects['NestedParentB'][2] == 'class'
++    assert objects['NestedParentB.child_1'][2] == 'method'
++
++
++@pytest.mark.sphinx('html', testroot='domain-py')
++def test_resolve_xref_for_properties(app, status, warning):
++    app.builder.build_all()
++
++    content = (app.outdir / 'module.html').read_text()
++    assert ('Link to <a class="reference internal" href="#module_a.submodule.ModTopLevel.prop"'
++            ' title="module_a.submodule.ModTopLevel.prop">'
++            '<code class="xref py py-attr docutils literal notranslate"><span class="pre">'
++            'prop</span> <span class="pre">attribute</span></code></a>' in content)
++    assert ('Link to <a class="reference internal" href="#module_a.submodule.ModTopLevel.prop"'
++            ' title="module_a.submodule.ModTopLevel.prop">'
++            '<code class="xref py py-meth docutils literal notranslate"><span class="pre">'
++            'prop</span> <span class="pre">method</span></code></a>' in content)
++    assert ('Link to <a class="reference internal" href="#module_a.submodule.ModTopLevel.prop"'
++            ' title="module_a.submodule.ModTopLevel.prop">'
++            '<code class="xref py py-attr docutils literal notranslate"><span class="pre">'
++            'prop</span> <span class="pre">attribute</span></code></a>' in content)
++
++
++@pytest.mark.sphinx('dummy', testroot='domain-py')
++def test_domain_py_find_obj(app, status, warning):
++
++    def find_obj(modname, prefix, obj_name, obj_type, searchmode=0):
++        return app.env.domains['py'].find_obj(
++            app.env, modname, prefix, obj_name, obj_type, searchmode)
++
++    app.builder.build_all()
++
++    assert (find_obj(None, None, 'NONEXISTANT', 'class') == [])
++    assert (find_obj(None, None, 'NestedParentA', 'class') ==
++            [('NestedParentA', ('roles', 'NestedParentA', 'class', False))])
++    assert (find_obj(None, None, 'NestedParentA.NestedChildA', 'class') ==
++            [('NestedParentA.NestedChildA',
++              ('roles', 'NestedParentA.NestedChildA', 'class', False))])
++    assert (find_obj(None, 'NestedParentA', 'NestedChildA', 'class') ==
++            [('NestedParentA.NestedChildA',
++              ('roles', 'NestedParentA.NestedChildA', 'class', False))])
++    assert (find_obj(None, None, 'NestedParentA.NestedChildA.subchild_1', 'meth') ==
++            [('NestedParentA.NestedChildA.subchild_1',
++              ('roles', 'NestedParentA.NestedChildA.subchild_1', 'method', False))])
++    assert (find_obj(None, 'NestedParentA', 'NestedChildA.subchild_1', 'meth') ==
++            [('NestedParentA.NestedChildA.subchild_1',
++              ('roles', 'NestedParentA.NestedChildA.subchild_1', 'method', False))])
++    assert (find_obj(None, 'NestedParentA.NestedChildA', 'subchild_1', 'meth') ==
++            [('NestedParentA.NestedChildA.subchild_1',
++              ('roles', 'NestedParentA.NestedChildA.subchild_1', 'method', False))])
++
++
++@pytest.mark.sphinx('html', testroot='domain-py', freshenv=True)
++def test_domain_py_canonical(app, status, warning):
++    app.builder.build_all()
++
++    content = (app.outdir / 'canonical.html').read_text()
++    assert ('<a class="reference internal" href="#canonical.Foo" title="canonical.Foo">'
++            '<code class="xref py py-class docutils literal notranslate">'
++            '<span class="pre">Foo</span></code></a>' in content)
++    assert warning.getvalue() == ''
++
++
++def test_get_full_qualified_name():
++    env = Mock(domaindata={})
++    domain = PythonDomain(env)
++
++    # non-python references
++    node = nodes.reference()
++    assert domain.get_full_qualified_name(node) is None
++
++    # simple reference
++    node = nodes.reference(reftarget='func')
++    assert domain.get_full_qualified_name(node) == 'func'
++
++    # with py:module context
++    kwargs = {'py:module': 'module1'}
++    node = nodes.reference(reftarget='func', **kwargs)
++    assert domain.get_full_qualified_name(node) == 'module1.func'
++
++    # with py:class context
++    kwargs = {'py:class': 'Class'}
++    node = nodes.reference(reftarget='func', **kwargs)
++    assert domain.get_full_qualified_name(node) == 'Class.func'
++
++    # with both py:module and py:class context
++    kwargs = {'py:module': 'module1', 'py:class': 'Class'}
++    node = nodes.reference(reftarget='func', **kwargs)
++    assert domain.get_full_qualified_name(node) == 'module1.Class.func'
++
++
++def test_parse_annotation(app):
++    doctree = _parse_annotation("int", app.env)
++    assert_node(doctree, ([pending_xref, "int"],))
++    assert_node(doctree[0], pending_xref, refdomain="py", reftype="class", reftarget="int")
++
++    doctree = _parse_annotation("List[int]", app.env)
++    assert_node(doctree, ([pending_xref, "List"],
++                          [desc_sig_punctuation, "["],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, "]"]))
++
++    doctree = _parse_annotation("Tuple[int, int]", app.env)
++    assert_node(doctree, ([pending_xref, "Tuple"],
++                          [desc_sig_punctuation, "["],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, ", "],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, "]"]))
++
++    doctree = _parse_annotation("Tuple[()]", app.env)
++    assert_node(doctree, ([pending_xref, "Tuple"],
++                          [desc_sig_punctuation, "["],
++                          [desc_sig_punctuation, "("],
++                          [desc_sig_punctuation, ")"],
++                          [desc_sig_punctuation, "]"]))
++
++    doctree = _parse_annotation("Tuple[int, ...]", app.env)
++    assert_node(doctree, ([pending_xref, "Tuple"],
++                          [desc_sig_punctuation, "["],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, ", "],
++                          [desc_sig_punctuation, "..."],
++                          [desc_sig_punctuation, "]"]))
++
++    doctree = _parse_annotation("Callable[[int, int], int]", app.env)
++    assert_node(doctree, ([pending_xref, "Callable"],
++                          [desc_sig_punctuation, "["],
++                          [desc_sig_punctuation, "["],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, ", "],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, "]"],
++                          [desc_sig_punctuation, ", "],
++                          [pending_xref, "int"],
++                          [desc_sig_punctuation, "]"]))
++
++    doctree = _parse_annotation("List[None]", app.env)
++    assert_node(doctree, ([pending_xref, "List"],
++                          [desc_sig_punctuation, "["],
++                          [pending_xref, "None"],
++                          [desc_sig_punctuation, "]"]))
++
++    # None type makes an object-reference (not a class reference)
++    doctree = _parse_annotation("None", app.env)
++    assert_node(doctree, ([pending_xref, "None"],))
++    assert_node(doctree[0], pending_xref, refdomain="py", reftype="obj", reftarget="None")
++
++
++def test_pyfunction_signature(app):
++    text = ".. py:function:: hello(name: str) -> str"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree, (addnodes.index,
++                          [desc, ([desc_signature, ([desc_name, "hello"],
++                                                    desc_parameterlist,
++                                                    [desc_returns, pending_xref, "str"])],
++                                  desc_content)]))
++    assert_node(doctree[1], addnodes.desc, desctype="function",
++                domain="py", objtype="function", noindex=False)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, desc_parameter, ([desc_sig_name, "name"],
++                                                      [desc_sig_punctuation, ":"],
++                                                      " ",
++                                                      [nodes.inline, pending_xref, "str"])])
++
++
++def test_pyfunction_signature_full(app):
++    text = (".. py:function:: hello(a: str, b = 1, *args: str, "
++            "c: bool = True, d: tuple = (1, 2), **kwargs: str) -> str")
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree, (addnodes.index,
++                          [desc, ([desc_signature, ([desc_name, "hello"],
++                                                    desc_parameterlist,
++                                                    [desc_returns, pending_xref, "str"])],
++                                  desc_content)]))
++    assert_node(doctree[1], addnodes.desc, desctype="function",
++                domain="py", objtype="function", noindex=False)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, ([desc_sig_name, "a"],
++                                                        [desc_sig_punctuation, ":"],
++                                                        " ",
++                                                        [desc_sig_name, pending_xref, "str"])],
++                                      [desc_parameter, ([desc_sig_name, "b"],
++                                                        [desc_sig_operator, "="],
++                                                        [nodes.inline, "1"])],
++                                      [desc_parameter, ([desc_sig_operator, "*"],
++                                                        [desc_sig_name, "args"],
++                                                        [desc_sig_punctuation, ":"],
++                                                        " ",
++                                                        [desc_sig_name, pending_xref, "str"])],
++                                      [desc_parameter, ([desc_sig_name, "c"],
++                                                        [desc_sig_punctuation, ":"],
++                                                        " ",
++                                                        [desc_sig_name, pending_xref, "bool"],
++                                                        " ",
++                                                        [desc_sig_operator, "="],
++                                                        " ",
++                                                        [nodes.inline, "True"])],
++                                      [desc_parameter, ([desc_sig_name, "d"],
++                                                        [desc_sig_punctuation, ":"],
++                                                        " ",
++                                                        [desc_sig_name, pending_xref, "tuple"],
++                                                        " ",
++                                                        [desc_sig_operator, "="],
++                                                        " ",
++                                                        [nodes.inline, "(1, 2)"])],
++                                      [desc_parameter, ([desc_sig_operator, "**"],
++                                                        [desc_sig_name, "kwargs"],
++                                                        [desc_sig_punctuation, ":"],
++                                                        " ",
++                                                        [desc_sig_name, pending_xref, "str"])])])
++
++
++@pytest.mark.skipif(sys.version_info < (3, 8), reason='python 3.8+ is required.')
++def test_pyfunction_signature_full_py38(app):
++    # case: separator at head
++    text = ".. py:function:: hello(*, a)"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, nodes.inline, "*"],
++                                      [desc_parameter, desc_sig_name, "a"])])
++
++    # case: separator in the middle
++    text = ".. py:function:: hello(a, /, b, *, c)"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, desc_sig_name, "a"],
++                                      [desc_parameter, desc_sig_operator, "/"],
++                                      [desc_parameter, desc_sig_name, "b"],
++                                      [desc_parameter, desc_sig_operator, "*"],
++                                      [desc_parameter, desc_sig_name, "c"])])
++
++    # case: separator in the middle (2)
++    text = ".. py:function:: hello(a, /, *, b)"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, desc_sig_name, "a"],
++                                      [desc_parameter, desc_sig_operator, "/"],
++                                      [desc_parameter, desc_sig_operator, "*"],
++                                      [desc_parameter, desc_sig_name, "b"])])
++
++    # case: separator at tail
++    text = ".. py:function:: hello(a, /)"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, desc_sig_name, "a"],
++                                      [desc_parameter, desc_sig_operator, "/"])])
++
++
++@pytest.mark.skipif(sys.version_info < (3, 8), reason='python 3.8+ is required.')
++def test_pyfunction_with_number_literals(app):
++    text = ".. py:function:: hello(age=0x10, height=1_6_0)"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, ([desc_sig_name, "age"],
++                                                        [desc_sig_operator, "="],
++                                                        [nodes.inline, "0x10"])],
++                                      [desc_parameter, ([desc_sig_name, "height"],
++                                                        [desc_sig_operator, "="],
++                                                        [nodes.inline, "1_6_0"])])])
++
++
++def test_pyfunction_with_union_type_operator(app):
++    text = ".. py:function:: hello(age: int | None)"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree[1][0][1],
++                [desc_parameterlist, ([desc_parameter, ([desc_sig_name, "age"],
++                                                        [desc_sig_punctuation, ":"],
++                                                        " ",
++                                                        [desc_sig_name, ([pending_xref, "int"],
++                                                                         " ",
++                                                                         [desc_sig_punctuation, "|"],
++                                                                         " ",
++                                                                         [pending_xref, "None"])])])])
++
++
++def test_pyfield_with_union_type_operator(app):
++    text = (".. py:function:: foo(text)\n"
++            "\n"
++            "   :type text: bytes | str\n")
++    doctree = restructuredtext.parse(app, text)
++    field = doctree[1][1][0][0]
++    assert_node(field[1],
++                [nodes.paragraph, ([pending_xref, "bytes"],
++                                    " ",
++                                    [addnodes.desc_sig_punctuation, "|"],
++                                    " ",
++                                    [pending_xref, "str"])])
++
++
++def test_optional_pyfunction_signature(app):
++    text = ".. py:function:: compile(source [, filename [, symbol]]) -> ast object"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree, (addnodes.index,
++                          [desc, ([desc_signature, ([desc_name, "compile"],
++                                                    desc_parameterlist,
++                                                    [desc_returns, pending_xref, "ast object"])],
++                                  desc_content)]))
++    assert_node(doctree[1], addnodes.desc, desctype="function",
++                domain="py", objtype="function", noindex=False)
++    assert_node(doctree[1][0][1],
++                ([desc_parameter, "source"],
++                 [desc_optional, ([desc_parameter, "filename"],
++                                  [desc_optional, desc_parameter, "symbol"])]))
++
++
++def test_pyexception_signature(app):
++    text = ".. py:exception:: exceptions.IOError"
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree, (addnodes.index,
++                          [desc, ([desc_signature, ([desc_annotation, "exception "],
++                                                    [desc_addname, "exceptions."],
++                                                    [desc_name, "IOError"])],
++                                  desc_content)]))
++    assert_node(doctree[1], desc, desctype="exception",
++                domain="py", objtype="exception", noindex=False)
++
++
++def test_exceptions_module_is_ignored(app):
++    text = (".. py:exception:: IOError\n"
++            "   :module: exceptions\n")
++    doctree = restructuredtext.parse(app, text)
++    assert_node(doctree, (addnodes.index,
++                          [desc, ([desc_signature, ([desc_annotation, "exception "],
++                                                    [desc_name, "IOError"])],
++                                  desc_content)]))
++    assert_node(doctree[1], desc, desctype="exception",
++                domain="py", objtype="exception", noindex=False)
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sphinx/domains/python\.py)' -m tox -epy39 -v -- tests/test_domain_py_pep_604.py
+cat coverage.cover
+git checkout 06107f838c28ab6ca6bfc2cc208e15997fcb2146
+git apply /root/pre_state.patch

@@ -1,0 +1,78 @@
+diff --git a/tests/test_build_linkcheck_redirects.py b/tests/test_build_linkcheck_redirects.py
+new file mode 100644
+index 000000000..29cd1bae9
+--- /dev/null
++++ b/tests/test_build_linkcheck_redirects.py
+@@ -0,0 +1,72 @@
++import contextlib
++import http.server
++import threading
++
++import pytest
++
++
++# Utility code from tests/utils.py required to run the test
++class HttpServerThread(threading.Thread):
++    def __init__(self, handler, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        self.server = http.server.HTTPServer(("localhost", 7777), handler)
++
++    def run(self):
++        self.server.serve_forever(poll_interval=0.01)
++
++    def terminate(self):
++        self.server.shutdown()
++        self.server.server_close()
++        self.join()
++
++
++def create_server(thread_class):
++    def server(handler):
++        server_thread = thread_class(handler, daemon=True)
++        server_thread.start()
++        try:
++            yield server_thread
++        finally:
++            server_thread.terminate()
++    return contextlib.contextmanager(server)
++
++
++http_server = create_server(HttpServerThread)
++
++
++@pytest.mark.sphinx('linkcheck', testroot='linkcheck-localserver', freshenv=True)
++def test_too_many_redirects_fallback(app):
++    """
++    Tests that the linkchecker falls back to a GET request when a HEAD
++    request results in a "Too Many Redirects" error. This simulates a server
++    that enters an infinite redirect loop on HEAD requests.
++    """
++    class TooManyRedirectsHandler(http.server.BaseHTTPRequestHandler):
++        def do_HEAD(self):
++            # Create an infinite redirect loop for HEAD requests
++            self.send_response(302, 'Found')
++            self.send_header('Location', 'http://localhost:7777/')
++            self.end_headers()
++
++        def do_GET(self):
++            # But allow GET requests to succeed after one redirect
++            if self.path == '/?redirected=1':
++                self.send_response(204, 'No Content')
++                self.end_headers()
++            else:
++                self.send_response(302, 'Found')
++                self.send_header('Location', 'http://localhost:7777/?redirected=1')
++                self.end_headers()
++
++    with http_server(TooManyRedirectsHandler):
++        app.builder.build_all()
++
++    content = (app.outdir / 'output.txt').read_text()
++
++    # This assertion will fail before the fix, as the status will be 'broken'
++    # due to 'Too Many Redirects'. After the fix, the fallback to GET will
++    # be successful, and the status will be 'redirected'.
++    assert content == (
++        'index.rst:1: [redirected with Found] '
++        'http://localhost:7777/ to http://localhost:7777/?redirected=1\n'
++    )

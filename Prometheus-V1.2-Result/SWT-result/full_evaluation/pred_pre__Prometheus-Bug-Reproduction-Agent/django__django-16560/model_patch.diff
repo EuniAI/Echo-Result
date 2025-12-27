@@ -1,0 +1,41 @@
+diff --git a/tests/constraints/test_violation_error_code.py b/tests/constraints/test_violation_error_code.py
+new file mode 100644
+index 0000000000..64a30cfbcb
+--- /dev/null
++++ b/tests/constraints/test_violation_error_code.py
+@@ -0,0 +1,35 @@
++from django.core.exceptions import ValidationError
++from django.db import connection, models
++from django.test import TestCase
++
++
++class BaseConstraintViolationErrorCodeTest(TestCase):
++    def test_custom_violation_error_code(self):
++        """
++        Test that a custom error code can be specified for a constraint
++        validation error.
++        """
++
++        class Product(models.Model):
++            name = models.CharField(max_length=255)
++
++            class Meta:
++                app_label = "constraints"
++                constraints = [
++                    models.UniqueConstraint(
++                        fields=["name"],
++                        name="name_uniq",
++                        violation_error_code="custom_code",
++                    )
++                ]
++
++        with connection.schema_editor() as schema_editor:
++            schema_editor.create_model(Product)
++        self.addCleanup(connection.schema_editor().delete_model, Product)
++
++        Product.objects.create(name="test")
++        instance = Product(name="test")
++        with self.assertRaises(ValidationError) as cm:
++            instance.validate_constraints()
++
++        self.assertEqual(cm.exception.error_dict["__all__"][0].code, "custom_code")

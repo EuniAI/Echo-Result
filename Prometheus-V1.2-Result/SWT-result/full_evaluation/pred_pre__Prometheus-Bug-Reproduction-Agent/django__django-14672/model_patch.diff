@@ -1,0 +1,56 @@
+diff --git a/tests/proxy_models/test_checks.py b/tests/proxy_models/test_checks.py
+new file mode 100644
+index 0000000000..9ce9fdad1e
+--- /dev/null
++++ b/tests/proxy_models/test_checks.py
+@@ -0,0 +1,50 @@
++from django.core import checks
++from django.db import models
++from django.test import SimpleTestCase
++from django.test.utils import isolate_apps
++
++
++class M2MProxyCheckTests(SimpleTestCase):
++    @isolate_apps("proxy_models")
++    def test_m2m_through_fields_hashable(self):
++        """
++        Check that ManyToManyRel.through_fields is made hashable for proxy
++        model checks (#32765).
++        """
++
++        class Parent(models.Model):
++            name = models.CharField(max_length=256)
++
++            class Meta:
++                app_label = "proxy_models"
++
++        class ProxyParent(Parent):
++            class Meta:
++                proxy = True
++                app_label = "proxy_models"
++
++        class Child(models.Model):
++            parent = models.ForeignKey(Parent, on_delete=models.CASCADE)
++            many_to_many_field = models.ManyToManyField(
++                to=Parent,
++                through="ManyToManyModel",
++                through_fields=["child", "parent"],
++                related_name="something",
++            )
++
++            class Meta:
++                app_label = "proxy_models"
++
++        class ManyToManyModel(models.Model):
++            parent = models.ForeignKey(
++                Parent, on_delete=models.CASCADE, related_name="+"
++            )
++            child = models.ForeignKey(Child, on_delete=models.CASCADE, related_name="+")
++            second_child = models.ForeignKey(
++                Child, on_delete=models.CASCADE, null=True, default=None
++            )
++
++            class Meta:
++                app_label = "proxy_models"
++
++        self.assertEqual(ProxyParent.check(), [])

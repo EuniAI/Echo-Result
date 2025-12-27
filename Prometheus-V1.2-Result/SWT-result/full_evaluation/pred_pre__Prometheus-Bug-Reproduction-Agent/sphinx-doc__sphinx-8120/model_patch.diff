@@ -1,0 +1,74 @@
+diff --git a/tests/test_intl_locale_dirs_override.py b/tests/test_intl_locale_dirs_override.py
+new file mode 100644
+index 000000000..0ca3d5099
+--- /dev/null
++++ b/tests/test_intl_locale_dirs_override.py
+@@ -0,0 +1,68 @@
++import pytest
++from sphinx.testing.path import path
++
++
++@pytest.mark.sphinx(
++    'html',
++    confoverrides={
++        'language': 'da',
++        'locale_dirs': ['locale'],
++        'gettext_auto_build': True,
++    }
++)
++def test_locale_dirs_override_for_standard_messages(app):
++    """
++    Test that message catalogs in `locale_dirs` can override Sphinx's
++    default translations.
++
++    This is a regression test for a bug where Sphinx would prioritize its own
++    message catalogs over those defined in `locale_dirs`, preventing users
++    from overriding default translations.
++    """
++    # Create a custom translation file (.po) that overrides the default
++    # Danish translation for "Fig. %s" ("Figur %s") with "Foobar %s",
++    # as described in the bug report.
++    po_dir = app.srcdir / 'locale' / 'da' / 'LC_MESSAGES'
++    po_dir.makedirs()
++    po_file = po_dir / 'sphinx.po'
++    po_file.write_text(
++        r'''
++msgid ""
++msgstr ""
++"Project-Id-Version: PACKAGE VERSION\n"
++"Report-Msgid-Bugs-To: \n"
++"POT-Creation-Date: 2023-11-20 10:00+0000\n"
++"PO-Revision-Date: 2023-11-20 10:00+0000\n"
++"Last-Translator: Full Name <email@example.com>\n"
++"Language-Team: Danish <da@li.org>\n"
++"MIME-Version: 1.0\n"
++"Content-Type: text/plain; charset=UTF-8\n"
++"Content-Transfer-Encoding: 8bit\n"
++
++msgid "Fig. %s"
++msgstr "Foobar %s"
++''',
++        encoding='utf-8'
++    )
++
++    # Create a document that contains a figure, which will use the "Fig. %s"
++    # translation for its caption number.
++    (app.srcdir / 'index.rst').write_text(
++        '.. figure:: dummy.png\n\n'
++        '   A caption for the figure.\n',
++        encoding='utf-8'
++    )
++    # A dummy image file is needed for the build to succeed.
++    (app.srcdir / 'dummy.png').write_text('')
++
++    # Build the documentation. With gettext_auto_build=True, Sphinx will
++    # automatically compile the .po file to a .mo file.
++    app.build()
++
++    # Check the generated HTML output.
++    result = (app.outdir / 'index.html').read_text(encoding='utf-8')
++
++    # This assertion checks if the custom translation "Foobar 1" is used.
++    # If the bug is present, Sphinx will use its default "Figur 1" instead,
++    # and this assertion will fail.
++    assert '<span class="caption-number">Foobar 1</span>' in result

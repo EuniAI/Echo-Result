@@ -1,0 +1,49 @@
+diff --git a/tests/migrations/test_makemigrations.py b/tests/migrations/test_makemigrations.py
+new file mode 100644
+index 0000000000..072a573567
+--- /dev/null
++++ b/tests/migrations/test_makemigrations.py
+@@ -0,0 +1,43 @@
++import io
++import os
++
++from django.apps import apps
++from django.core.management import call_command
++from django.db import models
++from django.test import SimpleTestCase, override_settings
++
++from .test_base import MigrationTestBase
++
++
++class MakeMigrationsTests(MigrationTestBase):
++    """
++    Tests running the makemigrations command.
++    """
++
++    def setUp(self):
++        super().setUp()
++        self._old_models = apps.app_configs["migrations"].models.copy()
++
++    def tearDown(self):
++        apps.app_configs["migrations"].models = self._old_models
++        apps.all_models["migrations"] = self._old_models
++
++    def test_makemigrations_check_exits_without_creating_files(self):
++        """
++        makemigrations --check should exit with a non-zero status code without
++        creating migration files.
++        """
++        # A new model is needed so that makemigrations detects changes.
++        class Author(models.Model):
++            name = models.CharField(max_length=255)
++
++            class Meta:
++                app_label = "migrations"
++
++        # The --check flag should exit with a non-zero status code if
++        # migrations are pending.
++        with self.temporary_migration_module() as migration_dir:
++            with self.assertRaises(SystemExit):
++                call_command("makemigrations", "--check", "migrations")
++            # And it should not create any files.
++            self.assertEqual(os.listdir(migration_dir), [])

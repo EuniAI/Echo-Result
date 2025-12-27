@@ -1,0 +1,58 @@
+diff --git a/tests/lookup/test_exact_lookup_type_coercion.py b/tests/lookup/test_exact_lookup_type_coercion.py
+new file mode 100644
+index 0000000000..155ba69635
+--- /dev/null
++++ b/tests/lookup/test_exact_lookup_type_coercion.py
+@@ -0,0 +1,52 @@
++import pickle
++
++from django.db import models
++from django.test import TestCase
++
++
++# A minimal PickledField is required to demonstrate the bug, as it's one of
++# the few field types that distinguishes between a list and a tuple.
++class PickledField(models.BinaryField):
++    """A field that pickles Python objects for database storage."""
++
++    def get_prep_value(self, value):
++        """Pickle the value before sending it to the database."""
++        if value is not None:
++            value = pickle.dumps(value)
++        return super().get_prep_value(value)
++
++    def from_db_value(self, value, expression, connection):
++        """Unpickle the value when retrieving it from the database."""
++        if value is not None:
++            return pickle.loads(value)
++        return value
++
++
++class PickledModel(models.Model):
++    """A model using the PickledField for testing."""
++    field = PickledField()
++
++    class Meta:
++        # Add app_label to avoid "no such table" errors in standalone tests.
++        app_label = 'lookup'
++
++
++class ExactLookupTypeCoercionTest(TestCase):
++    """
++    Tests that list values in lookups are not incorrectly coerced to tuples.
++    """
++    @classmethod
++    def setUpTestData(cls):
++        """Create a test object with a list stored in a PickledField."""
++        cls.obj = PickledModel.objects.create(field=['value1', 'value2'])
++
++    def test_exact_lookup_preserves_list_type(self):
++        """
++        An exact lookup with a list should not coerce it into a tuple,
++        which would cause the lookup to fail for type-sensitive fields.
++        """
++        # This query will fail if the ['value1', 'value2'] list is coerced to a
++        # tuple, because the pickled representation of a list is different
++        # from that of a tuple.
++        qs = PickledModel.objects.filter(field=['value1', 'value2'])
++        self.assertEqual(qs.get(), self.obj)

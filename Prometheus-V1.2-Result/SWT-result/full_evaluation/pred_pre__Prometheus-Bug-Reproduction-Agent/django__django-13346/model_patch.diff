@@ -1,0 +1,81 @@
+diff --git a/tests/model_fields/test_jsonfield_querying.py b/tests/model_fields/test_jsonfield_querying.py
+new file mode 100644
+index 0000000000..cd655b026e
+--- /dev/null
++++ b/tests/model_fields/test_jsonfield_querying.py
+@@ -0,0 +1,75 @@
++import operator
++import uuid
++from unittest import mock, skipIf
++
++from django import forms
++from django.core import serializers
++from django.core.exceptions import ValidationError
++from django.core.serializers.json import DjangoJSONEncoder
++from django.db import (
++    DataError, IntegrityError, NotSupportedError, OperationalError, connection,
++    models,
++)
++from django.db.models import Count, F, OuterRef, Q, Subquery, Transform, Value
++from django.db.models.expressions import RawSQL
++from django.db.models.fields.json import (
++    KeyTextTransform, KeyTransform, KeyTransformFactory,
++    KeyTransformTextLookupMixin,
++)
++from django.db.models.functions import Cast
++from django.test import (
++    SimpleTestCase, TestCase, skipIfDBFeature, skipUnlessDBFeature,
++)
++from django.test.utils import CaptureQueriesContext
++
++from .models import CustomJSONDecoder, JSONModel, NullableJSONModel
++
++
++@skipUnlessDBFeature('supports_json_field')
++class TestQuerying(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.primitives = [True, False, 'yes', 7, 9.6]
++        values = [
++            None,
++            [],
++            {},
++            {'a': 'b', 'c': 14},
++            {
++                'a': 'b',
++                'c': 14,
++                'd': ['e', {'f': 'g'}],
++                'h': True,
++                'i': False,
++                'j': None,
++                'k': {'l': 'm'},
++                'n': [None],
++            },
++            [1, [2]],
++            {'k': True, 'l': False},
++            {
++                'foo': 'bar',
++                'baz': {'a': 'b', 'c': 'd'},
++                'bar': ['foo', 'bar'],
++                'bax': {'foo': 'bar'},
++            },
++        ]
++        cls.objs = [
++            NullableJSONModel.objects.create(value=value)
++            for value in values
++        ]
++        if connection.features.supports_primitives_in_json_field:
++            cls.objs.extend([
++                NullableJSONModel.objects.create(value=value)
++                for value in cls.primitives
++            ])
++        cls.raw_sql = '%s::jsonb' if connection.vendor == 'postgresql' else '%s'
++
++    def test_key_transform_in_lookup(self):
++        """
++        Test __in lookup on a key transform.
++        """
++        self.assertSequenceEqual(
++            NullableJSONModel.objects.filter(value__c__in=[14]),
++            [self.objs[3], self.objs[4]],
++        )

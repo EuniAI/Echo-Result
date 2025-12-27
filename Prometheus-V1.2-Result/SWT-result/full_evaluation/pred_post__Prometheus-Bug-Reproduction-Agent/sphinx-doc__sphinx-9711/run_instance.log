@@ -1,0 +1,158 @@
+2025-12-07 16:39:56,329 - WARNING - Starting evaluation at 1765125596.3290966
+2025-12-07 16:39:56,377 - INFO - Creating container for sphinx-doc__sphinx-9711...
+2025-12-07 16:39:56,413 - INFO - Container for sphinx-doc__sphinx-9711 created: ba5f3531c9252d5892cd751508717c8e25780ab0b3e76fdd04bf8e884244c50b
+2025-12-07 16:39:56,613 - INFO - Container for sphinx-doc__sphinx-9711 started: ba5f3531c9252d5892cd751508717c8e25780ab0b3e76fdd04bf8e884244c50b
+2025-12-07 16:39:57,006 - INFO - Git diff before:
+diff --git a/setup.py b/setup.py
+index 3dbc8746b..31bd48c0a 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp>=2.0.0',
+-    'sphinxcontrib-serializinghtml>=1.1.5',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp>=2.0.0,<=2.0.4',
++    'sphinxcontrib-serializinghtml>=1.1.5,<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/tox.ini b/tox.ini
+index 00c8e13bd..11d3352df 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -22,14 +22,14 @@ deps =
+     du15: docutils==0.15.*
+     du16: docutils==0.16.*
+     du17: docutils==0.17.*
+-    py311: git+https://github.com/pytest-dev/py
++    py311: git+https://github.com/pytest -rA-dev/py
+ extras =
+     test
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =
+2025-12-07 16:39:57,006 - INFO - Eval script for sphinx-doc__sphinx-9711 written to eval.sh, now applying to container...
+2025-12-07 16:40:21,844 - INFO - Test output for sphinx-doc__sphinx-9711 written to run_instance_swt_logs/full_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/sphinx-doc__sphinx-9711/test_output.txt
+2025-12-07 16:40:21,919 - INFO - Git diff after:
+diff --git a/setup.py b/setup.py
+index 3dbc8746b..31bd48c0a 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp>=2.0.0',
+-    'sphinxcontrib-serializinghtml>=1.1.5',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp>=2.0.0,<=2.0.4',
++    'sphinxcontrib-serializinghtml>=1.1.5,<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/extension.py b/sphinx/extension.py
+index 7ec6c8518..34bf7763a 100644
+--- a/sphinx/extension.py
++++ b/sphinx/extension.py
+@@ -10,6 +10,8 @@
+ 
+ from typing import TYPE_CHECKING, Any, Dict
+ 
++from packaging.version import InvalidVersion, Version
++
+ from sphinx.config import Config
+ from sphinx.errors import VersionRequirementError
+ from sphinx.locale import __
+@@ -51,7 +53,18 @@ def verify_needs_extensions(app: "Sphinx", config: Config) -> None:
+                               'but it is not loaded.'), extname)
+             continue
+ 
+-        if extension.version == 'unknown version' or reqversion > extension.version:
++        fulfilled = True
++        if extension.version == 'unknown version':
++            fulfilled = False
++        else:
++            try:
++                if Version(reqversion) > Version(extension.version):
++                    fulfilled = False
++            except InvalidVersion:
++                if reqversion > extension.version:
++                    fulfilled = False
++
++        if not fulfilled:
+             raise VersionRequirementError(__('This project needs the extension %s at least in '
+                                              'version %s and therefore cannot be built with '
+                                              'the loaded version (%s).') %
+diff --git a/tox.ini b/tox.ini
+index 00c8e13bd..11d3352df 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -22,14 +22,14 @@ deps =
+     du15: docutils==0.15.*
+     du16: docutils==0.16.*
+     du17: docutils==0.17.*
+-    py311: git+https://github.com/pytest-dev/py
++    py311: git+https://github.com/pytest -rA-dev/py
+ extras =
+     test
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:du-latest]
+ commands =
+2025-12-07 16:40:21,919 - INFO - Git diff changed after running eval script
+2025-12-07 16:40:21,919 - INFO - Attempting to stop container exec.eval.x86_64.77d82541416cab86d0d86a.e0312d1c117fa4f4370358.124396454028992...
+2025-12-07 16:40:37,247 - INFO - Attempting to remove container exec.eval.x86_64.77d82541416cab86d0d86a.e0312d1c117fa4f4370358.124396454028992...
+2025-12-07 16:40:37,366 - INFO - Container exec.eval.x86_64.77d82541416cab86d0d86a.e0312d1c117fa4f4370358.124396454028992 removed.
+2025-12-07 16:40:37,366 - WARNING - End of eval at 1765125637.3664236

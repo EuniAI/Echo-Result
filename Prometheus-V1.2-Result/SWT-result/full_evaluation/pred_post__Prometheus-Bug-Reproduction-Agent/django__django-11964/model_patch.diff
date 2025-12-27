@@ -1,0 +1,33 @@
+diff --git a/tests/model_enums/test_coercion.py b/tests/model_enums/test_coercion.py
+new file mode 100644
+index 0000000000..4ddbb206e3
+--- /dev/null
++++ b/tests/model_enums/test_coercion.py
+@@ -0,0 +1,27 @@
++from django.db import models
++from django.test import SimpleTestCase
++from django.utils.translation import gettext_lazy as _
++
++
++class MyChoice(models.TextChoices):
++    FIRST_CHOICE = "first", _("The first choice, it is")
++    SECOND_CHOICE = "second", _("The second choice, it is")
++
++
++class MyObject(models.Model):
++    my_str_value = models.CharField(max_length=10, choices=MyChoice.choices)
++
++
++class EnumValueCoercionTest(SimpleTestCase):
++    def test_created_object_is_str(self):
++        """
++        The value of a TextChoices field on a model instance should be a
++        string, not the enum member itself.
++        """
++        # Instantiate the model without saving it. The bug occurs on the
++        # instance itself, before any database interaction.
++        my_object = MyObject(my_str_value=MyChoice.FIRST_CHOICE)
++        # This assertion reproduces the failure from the bug report.
++        # str(my_object.my_str_value) returns 'MyChoice.FIRST_CHOICE'
++        # instead of 'first', causing the AssertionError.
++        self.assertEqual(str(my_object.my_str_value), "first")

@@ -1,0 +1,68 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 58e78209c8577b9890e957b624466e5beed7eb08 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 58e78209c8577b9890e957b624466e5beed7eb08
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/sympy/matrices/expressions/tests/test_blockmatrix_issue_17949.py b/sympy/matrices/expressions/tests/test_blockmatrix_issue_17949.py
+new file mode 100644
+index 0000000000..5a87576481
+--- /dev/null
++++ b/sympy/matrices/expressions/tests/test_blockmatrix_issue_17949.py
+@@ -0,0 +1,41 @@
++from sympy.core.expr import Expr
++from sympy.matrices.expressions.blockmatrix import BlockMatrix
++from sympy.matrices.expressions import MatrixSymbol, ZeroMatrix
++from sympy.matrices import ImmutableDenseMatrix
++from sympy.core.numbers import Zero
++
++
++def test_blockmatrix_mul_with_scalar_zero_reproduces_issue_17949():
++    """
++    Test for issue reported in https://github.com/sympy/sympy/issues/17949.
++
++    This test reproduces the `AttributeError: 'Zero' object has no attribute 'cols'`.
++    The original bug occurred when an intermediate multiplication created a
++    BlockMatrix containing a scalar `Zero` instead of a `ZeroMatrix`. In modern
++    SymPy, the constructor has stricter validation that prevents this.
++
++    To reproduce the exact failure condition, this test bypasses the
++    `BlockMatrix` constructor's validation by using `Expr.__new__`. This allows
++    the creation of the malformed `BlockMatrix` containing a scalar `Zero`.
++
++    Calling `_blockmul` on this object then triggers the `AttributeError`,
++    causing this test to fail as expected on a buggy version.
++    """
++    a = MatrixSymbol("a", 2, 2)
++    z = ZeroMatrix(2, 2)
++    b = BlockMatrix([[a, z], [z, z]])
++
++    # The original bug was that `b._blockmul(b)` would result in a BlockMatrix
++    # whose `blocks` contained scalar Zeros.
++    # We manually construct this malformed block structure.
++    malformed_blocks = ImmutableDenseMatrix([[a**2, Zero()], [Zero(), Zero()]])
++
++    # We bypass the BlockMatrix constructor's validation by using Expr.__new__
++    # to create an instance with the malformed blocks.
++    malformed_intermediate = Expr.__new__(BlockMatrix, malformed_blocks)
++
++    # The following line will raise `AttributeError: 'Zero' object has no attribute 'cols'`
++    # on a buggy version of SymPy, causing the test to fail and thus demonstrating
++    # the bug. On a fixed version, this operation would be corrected to not
++    # produce scalar Zeros, and this test would pass.
++    malformed_intermediate._blockmul(b)
+
+EOF_114329324912
+PYTHONWARNINGS='ignore::UserWarning,ignore::SyntaxWarning' python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sympy/matrices/expressions/matexpr\.py)' bin/test -C --verbose sympy/matrices/expressions/tests/test_blockmatrix_issue_17949.p
+cat coverage.cover
+git checkout 58e78209c8577b9890e957b624466e5beed7eb08
+git apply /root/pre_state.patch

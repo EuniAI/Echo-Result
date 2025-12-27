@@ -1,0 +1,51 @@
+diff --git a/tests/lint/test_recursive_ignore_subprocess.py b/tests/lint/test_recursive_ignore_subprocess.py
+new file mode 100644
+index 000000000..cd02f6841
+--- /dev/null
++++ b/tests/lint/test_recursive_ignore_subprocess.py
+@@ -0,0 +1,45 @@
++import subprocess
++import sys
++from pathlib import Path
++
++
++def test_recursive_ignore_using_subprocess(tmp_path: Path) -> None:
++    """
++    Test that --ignore-patterns is respected with --recursive=y by invoking
++    pylint as a subprocess. This provides a fully isolated environment that
++    faithfully reproduces the command-line execution from the bug report,
++    which previous attempts using the integrated test framework failed to do.
++    """
++    project_dir = tmp_path / "project"
++    project_dir.mkdir()
++
++    ignored_dir = project_dir / ".a"
++    ignored_dir.mkdir()
++    (ignored_dir / "foo.py").write_text("import re")
++
++    (project_dir / "bar.py").write_text("import re")
++
++    # This command, executed from within project_dir, exactly mimics the
++    # user's scenario that triggers the bug.
++    command = [
++        sys.executable,
++        "-m",
++        "pylint",
++        "--recursive=y",
++        "--ignore-patterns=^\.a$",
++        ".",
++    ]
++
++    # Run the pylint command as an isolated process.
++    result = subprocess.run(
++        command,
++        capture_output=True,
++        text=True,
++        cwd=project_dir,  # Critical: Execute from within the project directory.
++        check=False,
++    )
++
++    # The bug is that foo.py is linted. If the bug is present, the string
++    # '.a/foo.py' will be in the stdout, and this assertion will fail.
++    # This is the desired outcome for a regression test.
++    assert ".a/foo.py" not in result.stdout

@@ -1,0 +1,560 @@
+diff --git a/tests/filtered_relation/test_filtered_relation.py b/tests/filtered_relation/test_filtered_relation.py
+new file mode 100644
+index 0000000000..f4f4818baf
+--- /dev/null
++++ b/tests/filtered_relation/test_filtered_relation.py
+@@ -0,0 +1,553 @@
++from datetime import date
++from decimal import Decimal
++from unittest import mock
++
++from django.db import connection, transaction
++from django.db.models import (
++    Case,
++    Count,
++    DecimalField,
++    F,
++    FilteredRelation,
++    Q,
++    Sum,
++    When,
++)
++from django.test import TestCase
++from django.test.testcases import skipUnlessDBFeature
++
++from .models import (
++    Author,
++    Book,
++    BookDailySales,
++    Borrower,
++    Currency,
++    Editor,
++    ExchangeRate,
++    RentalSession,
++    Reservation,
++    Seller,
++)
++
++
++class FilteredRelationTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.author1 = Author.objects.create(name="Alice")
++        cls.author2 = Author.objects.create(name="Jane")
++        cls.editor_a = Editor.objects.create(name="a")
++        cls.editor_b = Editor.objects.create(name="b")
++        cls.book1 = Book.objects.create(
++            title="Poem by Alice",
++            editor=cls.editor_a,
++            author=cls.author1,
++        )
++        cls.book1.generic_author.set([cls.author2])
++        cls.book2 = Book.objects.create(
++            title="The book by Jane A",
++            editor=cls.editor_b,
++            author=cls.author2,
++        )
++        cls.book3 = Book.objects.create(
++            title="The book by Jane B",
++            editor=cls.editor_b,
++            author=cls.author2,
++        )
++        cls.book4 = Book.objects.create(
++            title="The book by Alice",
++            editor=cls.editor_a,
++            author=cls.author1,
++        )
++        cls.author1.favorite_books.add(cls.book2)
++        cls.author1.favorite_books.add(cls.book3)
++
++    def test_multiple_filtered_relations_on_same_relation(self):
++        seller_zone = Seller.objects.create(name="Zone Seller")
++        seller_all = Seller.objects.create(name="All Seller")
++        currency = Currency.objects.create(currency="TST")
++        sales_date = date(2023, 1, 1)
++        book_with_all_price = Book.objects.create(
++            title="Book All", author=self.author1, editor=self.editor_a
++        )
++        BookDailySales.objects.create(
++            book=book_with_all_price,
++            sale_date=sales_date,
++            currency=currency,
++            seller=seller_all,
++            sales=Decimal("10.00"),
++        )
++        book_with_zone_price = Book.objects.create(
++            title="Book Zone", author=self.author1, editor=self.editor_a
++        )
++        BookDailySales.objects.create(
++            book=book_with_zone_price,
++            sale_date=sales_date,
++            currency=currency,
++            seller=seller_all,
++            sales=Decimal("10.00"),
++        )
++        BookDailySales.objects.create(
++            book=book_with_zone_price,
++            sale_date=sales_date,
++            currency=currency,
++            seller=seller_zone,
++            sales=Decimal("20.00"),
++        )
++        qs = (
++            Book.objects.filter(title__in=["Book All", "Book Zone"])
++            .alias(
++                sales_zone=FilteredRelation(
++                    "daily_sales", condition=Q(daily_sales__seller=seller_zone)
++                ),
++                sales_all=FilteredRelation(
++                    "daily_sales", condition=Q(daily_sales__seller=seller_all)
++                ),
++                price_zone=F("sales_zone__sales"),
++            )
++            .annotate(
++                final_price=Case(
++                    When(price_zone__isnull=True, then=F("sales_all__sales")),
++                    default=F("price_zone"),
++                    output_field=DecimalField(),
++                )
++            )
++            .order_by("title")
++        )
++        self.assertQuerysetEqual(
++            qs,
++            [Decimal("10.00"), Decimal("20.00")],
++            transform=lambda b: b.final_price,
++        )
++
++    def test_select_related(self):
++        qs = (
++            Author.objects.annotate(
++                book_join=FilteredRelation("book"),
++            )
++            .select_related("book_join__editor")
++            .order_by("pk", "book_join__pk")
++        )
++        with self.assertNumQueries(1):
++            self.assertQuerysetEqual(
++                qs,
++                [
++                    (self.author1, self.book1, self.editor_a, self.author1),
++                    (self.author1, self.book4, self.editor_a, self.author1),
++                    (self.author2, self.book2, self.editor_b, self.author2),
++                    (self.author2, self.book3, self.editor_b, self.author2),
++                ],
++                lambda x: (x, x.book_join, x.book_join.editor, x.book_join.author),
++            )
++
++    def test_select_related_multiple(self):
++        qs = (
++            Book.objects.annotate(
++                author_join=FilteredRelation("author"),
++                editor_join=FilteredRelation("editor"),
++            )
++            .select_related("author_join", "editor_join")
++            .order_by("pk")
++        )
++        self.assertQuerysetEqual(
++            qs,
++            [
++                (self.book1, self.author1, self.editor_a),
++                (self.book2, self.author2, self.editor_b),
++                (self.book3, self.author2, self.editor_b),
++                (self.book4, self.author1, self.editor_a),
++            ],
++            lambda x: (x, x.author_join, x.editor_join),
++        )
++
++    def test_select_related_with_empty_relation(self):
++        qs = (
++            Author.objects.annotate(
++                book_join=FilteredRelation("book", condition=Q(pk=-1)),
++            )
++            .select_related("book_join")
++            .order_by("pk")
++        )
++        self.assertSequenceEqual(qs, [self.author1, self.author2])
++
++    def test_select_related_foreign_key(self):
++        qs = (
++            Book.objects.annotate(
++                author_join=FilteredRelation("author"),
++            )
++            .select_related("author_join")
++            .order_by("pk")
++        )
++        with self.assertNumQueries(1):
++            self.assertQuerysetEqual(
++                qs,
++                [
++                    (self.book1, self.author1),
++                    (self.book2, self.author2),
++                    (self.book3, self.author2),
++                    (self.book4, self.author1),
++                ],
++                lambda x: (x, x.author_join),
++            )
++
++    @skipUnlessDBFeature("has_select_for_update", "has_select_for_update_of")
++    def test_select_related_foreign_key_for_update_of(self):
++        with transaction.atomic():
++            qs = (
++                Book.objects.annotate(
++                    author_join=FilteredRelation("author"),
++                )
++                .select_related("author_join")
++                .select_for_update(of=("self",))
++                .order_by("pk")
++            )
++            with self.assertNumQueries(1):
++                self.assertQuerysetEqual(
++                    qs,
++                    [
++                        (self.book1, self.author1),
++                        (self.book2, self.author2),
++                        (self.book3, self.author2),
++                        (self.book4, self.author1),
++                    ],
++                    lambda x: (x, x.author_join),
++                )
++
++    def test_without_join(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            ),
++            [self.author1, self.author2],
++        )
++
++    def test_with_join(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            ).filter(book_alice__isnull=False),
++            [self.author1],
++        )
++
++    def test_with_exclude(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            ).exclude(book_alice__isnull=False),
++            [self.author2],
++        )
++
++    def test_with_join_and_complex_condition(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book",
++                    condition=Q(
++                        Q(book__title__iexact="poem by alice")
++                        | Q(book__state=Book.RENTED)
++                    ),
++                ),
++            ).filter(book_alice__isnull=False),
++            [self.author1],
++        )
++
++    def test_internal_queryset_alias_mapping(self):
++        queryset = Author.objects.annotate(
++            book_alice=FilteredRelation(
++                "book", condition=Q(book__title__iexact="poem by alice")
++            ),
++        ).filter(book_alice__isnull=False)
++        self.assertIn(
++            "INNER JOIN {} book_alice ON".format(
++                connection.ops.quote_name("filtered_relation_book")
++            ),
++            str(queryset.query),
++        )
++
++    def test_with_multiple_filter(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_editor_a=FilteredRelation(
++                    "book",
++                    condition=Q(
++                        book__title__icontains="book", book__editor_id=self.editor_a.pk
++                    ),
++                ),
++            ).filter(book_editor_a__isnull=False),
++            [self.author1],
++        )
++
++    def test_multiple_times(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_title_alice=FilteredRelation(
++                    "book", condition=Q(book__title__icontains="alice")
++                ),
++            )
++            .filter(book_title_alice__isnull=False)
++            .filter(book_title_alice__isnull=False)
++            .distinct(),
++            [self.author1],
++        )
++
++    def test_exclude_relation_with_join(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=~Q(book__title__icontains="alice")
++                ),
++            )
++            .filter(book_alice__isnull=False)
++            .distinct(),
++            [self.author2],
++        )
++
++    def test_with_m2m(self):
++        qs = Author.objects.annotate(
++            favorite_books_written_by_jane=FilteredRelation(
++                "favorite_books",
++                condition=Q(favorite_books__in=[self.book2]),
++            ),
++        ).filter(favorite_books_written_by_jane__isnull=False)
++        self.assertSequenceEqual(qs, [self.author1])
++
++    def test_with_m2m_deep(self):
++        qs = Author.objects.annotate(
++            favorite_books_written_by_jane=FilteredRelation(
++                "favorite_books",
++                condition=Q(favorite_books__author=self.author2),
++            ),
++        ).filter(favorite_books_written_by_jane__title="The book by Jane B")
++        self.assertSequenceEqual(qs, [self.author1])
++
++    def test_with_m2m_multijoin(self):
++        qs = (
++            Author.objects.annotate(
++                favorite_books_written_by_jane=FilteredRelation(
++                    "favorite_books",
++                    condition=Q(favorite_books__author=self.author2),
++                )
++            )
++            .filter(favorite_books_written_by_jane__editor__name="b")
++            .distinct()
++        )
++        self.assertSequenceEqual(qs, [self.author1])
++
++    def test_values_list(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            )
++            .filter(book_alice__isnull=False)
++            .values_list("book_alice__title", flat=True),
++            ["Poem by Alice"],
++        )
++
++    def test_values(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            )
++            .filter(book_alice__isnull=False)
++            .values(),
++            [
++                {
++                    "id": self.author1.pk,
++                    "name": "Alice",
++                    "content_type_id": None,
++                    "object_id": None,
++                }
++            ],
++        )
++
++    def test_extra(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            )
++            .filter(book_alice__isnull=False)
++            .extra(where=["1 = 1"]),
++            [self.author1],
++        )
++
++    @skipUnlessDBFeature("supports_select_union")
++    def test_union(self):
++        qs1 = Author.objects.annotate(
++            book_alice=FilteredRelation(
++                "book", condition=Q(book__title__iexact="poem by alice")
++            ),
++        ).filter(book_alice__isnull=False)
++        qs2 = Author.objects.annotate(
++            book_jane=FilteredRelation(
++                "book", condition=Q(book__title__iexact="the book by jane a")
++            ),
++        ).filter(book_jane__isnull=False)
++        self.assertSequenceEqual(qs1.union(qs2), [self.author1, self.author2])
++
++    @skipUnlessDBFeature("supports_select_intersection")
++    def test_intersection(self):
++        qs1 = Author.objects.annotate(
++            book_alice=FilteredRelation(
++                "book", condition=Q(book__title__iexact="poem by alice")
++            ),
++        ).filter(book_alice__isnull=False)
++        qs2 = Author.objects.annotate(
++            book_jane=FilteredRelation(
++                "book", condition=Q(book__title__iexact="the book by jane a")
++            ),
++        ).filter(book_jane__isnull=False)
++        self.assertSequenceEqual(qs1.intersection(qs2), [])
++
++    @skipUnlessDBFeature("supports_select_difference")
++    def test_difference(self):
++        qs1 = Author.objects.annotate(
++            book_alice=FilteredRelation(
++                "book", condition=Q(book__title__iexact="poem by alice")
++            ),
++        ).filter(book_alice__isnull=False)
++        qs2 = Author.objects.annotate(
++            book_jane=FilteredRelation(
++                "book", condition=Q(book__title__iexact="the book by jane a")
++            ),
++        ).filter(book_jane__isnull=False)
++        self.assertSequenceEqual(qs1.difference(qs2), [self.author1])
++
++    def test_select_for_update(self):
++        self.assertSequenceEqual(
++            Author.objects.annotate(
++                book_jane=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="the book by jane a")
++                ),
++            )
++            .filter(book_jane__isnull=False)
++            .select_for_update(),
++            [self.author2],
++        )
++
++    def test_defer(self):
++        # One query for the list and one query for the deferred title.
++        with self.assertNumQueries(2):
++            self.assertQuerysetEqual(
++                Author.objects.annotate(
++                    book_alice=FilteredRelation(
++                        "book", condition=Q(book__title__iexact="poem by alice")
++                    ),
++                )
++                .filter(book_alice__isnull=False)
++                .select_related("book_alice")
++                .defer("book_alice__title"),
++                ["Poem by Alice"],
++                lambda author: author.book_alice.title,
++            )
++
++    def test_only_not_supported(self):
++        msg = "only() is not supported with FilteredRelation."
++        with self.assertRaisesMessage(ValueError, msg):
++            Author.objects.annotate(
++                book_alice=FilteredRelation(
++                    "book", condition=Q(book__title__iexact="poem by alice")
++                ),
++            ).filter(book_alice__isnull=False).select_related("book_alice").only(
++                "book_alice__state"
++            )
++
++    def test_as_subquery(self):
++        inner_qs = Author.objects.annotate(
++            book_alice=FilteredRelation(
++                "book", condition=Q(book__title__iexact="poem by alice")
++            ),
++        ).filter(book_alice__isnull=False)
++        qs = Author.objects.filter(id__in=inner_qs)
++        self.assertSequenceEqual(qs, [self.author1])
++
++    def test_nested_foreign_key(self):
++        qs = (
++            Author.objects.annotate(
++                book_editor_worked_with=FilteredRelation(
++                    "book__editor",
++                    condition=Q(book__title__icontains="book by"),
++                ),
++            )
++            .filter(
++                book_editor_worked_with__isnull=False,
++            )
++            .select_related(
++                "book_editor_worked_with",
++            )
++            .order_by("pk", "book_editor_worked_with__pk")
++        )
++        with self.assertNumQueries(1):
++            self.assertQuerysetEqual(
++                qs,
++                [
++                    (self.author1, self.editor_a),
++                    (self.author2, self.editor_b),
++                    (self.author2, self.editor_b),
++                ],
++                lambda x: (x, x.book_editor_worked_with),
++            )
++
++    def test_nested_foreign_key_nested_field(self):
++        qs = (
++            Author.objects.annotate(
++                book_editor_worked_with=FilteredRelation(
++                    "book__editor", condition=Q(book__title__icontains="book by")
++                ),
++            )
++            .filter(
++                book_editor_worked_with__isnull=False,
++            )
++            .values(
++                "name",
++                "book_editor_worked_with__name",
++            )
++            .order_by("name", "book_editor_worked_with__name")
++            .distinct()
++        )
++        self.assertSequenceEqual(
++            qs,
++            [
++                {
++                    "name": self.author1.name,
++                    "book_editor_worked_with__name": self.editor_a.name,
++                },
++                {
++                    "name": self.author2.name,
++                    "book_editor_worked_with__name": self.editor_b.name,
++                },
++            ],
++        )
++
++    def test_nested_foreign_key_filtered_base_object(self):
++        qs = (
++            Author.objects.annotate(
++                alice_editors=FilteredRelation(
++                    "book__editor",
++                    condition=Q(name="Alice"),
++                ),
++            )
++            .values(
++                "name",
++                "alice_editors__pk",
++            )
++            .order_by("name", "alice_editors__name")
++            .distinct()
++        )
++        self.assertSequenceEqual(
++            qs,
++            [
++                {"name": self.author1.name, "alice_editors__pk": self.editor_a.pk},
++                {"name": self.author2.name, "alice_editors__pk": None},
++            ],
++        )
+\ No newline at end of file

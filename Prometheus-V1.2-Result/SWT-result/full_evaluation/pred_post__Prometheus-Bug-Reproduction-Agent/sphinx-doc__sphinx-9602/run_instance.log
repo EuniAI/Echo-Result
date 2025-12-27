@@ -1,0 +1,146 @@
+2025-12-07 16:35:32,173 - WARNING - Starting evaluation at 1765125332.1737354
+2025-12-07 16:35:32,223 - INFO - Creating container for sphinx-doc__sphinx-9602...
+2025-12-07 16:35:32,272 - INFO - Container for sphinx-doc__sphinx-9602 created: 260d7ed453acee8181f5700866c0d0a7aaabecc30e31314edc7302c5878e0483
+2025-12-07 16:35:32,458 - INFO - Container for sphinx-doc__sphinx-9602 started: 260d7ed453acee8181f5700866c0d0a7aaabecc30e31314edc7302c5878e0483
+2025-12-07 16:35:32,852 - INFO - Git diff before:
+diff --git a/setup.py b/setup.py
+index 4a1d5aeed..3faa58e79 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp>=2.0.0',
+-    'sphinxcontrib-serializinghtml>=1.1.5',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp>=2.0.0,<=2.0.4',
++    'sphinxcontrib-serializinghtml>=1.1.5,<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/tox.ini b/tox.ini
+index b6a67fd85..483f2df92 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:35:32,852 - INFO - Eval script for sphinx-doc__sphinx-9602 written to eval.sh, now applying to container...
+2025-12-07 16:35:58,106 - INFO - Test output for sphinx-doc__sphinx-9602 written to run_instance_swt_logs/full_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/sphinx-doc__sphinx-9602/test_output.txt
+2025-12-07 16:35:58,185 - INFO - Git diff after:
+diff --git a/setup.py b/setup.py
+index 4a1d5aeed..3faa58e79 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 6):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp>=2.0.0',
+-    'sphinxcontrib-serializinghtml>=1.1.5',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp>=2.0.0,<=2.0.4',
++    'sphinxcontrib-serializinghtml>=1.1.5,<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.14,<0.18',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/domains/python.py b/sphinx/domains/python.py
+index 9875a9f4b..ee93edfce 100644
+--- a/sphinx/domains/python.py
++++ b/sphinx/domains/python.py
+@@ -123,7 +123,7 @@ def _parse_annotation(annotation: str, env: BuildEnvironment = None) -> List[Nod
+             if node.value is Ellipsis:
+                 return [addnodes.desc_sig_punctuation('', "...")]
+             else:
+-                return [nodes.Text(node.value)]
++                return [nodes.Text(repr(node.value))]
+         elif isinstance(node, ast.Expr):
+             return unparse(node.value)
+         elif isinstance(node, ast.Index):
+@@ -149,6 +149,12 @@ def _parse_annotation(annotation: str, env: BuildEnvironment = None) -> List[Nod
+             result.append(addnodes.desc_sig_punctuation('', '['))
+             result.extend(unparse(node.slice))
+             result.append(addnodes.desc_sig_punctuation('', ']'))
++
++            # Wrap the Text nodes inside brackets by literal node if the subscript is a Literal
++            if result[0] in ('Literal', 'typing.Literal'):
++                for i, subnode in enumerate(result[1:], start=1):
++                    if isinstance(subnode, nodes.Text):
++                        result[i] = nodes.literal('', '', subnode)
+             return result
+         elif isinstance(node, ast.Tuple):
+             if node.elts:
+@@ -179,7 +185,9 @@ def _parse_annotation(annotation: str, env: BuildEnvironment = None) -> List[Nod
+         tree = ast_parse(annotation)
+         result = unparse(tree)
+         for i, node in enumerate(result):
+-            if isinstance(node, nodes.Text) and node.strip():
++            if isinstance(node, nodes.literal):
++                result[i] = node[0]
++            elif isinstance(node, nodes.Text) and node.strip():
+                 result[i] = type_to_xref(str(node), env)
+         return result
+     except SyntaxError:
+diff --git a/tox.ini b/tox.ini
+index b6a67fd85..483f2df92 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils,ignore::DeprecationWarning:pip._vendor.packaging.version
+     PYTEST_ADDOPTS = {env:PYTEST_ADDOPTS:} --color yes
+ commands=
+-    python -X dev -m pytest --durations 25 {posargs}
++    python -X dev -m pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:35:58,185 - INFO - Git diff changed after running eval script
+2025-12-07 16:35:58,185 - INFO - Attempting to stop container exec.eval.x86_64.77d82541416cab86d0d86a.5c204d72ad89452fa473d1.124396454028032...
+2025-12-07 16:36:13,417 - INFO - Attempting to remove container exec.eval.x86_64.77d82541416cab86d0d86a.5c204d72ad89452fa473d1.124396454028032...
+2025-12-07 16:36:13,551 - INFO - Container exec.eval.x86_64.77d82541416cab86d0d86a.5c204d72ad89452fa473d1.124396454028032 removed.
+2025-12-07 16:36:13,551 - WARNING - End of eval at 1765125373.5513022

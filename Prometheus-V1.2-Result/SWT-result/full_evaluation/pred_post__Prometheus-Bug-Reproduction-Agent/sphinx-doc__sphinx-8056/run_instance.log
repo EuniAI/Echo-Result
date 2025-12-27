@@ -1,0 +1,147 @@
+2025-12-07 16:19:04,838 - WARNING - Starting evaluation at 1765124344.8380635
+2025-12-07 16:19:04,886 - INFO - Creating container for sphinx-doc__sphinx-8056...
+2025-12-07 16:19:04,911 - INFO - Container for sphinx-doc__sphinx-8056 created: 0d84569e9b4af9bd705c0ef759aacf0c17d26f8c58b69f12e0c4d3bf6ba17c35
+2025-12-07 16:19:05,083 - INFO - Container for sphinx-doc__sphinx-8056 started: 0d84569e9b4af9bd705c0ef759aacf0c17d26f8c58b69f12e0c4d3bf6ba17c35
+2025-12-07 16:19:05,475 - INFO - Git diff before:
+diff --git a/setup.py b/setup.py
+index a404f1fa5..2c6848797 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/tox.ini b/tox.ini
+index bddd822a6..34baee205 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:19:05,475 - INFO - Eval script for sphinx-doc__sphinx-8056 written to eval.sh, now applying to container...
+2025-12-07 16:19:24,906 - INFO - Test output for sphinx-doc__sphinx-8056 written to run_instance_swt_logs/full_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/sphinx-doc__sphinx-8056/test_output.txt
+2025-12-07 16:19:24,983 - INFO - Git diff after:
+diff --git a/setup.py b/setup.py
+index a404f1fa5..2c6848797 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/ext/napoleon/docstring.py b/sphinx/ext/napoleon/docstring.py
+index b3daa06f1..52abf9753 100644
+--- a/sphinx/ext/napoleon/docstring.py
++++ b/sphinx/ext/napoleon/docstring.py
+@@ -266,13 +266,16 @@ class GoogleDocstring:
+         _descs = self.__class__(_descs, self._config).lines()
+         return _name, _type, _descs
+ 
+-    def _consume_fields(self, parse_type: bool = True, prefer_type: bool = False
+-                        ) -> List[Tuple[str, str, List[str]]]:
++    def _consume_fields(self, parse_type: bool = True, prefer_type: bool = False,
++                        multiple: bool = False) -> List[Tuple[str, str, List[str]]]:
+         self._consume_empty()
+         fields = []
+         while not self._is_section_break():
+             _name, _type, _desc = self._consume_field(parse_type, prefer_type)
+-            if _name or _type or _desc:
++            if multiple and _name:
++                for name in _name.split(","):
++                    fields.append((name.strip(), _type, _desc))
++            elif _name or _type or _desc:
+                 fields.append((_name, _type, _desc,))
+         return fields
+ 
+@@ -681,10 +684,12 @@ class GoogleDocstring:
+         return self._format_fields(_('Other Parameters'), self._consume_fields())
+ 
+     def _parse_parameters_section(self, section: str) -> List[str]:
+-        fields = self._consume_fields()
+         if self._config.napoleon_use_param:
++            # Allow to declare multiple parameters at once (ex: x, y: int)
++            fields = self._consume_fields(multiple=True)
+             return self._format_docutils_params(fields)
+         else:
++            fields = self._consume_fields()
+             return self._format_fields(_('Parameters'), fields)
+ 
+     def _parse_raises_section(self, section: str) -> List[str]:
+diff --git a/tox.ini b/tox.ini
+index bddd822a6..34baee205 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -27,7 +27,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:19:24,984 - INFO - Git diff changed after running eval script
+2025-12-07 16:19:24,984 - INFO - Attempting to stop container exec.eval.x86_64.77d82541416cab86d0d86a.5e1d125f934ec17136b35d.124396454023472...
+2025-12-07 16:19:40,197 - INFO - Attempting to remove container exec.eval.x86_64.77d82541416cab86d0d86a.5e1d125f934ec17136b35d.124396454023472...
+2025-12-07 16:19:40,312 - INFO - Container exec.eval.x86_64.77d82541416cab86d0d86a.5e1d125f934ec17136b35d.124396454023472 removed.
+2025-12-07 16:19:40,312 - WARNING - End of eval at 1765124380.3128548

@@ -1,0 +1,49 @@
+diff --git a/tests/postgres_tests/test_forms.py b/tests/postgres_tests/test_forms.py
+new file mode 100644
+index 0000000000..be02e40e2f
+--- /dev/null
++++ b/tests/postgres_tests/test_forms.py
+@@ -0,0 +1,43 @@
++import unittest
++from django import forms
++from django.test import SimpleTestCase
++
++try:
++    from django.contrib.postgres.forms import SplitArrayField
++except ImportError:
++    # If psycopg2 is not installed, this test will be skipped.
++    SplitArrayField = None
++
++
++# In the Django test suite, this would be `from . import PostgreSQLWidgetTestCase`.
++# For a self-contained example, SimpleTestCase is sufficient as no DB is needed.
++class PostgreSQLWidgetTestCase(SimpleTestCase):
++    pass
++
++
++@unittest.skipIf(SplitArrayField is None, 'psycopg2 is not installed')
++class TestSplitArrayFieldWidget(PostgreSQLWidgetTestCase):
++    def test_boolean_field_attrs_mutation(self):
++        """
++        SplitArrayField with a BooleanField should not have its attributes
++        mutated by the CheckboxInput widget when preparing the context.
++        """
++        class ArrayForm(forms.Form):
++            field = SplitArrayField(forms.BooleanField(required=False), size=2)
++
++        form = ArrayForm(initial={'field': [True, False]})
++        widget = form.fields['field'].widget
++
++        # Get the context data that would be passed to the template.
++        # This avoids the TemplateDoesNotExist error by not rendering the template.
++        context = widget.get_context(name='field', value=[True, False], attrs=None)
++
++        # The context for subwidgets is where the mutated 'checked' attribute appears.
++        subwidgets_context = context['widget']['subwidgets']
++
++        # The bug is that CheckboxInput.get_context() modifies the attrs
++        # dict. SplitArrayWidget reuses this dict, so after the first True
++        # value, 'checked' is present for all subsequent subwidgets.
++        # This assertion will fail because 'checked' will be in the attrs
++        # for the second widget, which corresponds to the 'False' value.
++        self.assertNotIn('checked', subwidgets_context[1]['attrs'])

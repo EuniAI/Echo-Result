@@ -1,0 +1,52 @@
+diff --git a/tests/forms_tests/field_tests/test_basic.py b/tests/forms_tests/field_tests/test_basic.py
+new file mode 100644
+index 0000000000..9d12aa3b3a
+--- /dev/null
++++ b/tests/forms_tests/field_tests/test_basic.py
+@@ -0,0 +1,46 @@
++import copy
++from django.forms import ChoiceField, Field, Form, Select
++from django.test import SimpleTestCase
++
++
++class BasicFieldsTests(SimpleTestCase):
++
++    def test_field_sets_widget_is_required(self):
++        self.assertTrue(Field(required=True).widget.is_required)
++        self.assertFalse(Field(required=False).widget.is_required)
++
++    def test_cooperative_multiple_inheritance(self):
++        class A:
++            def __init__(self):
++                self.class_a_var = True
++                super().__init__()
++
++        class ComplexField(Field, A):
++            def __init__(self):
++                super().__init__()
++
++        f = ComplexField()
++        self.assertTrue(f.class_a_var)
++
++    def test_field_deepcopies_widget_instance(self):
++        class CustomChoiceField(ChoiceField):
++            widget = Select(attrs={'class': 'my-custom-class'})
++
++        class TestForm(Form):
++            field1 = CustomChoiceField(choices=[])
++            field2 = CustomChoiceField(choices=[])
++
++        f = TestForm()
++        f.fields['field1'].choices = [('1', '1')]
++        f.fields['field2'].choices = [('2', '2')]
++        self.assertEqual(f.fields['field1'].widget.choices, [('1', '1')])
++        self.assertEqual(f.fields['field2'].widget.choices, [('2', '2')])
++
++    def test_deepcopy_error_messages(self):
++        """
++        __deepcopy__() on a Field doesn't deepcopy error_messages.
++        """
++        f1 = Field(error_messages={'required': 'original message'})
++        f2 = copy.deepcopy(f1)
++        f2.error_messages['required'] = 'modified message'
++        self.assertEqual(f1.error_messages['required'], 'original message')

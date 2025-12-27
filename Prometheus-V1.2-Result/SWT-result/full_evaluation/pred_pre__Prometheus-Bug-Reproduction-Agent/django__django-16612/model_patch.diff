@@ -1,0 +1,44 @@
+diff --git a/tests/admin_views/test_catchall_view.py b/tests/admin_views/test_catchall_view.py
+new file mode 100644
+index 0000000000..0407c45a93
+--- /dev/null
++++ b/tests/admin_views/test_catchall_view.py
+@@ -0,0 +1,38 @@
++from django.contrib.auth.models import User
++from django.test import TestCase, override_settings
++from django.urls import reverse
++
++
++@override_settings(ROOT_URLCONF="admin_views.urls")
++class AdminSiteFinalCatchAllPatternTests(TestCase):
++    """
++    Verifies the behaviour of the admin catch-all view.
++    """
++
++    @override_settings(APPEND_SLASH=True)
++    def test_redirect_for_missing_slash_preserves_query_string(self):
++        """
++        The catch-all view should preserve the query string when redirecting
++        to append a slash.
++        """
++        superuser = User.objects.create_superuser(
++            "super", "super@example.com", "secret"
++        )
++        self.client.force_login(superuser)
++
++        # The example from the bug report is /admin/auth/foo?id=123. 'foo' is not a
++        # real model, so we use 'user' which is. The catch_all_view only
++        # redirects if the URL with a slash resolves.
++        url_with_slash = reverse("admin:auth_user_changelist")
++        url_without_slash = url_with_slash[:-1]
++
++        url_to_test = f"{url_without_slash}?id=123"
++        expected_redirect_url = f"{url_with_slash}?id=123"
++
++        response = self.client.get(url_to_test)
++        self.assertRedirects(
++            response,
++            expected_redirect_url,
++            status_code=301,
++            target_status_code=200,
++        )

@@ -1,0 +1,42 @@
+diff --git a/tests/servers/test_liveserver_connection.py b/tests/servers/test_liveserver_connection.py
+new file mode 100644
+index 0000000000..69a9c0e994
+--- /dev/null
++++ b/tests/servers/test_liveserver_connection.py
+@@ -0,0 +1,36 @@
++from django.db import DEFAULT_DB_ALIAS, connections
++from django.test import LiveServerTestCase, TransactionTestCase
++
++
++# Use TransactionTestCase instead of TestCase to run outside of a transaction,
++# otherwise closing the connection would implicitly rollback and not set the
++# connection to None.
++class LiveServerThreadConnectionClosingTest(TransactionTestCase):
++    available_apps = []
++
++    def _run_live_server_thread(self, connections_override=None):
++        thread = LiveServerTestCase._create_server_thread(connections_override)
++        thread.daemon = True
++        thread.start()
++        thread.is_ready.wait()
++        thread.terminate()
++
++    def test_threaded_server_closes_db_connections(self):
++        """
++        The ThreadedWSGIServer spawned by LiveServerThread should close its
++        database connections on termination.
++        """
++        db_conn = connections[DEFAULT_DB_ALIAS]
++        # Pass a connection to the thread to check that it's closed.
++        connections_override = {DEFAULT_DB_ALIAS: db_conn}
++        # Open a database connection.
++        db_conn.connect()
++        db_conn.inc_thread_sharing()
++        try:
++            self.assertIsNotNone(db_conn.connection)
++            self._run_live_server_thread(connections_override)
++            # The connection should be closed by the thread. This is the
++            # assertion that is expected to fail due to the bug.
++            self.assertIsNone(db_conn.connection)
++        finally:
++            db_conn.dec_thread_sharing()

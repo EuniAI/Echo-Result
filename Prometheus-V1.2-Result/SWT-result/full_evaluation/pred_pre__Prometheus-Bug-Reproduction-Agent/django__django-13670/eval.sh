@@ -1,0 +1,155 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD c448e614c60cc97c6194c62052363f4f501e0953 >> /root/pre_state.patch
+sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
+export LANG=en_US.UTF-8
+export LANGUAGE=en_US:en
+export LC_ALL=en_US.UTF-8
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff c448e614c60cc97c6194c62052363f4f501e0953
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/utils_tests/test_dateformat_bug.py b/tests/utils_tests/test_dateformat_bug.py
+new file mode 100644
+index 0000000000..029657979c
+--- /dev/null
++++ b/tests/utils_tests/test_dateformat_bug.py
+@@ -0,0 +1,124 @@
++from datetime import date, datetime
++
++from django.test import SimpleTestCase, override_settings
++from django.test.utils import TZ_SUPPORT, requires_tz_support
++from django.utils import dateformat, translation
++from django.utils.dateformat import format
++from django.utils.timezone import (
++    get_default_timezone, get_fixed_timezone, make_aware, utc,
++)
++
++
++@override_settings(TIME_ZONE='Europe/Copenhagen')
++class DateFormatTests(SimpleTestCase):
++
++    def setUp(self):
++        self._orig_lang = translation.get_language()
++        translation.activate('en-us')
++
++    def tearDown(self):
++        translation.activate(self._orig_lang)
++
++    def test_date(self):
++        d = date(2009, 5, 16)
++        self.assertEqual(date.fromtimestamp(int(format(d, 'U'))), d)
++
++    def test_naive_datetime(self):
++        dt = datetime(2009, 5, 16, 5, 30, 30)
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U'))), dt)
++
++    def test_naive_ambiguous_datetime(self):
++        # dt is ambiguous in Europe/Copenhagen. pytz raises an exception for
++        # the ambiguity, which results in an empty string.
++        dt = datetime(2015, 10, 25, 2, 30, 0)
++
++        # Try all formatters that involve self.timezone.
++        self.assertEqual(format(dt, 'I'), '')
++        self.assertEqual(format(dt, 'O'), '')
++        self.assertEqual(format(dt, 'T'), '')
++        self.assertEqual(format(dt, 'Z'), '')
++
++    @requires_tz_support
++    def test_datetime_with_local_tzinfo(self):
++        ltz = get_default_timezone()
++        dt = make_aware(datetime(2009, 5, 16, 5, 30, 30), ltz)
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U')), ltz), dt)
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U'))), dt.replace(tzinfo=None))
++
++    @requires_tz_support
++    def test_datetime_with_tzinfo(self):
++        tz = get_fixed_timezone(-510)
++        ltz = get_default_timezone()
++        dt = make_aware(datetime(2009, 5, 16, 5, 30, 30), ltz)
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U')), tz), dt)
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U')), ltz), dt)
++        # astimezone() is safe here because the target timezone doesn't have DST
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U'))), dt.astimezone(ltz).replace(tzinfo=None))
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U')), tz).utctimetuple(), dt.utctimetuple())
++        self.assertEqual(datetime.fromtimestamp(int(format(dt, 'U')), ltz).utctimetuple(), dt.utctimetuple())
++
++    def test_epoch(self):
++        udt = datetime(1970, 1, 1, tzinfo=utc)
++        self.assertEqual(format(udt, 'U'), '0')
++
++    def test_empty_format(self):
++        my_birthday = datetime(1979, 7, 8, 22, 00)
++
++        self.assertEqual(dateformat.format(my_birthday, ''), '')
++
++    def test_am_pm(self):
++        my_birthday = datetime(1979, 7, 8, 22, 00)
++
++        self.assertEqual(dateformat.format(my_birthday, 'a'), 'p.m.')
++
++    def test_microsecond(self):
++        # Regression test for #18951
++        dt = datetime(2009, 5, 16, microsecond=123)
++        self.assertEqual(dateformat.format(dt, 'u'), '000123')
++
++    def test_date_formats(self):
++        my_birthday = datetime(1979, 7, 8, 22, 00)
++        timestamp = datetime(2008, 5, 19, 11, 45, 23, 123456)
++
++        self.assertEqual(dateformat.format(my_birthday, 'A'), 'PM')
++        self.assertEqual(dateformat.format(timestamp, 'c'), '2008-05-19T11:45:23.123456')
++        self.assertEqual(dateformat.format(my_birthday, 'd'), '08')
++        self.assertEqual(dateformat.format(my_birthday, 'j'), '8')
++        self.assertEqual(dateformat.format(my_birthday, 'l'), 'Sunday')
++        self.assertEqual(dateformat.format(my_birthday, 'L'), 'False')
++        self.assertEqual(dateformat.format(my_birthday, 'm'), '07')
++        self.assertEqual(dateformat.format(my_birthday, 'M'), 'Jul')
++        self.assertEqual(dateformat.format(my_birthday, 'b'), 'jul')
++        self.assertEqual(dateformat.format(my_birthday, 'n'), '7')
++        self.assertEqual(dateformat.format(my_birthday, 'N'), 'July')
++
++    def test_time_formats(self):
++        my_birthday = datetime(1979, 7, 8, 22, 00)
++
++        self.assertEqual(dateformat.format(my_birthday, 'P'), '10 p.m.')
++        self.assertEqual(dateformat.format(my_birthday, 's'), '00')
++        self.assertEqual(dateformat.format(my_birthday, 'S'), 'th')
++        self.assertEqual(dateformat.format(my_birthday, 't'), '31')
++        self.assertEqual(dateformat.format(my_birthday, 'w'), '0')
++        self.assertEqual(dateformat.format(my_birthday, 'W'), '27')
++        self.assertEqual(dateformat.format(my_birthday, 'y'), '79')
++        self.assertEqual(dateformat.format(my_birthday, 'Y'), '1979')
++        self.assertEqual(dateformat.format(my_birthday, 'z'), '189')
++
++    def test_dateformat(self):
++        my_birthday = datetime(1979, 7, 8, 22, 00)
++
++        self.assertEqual(dateformat.format(my_birthday, r'Y z \C\E\T'), '1979 189 CET')
++
++        self.assertEqual(dateformat.format(my_birthday, r'jS \o\f F'), '8th of July')
++
++    def test_futuredates(self):
++        the_future = datetime(2100, 10, 25, 0, 00)
++        self.assertEqual(dateformat.format(the_future, r'Y'), '2100')
++
++    def test_y_format_for_year_less_than_1000(self):
++        """
++        The "y" format character should work for years < 1000.
++        """
++        dt = datetime(123, 4, 5, 6, 7)
++        self.assertEqual(dateformat.format(dt, 'y'), '23')
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/utils/dateformat\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 utils_tests.test_dateformat_bug
+cat coverage.cover
+git checkout c448e614c60cc97c6194c62052363f4f501e0953
+git apply /root/pre_state.patch

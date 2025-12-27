@@ -1,0 +1,29 @@
+diff --git a/tests/mail/test_unicode.py b/tests/mail/test_unicode.py
+new file mode 100644
+index 0000000000..ea00e14c3b
+--- /dev/null
++++ b/tests/mail/test_unicode.py
+@@ -0,0 +1,23 @@
++from unittest.mock import patch
++
++from django.core.mail import EmailMessage
++from django.test import SimpleTestCase
++
++
++class MailUnicodeHostnameTests(SimpleTestCase):
++    def test_unicode_hostname_message_id(self):
++        """
++        A non-ASCII hostname doesn't crash email sending with a non-UTF-8
++        encoding.
++        """
++        # The hostname "正宗" from the issue description is used here.
++        with patch("django.core.mail.message.DNS_NAME", "正宗"):
++            email = EmailMessage(
++                'subject', '', 'from@example.com', ['to@example.com']
++            )
++            email.encoding = 'iso-8859-1'
++            # Before the fix, this line raises UnicodeEncodeError.
++            message = email.message()
++            # After the fix, the hostname should be punycode-encoded.
++            # "正宗" in punycode is "xn--p8s937b".
++            self.assertIn('xn--p8s937b', message['Message-ID'])

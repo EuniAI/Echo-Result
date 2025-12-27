@@ -1,0 +1,56 @@
+diff --git a/lib/matplotlib/tests/test_pickle_draggable_legend.py b/lib/matplotlib/tests/test_pickle_draggable_legend.py
+new file mode 100644
+index 0000000000..f27cbd05e7
+--- /dev/null
++++ b/lib/matplotlib/tests/test_pickle_draggable_legend.py
+@@ -0,0 +1,50 @@
++import pickle
++from io import BytesIO
++import matplotlib.pyplot as plt
++from matplotlib.cbook import CallbackRegistry
++
++def test_pickle_draggable_legend():
++    """
++    A figure with a draggable legend should be picklable even on backends with
++    unpicklable canvases.
++
++    This test simulates an interactive backend by using a mock canvas that is
++    not picklable. The bug is that DraggableLegend holds a reference to the
++    canvas, making the Figure unpicklable on interactive backends.
++    """
++
++    # This mock canvas has just enough attributes to get past the setup
++    # and Figure's own __getstate__ method.
++    class UnpicklableCanvas:
++        def __init__(self, figure):
++            self.figure = figure
++            # Needed for leg.set_draggable() to connect events.
++            self.callbacks = CallbackRegistry()
++            # Needed for Figure.__getstate__() to run without error.
++            self.manager = None
++
++        def mpl_connect(self, s, func):
++            return self.callbacks.connect(s, func)
++
++        # This method makes the canvas unpicklable, simulating a real GUI
++        # canvas. When pickle tries to get the state of this object, it
++        # will raise the TypeError, reproducing the bug.
++        def __getstate__(self):
++            raise TypeError(f"cannot pickle '{type(self).__name__}' object")
++
++    # Use the code from the bug report.
++    fig = plt.figure()
++    # Replace the default, picklable 'Agg' canvas with our mock.
++    fig.canvas = UnpicklableCanvas(fig)
++
++    ax = fig.add_subplot(111)
++    ax.plot([0, 1, 2, 3, 4], [40, 43, 45, 47, 48], label="speed")
++
++    leg = ax.legend()
++    # This call should now succeed.
++    leg.set_draggable(True)
++
++    # This is where the TypeError should be raised. The pickling process will
++    # traverse from the Figure to the Legend, and then to the unpicklable
++    # canvas reference held by the DraggableLegend helper object.
++    pickle.dump(fig, BytesIO())

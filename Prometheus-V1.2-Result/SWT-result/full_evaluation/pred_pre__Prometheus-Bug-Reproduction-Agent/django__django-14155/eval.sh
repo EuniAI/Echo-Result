@@ -1,0 +1,53 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 2f13c476abe4ba787b6cb71131818341911f43cc >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 2f13c476abe4ba787b6cb71131818341911f43cc
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/urlpatterns/test_resolvermatch.py b/tests/urlpatterns/test_resolvermatch.py
+new file mode 100644
+index 0000000000..30d46979ea
+--- /dev/null
++++ b/tests/urlpatterns/test_resolvermatch.py
+@@ -0,0 +1,26 @@
++import functools
++
++from django.http import HttpResponse
++from django.test import SimpleTestCase
++from django.urls.resolvers import ResolverMatch
++
++# View function defined locally for self-containment of the test case.
++# In a real scenario, this would be in `urlpatterns.views`.
++def empty_view(request, *args, **kwargs):
++    return HttpResponse()
++empty_view.__module__ = 'urlpatterns.views'
++
++
++class ResolverMatchTests(SimpleTestCase):
++    def test_repr_with_functools_partial(self):
++        """
++        __repr__() should be able to unwrap functools.partial objects.
++        """
++        p = functools.partial(empty_view, 'arg1', kwarg1='kwarg1')
++        match = ResolverMatch(p, ('arg2',), {'kwarg2': 'kwarg2'})
++        self.assertEqual(
++            repr(match),
++            "ResolverMatch(func=urlpatterns.views.empty_view, "
++            "args=('arg1', 'arg2'), kwargs={'kwarg1': 'kwarg1', 'kwarg2': 'kwarg2'}, "
++            "url_name=None, app_names=[], namespaces=[], route=None)"
++        )
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/urls/resolvers\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 urlpatterns.test_resolvermatch
+cat coverage.cover
+git checkout 2f13c476abe4ba787b6cb71131818341911f43cc
+git apply /root/pre_state.patch

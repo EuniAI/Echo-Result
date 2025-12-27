@@ -1,0 +1,45 @@
+diff --git a/tests/admin_widgets/test_json_widget.py b/tests/admin_widgets/test_json_widget.py
+new file mode 100644
+index 0000000000..5def293c65
+--- /dev/null
++++ b/tests/admin_widgets/test_json_widget.py
+@@ -0,0 +1,39 @@
++import json
++
++from django.contrib import admin
++from django.db import models
++from django.test import SimpleTestCase
++
++
++# Minimal model for the test, similar to those in the test suite.
++class DataModel(models.Model):
++    json_data = models.JSONField()
++
++    class Meta:
++        app_label = 'admin_widgets'
++
++
++class AdminJSONWidgetTests(SimpleTestCase):
++    def test_formfield_for_jsonfield_handles_unicode(self):
++        """
++        The widget for JSONField should use json.dumps() with
++        ensure_ascii=False so that non-ASCII characters are displayed
++        correctly in the admin.
++        """
++        class DataModelAdmin(admin.ModelAdmin):
++            pass
++
++        model_admin = DataModelAdmin(DataModel, admin.site)
++        form_field = model_admin.formfield_for_dbfield(
++            DataModel._meta.get_field('json_data'), request=None
++        )
++
++        # Python value with unicode characters.
++        python_value = {'key': '中国'}
++        # The form field's prepare_value() serializes the value for the widget.
++        prepared_value = form_field.prepare_value(python_value)
++
++        # The bug causes this to be '{"key": "\u4e2d\u56fd"}'.
++        # The fix should ensure it is '{"key": "中国"}'. This assertion will
++        # fail with the bug and pass when the bug is fixed.
++        self.assertEqual(prepared_value, '{"key": "中国"}')

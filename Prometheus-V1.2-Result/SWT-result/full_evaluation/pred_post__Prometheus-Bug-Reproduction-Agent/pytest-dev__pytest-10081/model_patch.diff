@@ -1,0 +1,42 @@
+diff --git a/testing/test_unittest_pdb.py b/testing/test_unittest_pdb.py
+new file mode 100644
+index 000000000..2a1ae43c3
+--- /dev/null
++++ b/testing/test_unittest_pdb.py
+@@ -0,0 +1,36 @@
++import pytest
++from _pytest.pytester import Pytester
++
++
++def test_pdb_unittest_skip_class_teardown(pytester: Pytester) -> None:
++    """
++    tearDown should not be called for a skipped unittest class with --pdb.
++
++    Regression test for pytest issue #7215.
++    """
++    pytester.makepyfile(
++        """
++        import unittest
++
++        @unittest.skip("hello")
++        class MyTestCase(unittest.TestCase):
++            def test_one(self):
++                pass
++            def tearDown(self):
++                # This tearDown should not be executed for a skipped class.
++                # The bug causes it to run when --pdb is used, leading to a NameError.
++                xxx
++        """
++    )
++
++    # Run pytest with --pdb in a non-interactive subprocess.
++    result = pytester.runpytest("--pdb")
++
++    # When the bug is fixed, the test is skipped and tearDown is not run.
++    # The result should be exactly one skipped test.
++    #
++    # When the bug is present, the tearDown method IS executed and raises a
++    # NameError. Pytest reports this as an error during teardown of a skipped
++    # test. This results in an outcome of `errors=1` and `skipped=1`.
++    # The assertion below will therefore fail because an unexpected error occurred.
++    result.assert_outcomes(skipped=1)

@@ -1,0 +1,39 @@
+diff --git a/tests/ordering/test_random_ordering_aggregation.py b/tests/ordering/test_random_ordering_aggregation.py
+new file mode 100644
+index 0000000000..4007ee76b9
+--- /dev/null
++++ b/tests/ordering/test_random_ordering_aggregation.py
+@@ -0,0 +1,33 @@
++import datetime
++
++from django.db.models import Count
++from django.test import TestCase
++
++from .models import Article, Author
++
++
++class OrderingTests(TestCase):
++    def test_random_ordering_doesnt_break_aggregation(self):
++        """
++        A random order_by() shouldn't break an aggregate's GROUP BY clause.
++        """
++        author = Author.objects.create(name='Test Author')
++        Article.objects.create(
++            headline='Article A',
++            pub_date=datetime.datetime(2020, 1, 1),
++            author=author,
++        )
++        Article.objects.create(
++            headline='Article B',
++            pub_date=datetime.datetime(2020, 1, 2),
++            author=author,
++        )
++
++        qs = Author.objects.filter(pk=author.pk).annotate(
++            article_count=Count('article')
++        ).order_by('?').values('pk', 'article_count')
++
++        # The bug causes random ordering to be added to GROUP BY, resulting in
++        # one result per related article. The correct result is a single row
++        # with the count of all articles.
++        self.assertCountEqual(qs, [{'pk': author.pk, 'article_count': 2}])

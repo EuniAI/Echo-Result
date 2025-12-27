@@ -1,0 +1,91 @@
+diff --git a/tests/migrations/test_pyc_loader.py b/tests/migrations/test_pyc_loader.py
+new file mode 100644
+index 0000000000..be01e7f779
+--- /dev/null
++++ b/tests/migrations/test_pyc_loader.py
+@@ -0,0 +1,85 @@
++import compileall
++import os
++from importlib import import_module
++from unittest.mock import MagicMock, patch
++
++from django.db import connection, connections
++from django.db.migrations.exceptions import (
++    AmbiguityError,
++    InconsistentMigrationHistory,
++    NodeNotFoundError,
++)
++from django.db.migrations.loader import MigrationLoader
++from django.db.migrations.recorder import MigrationRecorder
++from django.test import TestCase, modify_settings, override_settings
++
++from .test_base import MigrationTestBase
++
++
++class PycLoaderTests(MigrationTestBase):
++    def test_valid(self):
++        """
++        To support frozen environments, MigrationLoader loads .pyc migrations.
++        """
++        with self.temporary_migration_module(
++            module="migrations.test_migrations"
++        ) as migration_dir:
++            # Compile .py files to .pyc files and delete .py files.
++            compileall.compile_dir(migration_dir, force=True, quiet=1, legacy=True)
++            for name in os.listdir(migration_dir):
++                if name.endswith(".py"):
++                    os.remove(os.path.join(migration_dir, name))
++            loader = MigrationLoader(connection)
++            self.assertIn(("migrations", "0001_initial"), loader.disk_migrations)
++
++    def test_invalid(self):
++        """
++        MigrationLoader reraises ImportErrors caused by "bad magic number" pyc
++        files with a more helpful message.
++        """
++        with self.temporary_migration_module(
++            module="migrations.test_migrations_bad_pyc"
++        ) as migration_dir:
++            # The -tpl suffix is to avoid the pyc exclusion in MANIFEST.in.
++            os.rename(
++                os.path.join(migration_dir, "0001_initial.pyc-tpl"),
++                os.path.join(migration_dir, "0001_initial.pyc"),
++            )
++            msg = (
++                r"Couldn't import '\w+.migrations.0001_initial' as it appears "
++                "to be a stale .pyc file."
++            )
++            with self.assertRaisesRegex(ImportError, msg):
++                MigrationLoader(connection)
++
++    @override_settings(INSTALLED_APPS=["migrations"])
++    def test_package_with_no_file_attribute(self):
++        """
++        Migrations from a regular package without __file__ are loaded.
++        """
++        with self.temporary_migration_module(
++            module="migrations.test_migrations"
++        ) as migration_dir:
++            from django.conf import settings
++
++            module_name = settings.MIGRATION_MODULES["migrations"]
++            # This mock simulates a module from a frozen environment.
++            mock_module = MagicMock(spec=object)
++            # It's a package, so it has __path__.
++            mock_module.__path__ = [migration_dir]
++            # But no __file__.
++            del mock_module.__file__
++
++            original_import = import_module
++
++            def import_side_effect(name, package=None):
++                if name == module_name:
++                    return mock_module
++                return original_import(name, package)
++
++            with patch(
++                "django.db.migrations.loader.import_module",
++                side_effect=import_side_effect,
++            ):
++                loader = MigrationLoader(connection)
++                self.assertIn(("migrations", "0001_initial"), loader.disk_migrations)

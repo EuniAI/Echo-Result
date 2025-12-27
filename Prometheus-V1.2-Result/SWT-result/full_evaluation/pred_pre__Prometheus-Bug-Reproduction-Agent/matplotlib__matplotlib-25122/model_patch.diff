@@ -1,0 +1,51 @@
+diff --git a/lib/matplotlib/tests/test_mlab_psd.py b/lib/matplotlib/tests/test_mlab_psd.py
+new file mode 100644
+index 0000000000..4e5c3673b2
+--- /dev/null
++++ b/lib/matplotlib/tests/test_mlab_psd.py
+@@ -0,0 +1,45 @@
++from numpy.testing import assert_allclose
++import numpy as np
++
++from matplotlib import mlab
++
++def test_psd_window_with_negative_values():
++    """
++    Test that psd scaling is correct for windows with negative values.
++
++    The scaling for `scale_by_freq=False` should use `window.sum()**2`, but
++    was incorrectly using `np.abs(window).sum()**2`, giving incorrect
++    results for windows with negative lobes, such as a flattop window.
++
++    This test checks that the relationship between `scale_by_freq=True` and
++    `scale_by_freq=False` holds for a flattop window.
++    """
++    NFFT = 512
++    # A proper flattop window, which has negative values, matching the
++    # window from the issue report.
++    n = np.arange(NFFT)
++    a0 = 0.21557895
++    a1 = 0.41663158
++    a2 = 0.27726316
++    a3 = 0.08357895
++    a4 = 0.00694737
++    window = (a0 - a1 * np.cos(2 * np.pi * n / (NFFT - 1)) +
++              a2 * np.cos(4 * np.pi * n / (NFFT - 1)) -
++              a3 * np.cos(6 * np.pi * n / (NFFT - 1)) +
++              a4 * np.cos(8 * np.pi * n / (NFFT - 1)))
++
++    # A simple signal
++    x = np.random.randn(2 * NFFT)
++    Fs = 2.0
++
++    spec_s, _ = mlab.psd(x, NFFT=NFFT, Fs=Fs, window=window,
++                           scale_by_freq=True)
++
++    spec_n, _ = mlab.psd(x, NFFT=NFFT, Fs=Fs, window=window,
++                           scale_by_freq=False)
++
++    # This relationship should hold if the scaling is correct.
++    # It fails with the bug because spec_n is scaled by
++    # np.abs(window).sum()**2 instead of window.sum()**2.
++    assert_allclose(spec_s * (window**2).sum(),
++                    spec_n / Fs * window.sum()**2)

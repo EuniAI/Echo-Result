@@ -1,0 +1,45 @@
+diff --git a/tests/expressions/test_q_exists_operator.py b/tests/expressions/test_q_exists_operator.py
+new file mode 100644
+index 0000000000..598e2a4447
+--- /dev/null
++++ b/tests/expressions/test_q_exists_operator.py
+@@ -0,0 +1,39 @@
++from django.db.models import Exists, OuterRef, Q
++from django.test import TestCase
++
++# Correctly import models from the 'expressions' app to avoid ImportError.
++from expressions.models import Company, Employee
++
++
++class QExistsCombinationTests(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        """
++        Set up data for the test case.
++        - A CEO employee.
++        - A non-CEO employee.
++        - A company run by the CEO.
++        """
++        cls.ceo = Employee.objects.create(
++            firstname='John', lastname='Doe', salary=50000
++        )
++        cls.non_ceo = Employee.objects.create(
++            firstname='Jane', lastname='Smith', salary=40000
++        )
++        # Ensure all required fields for the Company model are provided.
++        Company.objects.create(
++            name='Django Inc.', num_employees=10, num_chairs=10, ceo=cls.ceo
++        )
++
++    def test_q_and_exists_operator(self):
++        """
++        Test that Q() & Exists() is a valid query and doesn't raise a
++        TypeError. This reproduces the bug where the operation is not
++        commutative.
++        """
++        is_ceo_query = Company.objects.filter(ceo=OuterRef('pk'))
++        # The following query construction raises a TypeError due to the bug.
++        # When the bug is fixed, this filter should execute successfully.
++        qs = Employee.objects.filter(Q() & Exists(is_ceo_query))
++        # This assertion will pass once the TypeError is resolved.
++        self.assertSequenceEqual(qs, [cls.ceo])

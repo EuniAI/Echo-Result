@@ -1,0 +1,85 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 9988d5ce267bf0df4791770b469431b1fb00dcdd >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 9988d5ce267bf0df4791770b469431b1fb00dcdd
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .[test]
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_ext_autodoc_docstring_signature.py b/tests/test_ext_autodoc_docstring_signature.py
+new file mode 100644
+index 000000000..2f99fc7a1
+--- /dev/null
++++ b/tests/test_ext_autodoc_docstring_signature.py
+@@ -0,0 +1,58 @@
++import sys
++from unittest.mock import Mock
++
++import pytest
++from docutils.statemachine import ViewList
++
++from sphinx.ext.autodoc.directive import DocumenterBridge, process_documenter_options
++from sphinx.ext.autodoc import Options
++from sphinx.util.docutils import LoggingReporter
++
++
++def do_autodoc(app, objtype, name, options=None):
++    if options is None:
++        options = {}
++    app.env.temp_data.setdefault('docname', 'index')  # set dummy docname
++    doccls = app.registry.documenters[objtype]
++    docoptions = process_documenter_options(doccls, app.config, options)
++    state = Mock()
++    state.document.settings.tab_width = 8
++    bridge = DocumenterBridge(app.env, LoggingReporter(''), docoptions, 1, state)
++    documenter = doccls(bridge, name)
++    documenter.generate()
++
++    return bridge.result
++
++
++@pytest.mark.sphinx('html', testroot='ext-autodoc')
++def test_autodoc_docstring_signature_with_overloaded_methods(app):
++    """Tests that autodoc picks up all overloaded signatures from a docstring."""
++    mod_name = 'test_autodoc_overloaded'
++    mod = type(sys)(mod_name)
++    sys.modules[mod_name] = mod
++
++    class Overloaded:
++        def meth(self):
++            """meth(a, b)
++meth(c)
++
++Docstring for the method.
++"""
++            pass
++    mod.Overloaded = Overloaded
++    app.config.autodoc_docstring_signature = True
++
++    try:
++        actual = do_autodoc(app, 'method', f'{mod_name}.Overloaded.meth')
++        expected = [
++            '',
++            '.. py:method:: Overloaded.meth(a, b)',
++            '               Overloaded.meth(c)',
++            f'   :module: {mod_name}',
++            '',
++            '   Docstring for the method.',
++            '',
++        ]
++        assert list(actual) == expected
++    finally:
++        del sys.modules[mod_name]
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sphinx/ext/autodoc/__init__\.py)' -m tox -epy39 -v -- tests/test_ext_autodoc_docstring_signature.py
+cat coverage.cover
+git checkout 9988d5ce267bf0df4791770b469431b1fb00dcdd
+git apply /root/pre_state.patch

@@ -1,0 +1,49 @@
+diff --git a/tests/queryset_pickle/test_values_annotation.py b/tests/queryset_pickle/test_values_annotation.py
+new file mode 100644
+index 0000000000..c7eb0b8acf
+--- /dev/null
++++ b/tests/queryset_pickle/test_values_annotation.py
+@@ -0,0 +1,43 @@
++import pickle
++
++from django.db import models
++from django.db.models import Sum
++from django.test import TestCase
++
++# The bug report uses a `Toy` model which is not in the provided context.
++# To make the test self-contained, we define it here.
++# In a real Django project, this would be in a `models.py` file.
++class Toy(models.Model):
++    name = models.CharField(max_length=16)
++    material = models.CharField(max_length=16)
++    price = models.PositiveIntegerField()
++
++    class Meta:
++        app_label = 'queryset_pickle'
++
++
++class PickleabilityTestCase(TestCase):
++    # The models need to be available to the test runner.
++    # We assume the 'queryset_pickle' app is configured in INSTALLED_APPS.
++
++    def test_pickle_values_queryset_with_annotation(self):
++        """
++        Tests that a values() queryset with an annotation can be
++        recreated from a pickled query object.
++        """
++        Toy.objects.create(name='foo', price=10, material='wood')
++        Toy.objects.create(name='bar', price=20, material='plastic')
++        Toy.objects.create(name='baz', price=100, material='wood')
++
++        # This queryset returns dicts: [{'material': 'plastic', 'total_price': 20}, ...]
++        prices = Toy.objects.values('material').annotate(total_price=Sum('price'))
++
++        # Recreate the queryset from a pickled query, as described in the bug.
++        prices2 = Toy.objects.all()
++        prices2.query = pickle.loads(pickle.dumps(prices.query))
++
++        # The bug is that `prices2` attempts to return model instances instead of dicts.
++        # This causes an AttributeError when the queryset is evaluated, because the
++        # data from the GROUP BY query doesn't match the model's fields.
++        # The minimal assertion is to check the type of the returned item.
++        self.assertIs(type(prices2[0]), dict)

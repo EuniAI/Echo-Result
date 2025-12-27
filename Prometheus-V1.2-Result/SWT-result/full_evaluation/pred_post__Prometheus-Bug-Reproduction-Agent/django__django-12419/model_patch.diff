@@ -1,0 +1,56 @@
+diff --git a/tests/middleware/test_security_2.py b/tests/middleware/test_security_2.py
+new file mode 100644
+index 0000000000..a85edfc680
+--- /dev/null
++++ b/tests/middleware/test_security_2.py
+@@ -0,0 +1,50 @@
++from django.http import HttpResponse
++from django.test import RequestFactory, SimpleTestCase
++from django.test.utils import override_settings
++
++
++class SecurityMiddlewareTest(SimpleTestCase):
++    @property
++    def middleware(self):
++        from django.middleware.security import SecurityMiddleware
++        return SecurityMiddleware()
++
++    @property
++    def secure_request_kwargs(self):
++        return {"wsgi.url_scheme": "https"}
++
++    def response(self, *args, headers=None, **kwargs):
++        response = HttpResponse(*args, **kwargs)
++        if headers:
++            for k, v in headers.items():
++                response[k] = v
++        return response
++
++    def process_response(self, *args, secure=False, request=None, **kwargs):
++        request_kwargs = {}
++        if secure:
++            request_kwargs.update(self.secure_request_kwargs)
++        if request is None:
++            request = self.request.get("/some/url", **request_kwargs)
++        ret = self.middleware.process_request(request)
++        if ret:
++            return ret
++        return self.middleware.process_response(
++            request, self.response(*args, **kwargs))
++
++    request = RequestFactory()
++
++    def process_request(self, method, *args, secure=False, **kwargs):
++        if secure:
++            kwargs.update(self.secure_request_kwargs)
++        req = getattr(self.request, method.lower())(*args, **kwargs)
++        return self.middleware.process_request(req)
++
++    def test_referrer_policy_default(self):
++        """
++        The default Referrer-Policy header is "same-origin".
++        """
++        # This test will fail if SECURE_REFERRER_POLICY defaults to None.
++        # It will pass when the default is changed to 'same-origin'.
++        response = self.process_response()
++        self.assertEqual(response.get('Referrer-Policy'), 'same-origin')

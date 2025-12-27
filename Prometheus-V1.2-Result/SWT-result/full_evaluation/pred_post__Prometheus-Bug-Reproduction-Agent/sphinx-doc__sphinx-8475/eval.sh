@@ -1,0 +1,123 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 3ea1ec84cc610f7a9f4f6b354e264565254923ff >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 3ea1ec84cc610f7a9f4f6b354e264565254923ff
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .[test]
+git apply -v - <<'EOF_114329324912'
+diff --git a/sphinx/builders/linkcheck.py b/sphinx/builders/linkcheck.py
+--- a/sphinx/builders/linkcheck.py
++++ b/sphinx/builders/linkcheck.py
+@@ -20,7 +20,7 @@
+ 
+ from docutils import nodes
+ from docutils.nodes import Node
+-from requests.exceptions import HTTPError
++from requests.exceptions import HTTPError, TooManyRedirects
+ 
+ from sphinx.application import Sphinx
+ from sphinx.builders import Builder
+@@ -172,7 +172,7 @@ def check_uri() -> Tuple[str, str, int]:
+                                                  config=self.app.config, auth=auth_info,
+                                                  **kwargs)
+                         response.raise_for_status()
+-                    except HTTPError:
++                    except (HTTPError, TooManyRedirects):
+                         # retry with GET request if that fails, some servers
+                         # don't like HEAD requests.
+                         response = requests.get(req_url, stream=True, config=self.app.config,
+
+EOF_114329324912
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/test_build_linkcheck_redirects.py b/tests/test_build_linkcheck_redirects.py
+new file mode 100644
+index 000000000..29cd1bae9
+--- /dev/null
++++ b/tests/test_build_linkcheck_redirects.py
+@@ -0,0 +1,72 @@
++import contextlib
++import http.server
++import threading
++
++import pytest
++
++
++# Utility code from tests/utils.py required to run the test
++class HttpServerThread(threading.Thread):
++    def __init__(self, handler, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        self.server = http.server.HTTPServer(("localhost", 7777), handler)
++
++    def run(self):
++        self.server.serve_forever(poll_interval=0.01)
++
++    def terminate(self):
++        self.server.shutdown()
++        self.server.server_close()
++        self.join()
++
++
++def create_server(thread_class):
++    def server(handler):
++        server_thread = thread_class(handler, daemon=True)
++        server_thread.start()
++        try:
++            yield server_thread
++        finally:
++            server_thread.terminate()
++    return contextlib.contextmanager(server)
++
++
++http_server = create_server(HttpServerThread)
++
++
++@pytest.mark.sphinx('linkcheck', testroot='linkcheck-localserver', freshenv=True)
++def test_too_many_redirects_fallback(app):
++    """
++    Tests that the linkchecker falls back to a GET request when a HEAD
++    request results in a "Too Many Redirects" error. This simulates a server
++    that enters an infinite redirect loop on HEAD requests.
++    """
++    class TooManyRedirectsHandler(http.server.BaseHTTPRequestHandler):
++        def do_HEAD(self):
++            # Create an infinite redirect loop for HEAD requests
++            self.send_response(302, 'Found')
++            self.send_header('Location', 'http://localhost:7777/')
++            self.end_headers()
++
++        def do_GET(self):
++            # But allow GET requests to succeed after one redirect
++            if self.path == '/?redirected=1':
++                self.send_response(204, 'No Content')
++                self.end_headers()
++            else:
++                self.send_response(302, 'Found')
++                self.send_header('Location', 'http://localhost:7777/?redirected=1')
++                self.end_headers()
++
++    with http_server(TooManyRedirectsHandler):
++        app.builder.build_all()
++
++    content = (app.outdir / 'output.txt').read_text()
++
++    # This assertion will fail before the fix, as the status will be 'broken'
++    # due to 'Too Many Redirects'. After the fix, the fallback to GET will
++    # be successful, and the status will be 'redirected'.
++    assert content == (
++        'index.rst:1: [redirected with Found] '
++        'http://localhost:7777/ to http://localhost:7777/?redirected=1\n'
++    )
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(sphinx/builders/linkcheck\.py)' -m tox -epy39 -v -- tests/test_build_linkcheck_redirects.py
+cat coverage.cover
+git checkout 3ea1ec84cc610f7a9f4f6b354e264565254923ff
+git apply /root/pre_state.patch

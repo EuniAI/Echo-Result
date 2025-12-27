@@ -1,0 +1,45 @@
+diff --git a/tests/model_forms/test_select_widget_bugs.py b/tests/model_forms/test_select_widget_bugs.py
+new file mode 100644
+index 0000000000..4b85ebe004
+--- /dev/null
++++ b/tests/model_forms/test_select_widget_bugs.py
+@@ -0,0 +1,39 @@
++from django import forms
++from django.test import TestCase
++
++from .models import Category
++
++
++class SelectWidgetBugsTest(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.cat = Category.objects.create(name='Test Category', slug='test-category', url='test-category')
++
++    def test_modelchoiceiteratorvalue_unhashable(self):
++        """
++        A ModelChoiceIteratorValue should be hashable to allow it to be used
++        in collections.
++        """
++        class CustomSelect(forms.Select):
++            def __init__(self, *args, **kwargs):
++                self.show_fields = kwargs.pop('show_fields', {})
++                super().__init__(*args, **kwargs)
++
++            def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
++                # This check fails with "TypeError: unhashable type:
++                # 'ModelChoiceIteratorValue'" because `value` is an object,
++                # not a simple PK.
++                if value in self.show_fields:
++                    pass
++                return super().create_option(name, value, label, selected, index, subindex, attrs)
++
++        class CategoryForm(forms.Form):
++            category = forms.ModelChoiceField(
++                queryset=Category.objects.all(),
++                widget=CustomSelect(show_fields={self.cat.pk: ['field']}),
++            )
++
++        form = CategoryForm()
++        # Rendering the form calls create_option() for each choice. This test
++        # will fail with a TypeError before the fix and pass after.
++        form.as_p()

@@ -1,0 +1,87 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 06fd4df41afb5aa1d681b853c3c08d8c688ca3a5 >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 06fd4df41afb5aa1d681b853c3c08d8c688ca3a5
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install -e .
+git apply -v - <<'EOF_114329324912'
+diff --git a/tests/queries/test_or_m2m_subquery.py b/tests/queries/test_or_m2m_subquery.py
+new file mode 100644
+index 0000000000..f35819fd55
+--- /dev/null
++++ b/tests/queries/test_or_m2m_subquery.py
+@@ -0,0 +1,60 @@
++from operator import attrgetter
++
++from django.db import models
++from django.db.models import Count, Q
++from django.test import TestCase
++
++
++class PropertyGroup(models.Model):
++    name = models.CharField(max_length=50)
++
++
++class Agent(models.Model):
++    name = models.CharField(max_length=50)
++    property_groups = models.ManyToManyField('queries.PropertyGroup', blank=True)
++
++
++class Ticket(models.Model):
++    name = models.CharField(max_length=50)
++    agent = models.ForeignKey('queries.Agent', models.CASCADE)
++
++    class Meta:
++        ordering = ['name']
++
++
++class OrM2MSubqueryTest(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        cls.pg1 = PropertyGroup.objects.create(name='PG1')
++        cls.pg2 = PropertyGroup.objects.create(name='PG2')
++
++        cls.agent1 = Agent.objects.create(name='Agent 1')
++        cls.agent1.property_groups.add(cls.pg1)
++
++        cls.agent2 = Agent.objects.create(name='Agent 2')
++
++        cls.agent3 = Agent.objects.create(name='Agent 3')
++        cls.agent3.property_groups.add(cls.pg2)
++
++        cls.ticket1 = Ticket.objects.create(name='Ticket 1', agent=cls.agent1)
++        cls.ticket2 = Ticket.objects.create(name='Ticket 2', agent=cls.agent2)
++        Ticket.objects.create(name='Ticket 3', agent=cls.agent3)
++
++    def test_or_with_m2m_subquery(self):
++        """
++        A filter combining a subquery lookup on an M2M with an annotation
++        count was generating a subquery that selected all columns instead of
++        just the PK.
++        """
++        property_groups = PropertyGroup.objects.filter(pk=self.pg1.pk)
++        qs = Ticket.objects.annotate(
++            agent__property_groups__count=Count('agent__property_groups')
++        ).filter(
++            Q(agent__property_groups__in=property_groups) | Q(agent__property_groups__count=0)
++        ).distinct()
++
++        self.assertQuerysetEqual(
++            qs,
++            ['Ticket 1', 'Ticket 2'],
++            attrgetter('name')
++        )
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(django/db/models/lookups\.py)' ./tests/runtests.py --verbosity 2 --settings=test_sqlite --parallel 1 queries.test_or_m2m_subquery
+cat coverage.cover
+git checkout 06fd4df41afb5aa1d681b853c3c08d8c688ca3a5
+git apply /root/pre_state.patch

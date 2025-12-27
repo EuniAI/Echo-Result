@@ -1,0 +1,57 @@
+diff --git a/tests/auth_tests/test_forms_m2m.py b/tests/auth_tests/test_forms_m2m.py
+new file mode 100644
+index 0000000000..72390adb5d
+--- /dev/null
++++ b/tests/auth_tests/test_forms_m2m.py
+@@ -0,0 +1,51 @@
++from django.contrib.auth.forms import UserCreationForm
++from django.test import TestCase
++from django.test.utils import override_settings
++
++# Import the existing models from the test suite's model definitions
++# to avoid the model conflict error.
++from auth_tests.models.with_many_to_many import CustomUserWithM2M, Organization
++
++
++class CustomUserWithM2MCreationForm(UserCreationForm):
++    """
++    A custom UserCreationForm for the CustomUserWithM2M model that includes
++    the 'orgs' ManyToManyField.
++    """
++
++    class Meta(UserCreationForm.Meta):
++        model = CustomUserWithM2M
++        fields = ("username", "orgs")
++
++
++@override_settings(AUTH_USER_MODEL="auth_tests.CustomUserWithM2M")
++class UserCreationFormM2MTest(TestCase):
++    @classmethod
++    def setUpTestData(cls):
++        # Create some organizations to be used in the m2m relationship.
++        cls.org1 = Organization.objects.create(name="Django Software Foundation")
++        cls.org2 = Organization.objects.create(name="Jazzband")
++
++    def test_user_creation_form_does_not_save_m2m_field(self):
++        """
++        Test that UserCreationForm fails to save ManyToManyField data.
++
++        This test will fail with an AssertionError because form.save() does not
++        call save_m2m(), but it will pass once the bug is fixed.
++        """
++        data = {
++            "username": "testuser",
++            "password1": "password",
++            "password2": "password",
++            "orgs": [self.org1.pk, self.org2.pk],
++        }
++        form = CustomUserWithM2MCreationForm(data)
++        self.assertTrue(form.is_valid())
++        user = form.save()
++
++        # The user object must be reloaded from the database to get the
++        # up-to-date m2m fields.
++        user.refresh_from_db()
++
++        # This assertion will fail because the 'orgs' will be empty.
++        self.assertCountEqual(user.orgs.all(), [self.org1, self.org2])

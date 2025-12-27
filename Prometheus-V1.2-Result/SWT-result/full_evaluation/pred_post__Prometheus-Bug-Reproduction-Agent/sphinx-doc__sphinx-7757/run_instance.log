@@ -1,0 +1,153 @@
+2025-12-07 16:17:49,068 - WARNING - Starting evaluation at 1765124269.0680492
+2025-12-07 16:17:49,119 - INFO - Creating container for sphinx-doc__sphinx-7757...
+2025-12-07 16:17:49,151 - INFO - Container for sphinx-doc__sphinx-7757 created: 0db7db57e5a9a1be63154bfb37b73f7d1ac2fc0b1fc2d93e4dfeb973ab0e0685
+2025-12-07 16:17:49,324 - INFO - Container for sphinx-doc__sphinx-7757 started: 0db7db57e5a9a1be63154bfb37b73f7d1ac2fc0b1fc2d93e4dfeb973ab0e0685
+2025-12-07 16:17:49,709 - INFO - Git diff before:
+diff --git a/setup.py b/setup.py
+index 5e822fe9b..77b63df38 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/tox.ini b/tox.ini
+index d9f040544..bf39854b6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:17:49,710 - INFO - Eval script for sphinx-doc__sphinx-7757 written to eval.sh, now applying to container...
+2025-12-07 16:18:13,576 - INFO - Test output for sphinx-doc__sphinx-7757 written to run_instance_swt_logs/full_evaluation/pred_post__Prometheus-Bug-Reproduction-Agent/sphinx-doc__sphinx-7757/test_output.txt
+2025-12-07 16:18:13,659 - INFO - Git diff after:
+diff --git a/setup.py b/setup.py
+index 5e822fe9b..77b63df38 100644
+--- a/setup.py
++++ b/setup.py
+@@ -15,22 +15,22 @@ if sys.version_info < (3, 5):
+     sys.exit(1)
+ 
+ install_requires = [
+-    'sphinxcontrib-applehelp',
+-    'sphinxcontrib-devhelp',
++    'sphinxcontrib-applehelp<=1.0.7',
++    'sphinxcontrib-devhelp<=1.0.5',
+     'sphinxcontrib-jsmath',
+-    'sphinxcontrib-htmlhelp',
+-    'sphinxcontrib-serializinghtml',
+-    'sphinxcontrib-qthelp',
+-    'Jinja2>=2.3',
++    'sphinxcontrib-htmlhelp<=2.0.4',
++    'sphinxcontrib-serializinghtml<=1.1.9',
++    'sphinxcontrib-qthelp<=1.0.6',
++    'Jinja2<3.0',
+     'Pygments>=2.0',
+     'docutils>=0.12',
+     'snowballstemmer>=1.1',
+     'babel>=1.3',
+-    'alabaster>=0.7,<0.8',
++    'alabaster>=0.7,<0.7.12',
+     'imagesize',
+     'requests>=2.5.0',
+     'setuptools',
+-    'packaging',
++    'packaging', 'markupsafe<=2.0.1',
+ ]
+ 
+ extras_require = {
+diff --git a/sphinx/util/inspect.py b/sphinx/util/inspect.py
+index 15f0d66e2..bac02025c 100644
+--- a/sphinx/util/inspect.py
++++ b/sphinx/util/inspect.py
+@@ -518,19 +518,34 @@ def signature_from_str(signature: str) -> inspect.Signature:
+ 
+     # parameters
+     args = definition.args
++    defaults = list(args.defaults)
+     params = []
++    if hasattr(args, "posonlyargs"):
++        posonlyargs = len(args.posonlyargs)  # type: ignore
++        positionals = posonlyargs + len(args.args)
++    else:
++        posonlyargs = 0
++        positionals = len(args.args)
++
++    for _ in range(len(defaults), positionals):
++        defaults.insert(0, Parameter.empty)
+ 
+     if hasattr(args, "posonlyargs"):
+-        for arg in args.posonlyargs:  # type: ignore
++        for i, arg in enumerate(args.posonlyargs):  # type: ignore
++            if defaults[i] is Parameter.empty:
++                default = Parameter.empty
++            else:
++                default = ast_unparse(defaults[i])
++
+             annotation = ast_unparse(arg.annotation) or Parameter.empty
+             params.append(Parameter(arg.arg, Parameter.POSITIONAL_ONLY,
+-                                    annotation=annotation))
++                                    default=default, annotation=annotation))
+ 
+     for i, arg in enumerate(args.args):
+-        if len(args.args) - i <= len(args.defaults):
+-            default = ast_unparse(args.defaults[-len(args.args) + i])
+-        else:
++        if defaults[i + posonlyargs] is Parameter.empty:
+             default = Parameter.empty
++        else:
++            default = ast_unparse(defaults[i + posonlyargs])
+ 
+         annotation = ast_unparse(arg.annotation) or Parameter.empty
+         params.append(Parameter(arg.arg, Parameter.POSITIONAL_OR_KEYWORD,
+diff --git a/tox.ini b/tox.ini
+index d9f040544..bf39854b6 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -28,7 +28,7 @@ extras =
+ setenv =
+     PYTHONWARNINGS = all,ignore::ImportWarning:importlib._bootstrap_external,ignore::DeprecationWarning:site,ignore::DeprecationWarning:distutils
+ commands=
+-    pytest --durations 25 {posargs}
++    pytest -rA --durations 25 {posargs}
+ 
+ [testenv:flake8]
+ basepython = python3
+2025-12-07 16:18:13,659 - INFO - Git diff changed after running eval script
+2025-12-07 16:18:13,659 - INFO - Attempting to stop container exec.eval.x86_64.77d82541416cab86d0d86a.f382942fbc837c8d5b07dd.124396454022752...
+2025-12-07 16:18:28,948 - INFO - Attempting to remove container exec.eval.x86_64.77d82541416cab86d0d86a.f382942fbc837c8d5b07dd.124396454022752...
+2025-12-07 16:18:29,067 - INFO - Container exec.eval.x86_64.77d82541416cab86d0d86a.f382942fbc837c8d5b07dd.124396454022752 removed.
+2025-12-07 16:18:29,067 - WARNING - End of eval at 1765124309.0677226

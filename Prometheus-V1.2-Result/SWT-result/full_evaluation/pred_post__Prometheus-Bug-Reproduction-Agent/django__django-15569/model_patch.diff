@@ -1,0 +1,39 @@
+diff --git a/tests/lookup/test_registration.py b/tests/lookup/test_registration.py
+new file mode 100644
+index 0000000000..aa90742f7f
+--- /dev/null
++++ b/tests/lookup/test_registration.py
+@@ -0,0 +1,33 @@
++from django.db import models
++from django.test import TestCase
++from django.test.utils import register_lookup
++
++from .models import Article
++
++
++class Exactly(models.lookups.Exact):
++    """
++    This lookup is used to test lookup registration.
++    """
++
++    lookup_name = "exactly"
++
++    def get_rhs_op(self, connection, rhs):
++        return connection.operators["exact"] % rhs
++
++
++class LookupTests(TestCase):
++    def test_unregister_lookup_clears_cache(self):
++        """
++        Test that _unregister_lookup clears the lookup cache.
++        """
++        field = Article._meta.get_field("author")
++        # Clear cache to ensure a clean state.
++        field.get_lookups.cache_clear()
++        self.assertNotIn("exactly", field.get_lookups())
++        # Register the lookup.
++        with register_lookup(models.ForeignObject, Exactly):
++            self.assertIn("exactly", field.get_lookups())
++        # After unregistering (by exiting the 'with' block), the lookup
++        # should no longer be present.
++        self.assertNotIn("exactly", field.get_lookups())

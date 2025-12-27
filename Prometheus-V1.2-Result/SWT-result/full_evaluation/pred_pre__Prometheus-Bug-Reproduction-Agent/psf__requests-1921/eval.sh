@@ -1,0 +1,92 @@
+#!/bin/bash
+set -uxo pipefail
+source /opt/miniconda3/bin/activate
+conda activate testbed
+cd /testbed
+git diff HEAD 3c88e520da24ae6f736929a750876e7654accc3d >> /root/pre_state.patch
+git config --global --add safe.directory /testbed
+cd /testbed
+git status
+git show
+git diff 3c88e520da24ae6f736929a750876e7654accc3d
+source /opt/miniconda3/bin/activate
+conda activate testbed
+python -m pip install .
+git apply -v - <<'EOF_114329324912'
+diff --git a/test_issue_1483.py b/test_issue_1483.py
+new file mode 100644
+index 00000000..0112d4de
+--- /dev/null
++++ b/test_issue_1483.py
+@@ -0,0 +1,65 @@
++#!/usr/bin/env python
++# -*- coding: utf-8 -*-
++
++"""Tests for Requests."""
++
++from __future__ import division
++import json
++import os
++import pickle
++import unittest
++from unittest.mock import patch
++
++import requests
++import pytest
++from requests.adapters import HTTPAdapter
++from requests.auth import HTTPDigestAuth
++from requests.compat import (
++    Morsel, cookielib, getproxies, str, urljoin, urlparse)
++from requests.cookies import cookiejar_from_dict, morsel_to_cookie
++from requests.exceptions import InvalidURL, MissingSchema
++from requests.structures import CaseInsensitiveDict
++
++try:
++    import StringIO
++except ImportError:
++    import io as StringIO
++
++HTTPBIN = os.environ.get('HTTPBIN_URL', 'http://httpbin.org/')
++# Issue #1483: Make sure the URL always has a trailing slash
++HTTPBIN = HTTPBIN.rstrip('/') + '/'
++
++
++def httpbin(*suffix):
++    """Returns url for HTTPBIN resource."""
++    return urljoin(HTTPBIN, '/'.join(suffix))
++
++
++class RequestsTestCase(unittest.TestCase):
++
++    @patch('requests.adapters.HTTPAdapter.send')
++    def test_setting_session_header_to_none_removes_it(self, mock_send):
++        """
++        Test for issue #1483.
++
++        Verifies that setting a header value to None on a session object
++        correctly removes that header from the prepared request.
++        """
++        # Create a dummy Response to return from the mock. This prevents
++        # requests from crashing during redirect handling.
++        dummy_response = requests.Response()
++        dummy_response.status_code = 200
++        dummy_response.url = httpbin('get')
++        mock_send.return_value = dummy_response
++
++        session = requests.Session()
++        session.headers['Accept-Encoding'] = None
++
++        session.get(httpbin('get'))
++
++        # The request that would have been sent is the first argument to the mock.
++        prepared_request = mock_send.call_args[0][0]
++
++        # The bug is that 'Accept-Encoding' is present in the headers
++        # (with a value of None), when it should have been removed.
++        assert 'Accept-Encoding' not in prepared_request.headers
+
+EOF_114329324912
+python3 /root/trace.py --count -C coverage.cover --include-pattern '/testbed/(requests/sessions\.py)' -m pytest --no-header -rA  -p no:cacheprovider test_issue_1483.py
+cat coverage.cover
+git checkout 3c88e520da24ae6f736929a750876e7654accc3d
+git apply /root/pre_state.patch

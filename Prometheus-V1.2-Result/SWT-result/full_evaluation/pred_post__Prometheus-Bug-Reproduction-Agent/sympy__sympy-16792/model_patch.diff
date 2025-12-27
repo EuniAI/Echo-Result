@@ -1,0 +1,69 @@
+diff --git a/sympy/utilities/tests/test_autowrap_bug.py b/sympy/utilities/tests/test_autowrap_bug.py
+new file mode 100644
+index 0000000000..c70f56fc26
+--- /dev/null
++++ b/sympy/utilities/tests/test_autowrap_bug.py
+@@ -0,0 +1,63 @@
++import sympy
++import tempfile
++import os
++from sympy import symbols, Eq, Mod, MatrixSymbol
++from sympy.external import import_module
++from sympy.tensor import IndexedBase, Idx
++from sympy.utilities.autowrap import autowrap, ufuncify, CodeWrapError
++from sympy.utilities.pytest import skip
++
++numpy = import_module('numpy', min_module_version='1.6.1')
++Cython = import_module('Cython', min_module_version='0.15.1')
++f2py = import_module('numpy.f2py', __import__kwargs={'fromlist': ['f2py']})
++
++f2pyworks = False
++if f2py:
++    try:
++        autowrap(symbols('x'), 'f95', 'f2py')
++    except (CodeWrapError, ImportError, OSError):
++        f2pyworks = False
++    else:
++        f2pyworks = True
++
++a, b, c = symbols('a b c')
++n, m, d = symbols('n m d', integer=True)
++A, B, C = symbols('A B C', cls=IndexedBase)
++i = Idx('i', m)
++j = Idx('j', n)
++k = Idx('k', d)
++
++
++def has_module(module):
++    """
++    Return True if module exists, otherwise run skip().
++
++    module should be a string.
++    """
++    # To give a string of the module name to skip(), this function takes a
++    # string.  So we don't waste time running import_module() more than once,
++    # just map the three modules tested here in this dict.
++    modnames = {'numpy': numpy, 'Cython': Cython, 'f2py': f2py}
++
++    if modnames[module]:
++        if module == 'f2py' and not f2pyworks:
++            skip("Couldn't run f2py.")
++        return True
++    skip("Couldn't import %s." % module)
++
++
++def test_autowrap_unused_array_argument_cython():
++    """
++    Test for bug where array arguments that do not appear in the
++    expression are not handled correctly by the cython backend.
++    """
++    has_module('numpy')
++    has_module('Cython')
++
++    x = MatrixSymbol('x', 2, 1)
++    expr = 1.0
++    f = autowrap(expr, args=(x,), backend='cython')
++
++    # This call fails with a TypeError, but should return 1.0
++    # The array shape must match the MatrixSymbol dimensions.
++    assert f(numpy.array([[1.0], [2.0]])) == 1.0

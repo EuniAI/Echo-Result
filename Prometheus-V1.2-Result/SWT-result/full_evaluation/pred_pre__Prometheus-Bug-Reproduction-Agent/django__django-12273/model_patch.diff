@@ -1,0 +1,34 @@
+diff --git a/tests/model_inheritance_regress/test_reset_pk_on_child_save.py b/tests/model_inheritance_regress/test_reset_pk_on_child_save.py
+new file mode 100644
+index 0000000000..e01ce3eb60
+--- /dev/null
++++ b/tests/model_inheritance_regress/test_reset_pk_on_child_save.py
+@@ -0,0 +1,28 @@
++from django.test import TestCase
++
++from .models import Place, Restaurant
++
++
++class ResetPrimaryKeyOnChildTest(TestCase):
++    def test_reset_pk_on_child_save(self):
++        """
++        Resetting a child model's primary key to None should cause a new
++        instance to be created on save(), rather than updating the existing one.
++        """
++        restaurant = Restaurant.objects.create(serves_hot_dogs=True)
++        original_pk = restaurant.pk
++
++        # Get the child instance via the parent, as in the bug report.
++        place = Place.objects.get(pk=original_pk)
++        child_obj = place.restaurant
++
++        # Reset the pk and change a field. This should cause a new row to be
++        # created on save().
++        child_obj.pk = None
++        child_obj.serves_hot_dogs = False
++        child_obj.save()
++
++        # The bug is that the original object is updated, so its
++        # 'serves_hot_dogs' flag becomes False. When fixed, the original
++        # object will be untouched and this assertion will pass.
++        self.assertTrue(Restaurant.objects.get(pk=original_pk).serves_hot_dogs)
